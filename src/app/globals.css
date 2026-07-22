@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-sixxis-navy: #1f3864;
+  --color-sixxis-blue: #2e5395;
+}
+
+body {
+  background-color: #f6f7fb;
+  color: #1a1a1a;
+}
