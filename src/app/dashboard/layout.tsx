@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AppSidebar from "./app-sidebar";
 import LogoutButton from "./logout-button";
+import ThemeToggle from "./theme-toggle";
+import Logo from "./logo";
 
 export default async function DashboardLayout({
   children,
@@ -31,13 +33,24 @@ export default async function DashboardLayout({
       <AppSidebar />
       <div className="pl-16">
         <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-sixxis-navy)]">Painel Sixxis</p>
-            <p className="text-xs text-gray-500">
-              {profile?.full_name ?? user.email} · {isAdmin ? "Administrador" : "Colaborador"}
-            </p>
+          <div className="flex items-center gap-3">
+            <Logo />
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-[var(--color-sixxis-navy)]">Painel Sixxis</p>
+              <p className="text-xs text-gray-500">
+                {profile?.full_name ?? user.email} · {isAdmin ? "Administrador" : "Colaborador"}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
+            {isAdmin && (
+              <a
+                href="/dashboard/contas"
+                className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Contas conectadas
+              </a>
+            )}
             {isAdmin && (
               <a
                 href="/api/mercadolivre/connect"
@@ -46,6 +59,7 @@ export default async function DashboardLayout({
                 + Conectar conta
               </a>
             )}
+            <ThemeToggle />
             <LogoutButton />
           </div>
         </header>

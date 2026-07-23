@@ -388,3 +388,72 @@ export async function notificarStatusEnvioME1(
     throw new Error(`Falha ao notificar status do envio ${shipmentId}: ${res.status} ${corpo}`);
   }
 }
+
+
+export type PontoSerieDiaria = { data: string; quantidade: number; valor: number };
+
+// Serie diaria de "vendas brutas" (pagos + cancelados, mesma definicao usada
+// no Resumo) para alimentar o grafico comparativo. Busca a lista completa de
+// pedidos (pagos e cancelados) do periodo e agrupa por dia (data de criacao,
+// no fuso de Brasilia, ja que periodo.desde/ate vem com offset -03:00).
+export async function getSerieDiariaVendas(
+  accessToken: string,
+  mlUserId: number,
+  periodo: PeriodoISO
+): Promise<PontoSerieDiaria[]> {
+  async function buscarStatus(status: "paid" | "cancelled"): Promise<PedidoApi[]> {
+    const pedidos: PedidoApi[] = [];
+    let offset = 0;
+    let total = 0;
+    while (true) {
+      const params = new URLSearchParams({
+        seller: String(mlUserId),
+        "order.status": status,
+        "order.date_created.from": periodo.desde,
+        "order.date_created.to": periodo.ate,
+        limit: String(LIMITE_POR_PAGINA),
+        offset: String(offset),
+      });
+      const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error(`Falha ao buscar serie diaria (${status}): ${res.status}`);
+      const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
+      total = data.paging.total;
+      pedidos.push(...data.results);
+      offset += LIMITE_POR_PAGINA;
+      if (offset >= total || offset >= TETO_PEDIDOS || data.results.length === 0) break;
+    }
+    return pedidos;
+  }
+
+  const [pagos, cancelados] = await Promise.all([buscarStatus("paid"), buscarStatus("cancelled")]);
+
+  const porDia = new Map<string, { quantidade: number; valor: number }>();
+
+  function diaBrasilia(iso: string): string {
+    // date_created vem com o offset do vendedor (geralmente -03:00 ja
+    // embutido); pegamos so a parte YYYY-MM-DD, que e o que importa para
+    // agrupar por dia no grafico.
+    return iso.slice(0, 10);
+  }
+
+  for (const p of pagos) {
+    const dia = diaBrasilia(p.date_created);
+    const atual = porDia.get(dia) ?? { quantidade: 0, valor: 0 };
+    atual.quantidade += 1;
+    atual.valor += p.paid_amount ?? p.total_amount ?? 0;
+    porDia.set(dia, atual);
+  }
+  for (const p of cancelados) {
+    const dia = diaBrasilia(p.date_created);
+    const atual = porDia.get(dia) ?? { quantidade: 0, valor: 0 };
+    atual.quantidade += 1;
+    atual.valor += p.total_amount ?? 0;
+    porDia.set(dia, atual);
+  }
+
+  return Array.from(porDia.entries())
+    .map(([data, v]) => ({ data, quantidade: v.quantidade, valor: Math.round(v.valor * 100) / 100 }))
+    .sort((a, b) => a.data.localeCompare(b.data));
+}

@@ -2,34 +2,30 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getTotaisPorStatus, getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
-import { getTotalVisitas } from "@/lib/mercadolivre/visits";
+import {
+  getTotaisPorStatus,
+  getProdutosMaisVendidos,
+  getSerieDiariaVendas,
+  periodoDeDatas,
+} from "@/lib/mercadolivre/orders";
+import { getTotalVisitas, getSerieDiariaVisitas } from "@/lib/mercadolivre/visits";
 import { getPerguntasNaoRespondidas } from "@/lib/mercadolivre/questions";
 import { getMensagensNaoLidas } from "@/lib/mercadolivre/messages";
 import {
   PRESETS,
   type PresetKey,
-  formatarData,
   periodoDoPreset,
   periodoMesAnterior,
   variacaoPercentual,
 } from "@/lib/date-utils";
+import ResumoInterativo from "./resumo-interativo";
+import { COR_PADRAO } from "@/lib/account-colors";
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
   new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: moeda ?? "BRL",
   }).format(valor);
-
-function Variacao({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-xs text-gray-400">sem base de comparação</span>;
-  const positivo = pct >= 0;
-  return (
-    <span className={`text-xs font-medium ${positivo ? "text-green-600" : "text-red-500"}`}>
-      {positivo ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}% vs. mês anterior
-    </span>
-  );
-}
 
 export default async function ResumoPage({
   searchParams,
@@ -61,25 +57,42 @@ export default async function ResumoPage({
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, cor")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
     (contas ?? []).map(async (conta) => {
       try {
         const accessToken = await getValidAccessToken(conta.id);
-        const [pagas, canceladas, visitas, produtos, pagasAnterior, canceladasAnterior, visitasAnterior, perguntas, mensagens] =
-          await Promise.all([
-            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "paid"),
-            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "cancelled"),
-            getTotalVisitas(accessToken, conta.ml_user_id, de, ate),
-            getProdutosMaisVendidos(accessToken, conta.ml_user_id, periodoAtual),
-            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
-            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "cancelled"),
-            getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
-            getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
-            getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
-          ]);
+        const [
+          pagas,
+          canceladas,
+          visitas,
+          produtos,
+          pagasAnterior,
+          canceladasAnterior,
+          visitasAnterior,
+          perguntas,
+          mensagens,
+          serieVendasAtual,
+          serieVisitasAtual,
+          serieVendasAnterior,
+          serieVisitasAnterior,
+        ] = await Promise.all([
+          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "paid"),
+          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "cancelled"),
+          getTotalVisitas(accessToken, conta.ml_user_id, de, ate),
+          getProdutosMaisVendidos(accessToken, conta.ml_user_id, periodoAtual),
+          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
+          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "cancelled"),
+          getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
+          getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
+          getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
+          getSerieDiariaVendas(accessToken, conta.ml_user_id, periodoAtual),
+          getSerieDiariaVisitas(accessToken, conta.ml_user_id, de, ate),
+          getSerieDiariaVendas(accessToken, conta.ml_user_id, periodoAnterior),
+          getSerieDiariaVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
+        ]);
         return {
           conta,
           pagas,
@@ -91,6 +104,10 @@ export default async function ResumoPage({
           visitasAnterior,
           perguntas,
           mensagens,
+          serieVendasAtual,
+          serieVisitasAtual,
+          serieVendasAnterior,
+          serieVisitasAnterior,
           erro: null as string | null,
         };
       } catch (err) {
@@ -106,6 +123,10 @@ export default async function ResumoPage({
           visitasAnterior: 0,
           perguntas: { total: 0, perguntas: [] },
           mensagens: { conversas: [], totalMensagens: 0 },
+          serieVendasAtual: [],
+          serieVisitasAtual: [],
+          serieVendasAnterior: [],
+          serieVisitasAnterior: [],
           erro: "Falha ao buscar dados desta conta.",
         };
       }
@@ -149,18 +170,45 @@ export default async function ResumoPage({
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 5);
 
+  const contasParaGrafico = resultados.map((r) => ({
+    id: r.conta.id,
+    nickname: r.conta.nickname,
+    cor: r.conta.cor ?? COR_PADRAO,
+  }));
+
+  const seriesPorConta = Object.fromEntries(
+    resultados.map((r) => [
+      r.conta.id,
+      {
+        atual: { vendas: r.serieVendasAtual, visitas: r.serieVisitasAtual },
+        anterior: { vendas: r.serieVendasAnterior, visitas: r.serieVisitasAnterior },
+      },
+    ])
+  );
+
+  const pizza = resultados
+    .map((r) => ({
+      contaId: r.conta.id,
+      nickname: r.conta.nickname,
+      cor: r.conta.cor ?? COR_PADRAO,
+      valor: (r.pagas?.valor ?? 0) + (r.canceladas?.valor ?? 0),
+    }))
+    .filter((f) => f.valor > 0);
+
   return (
     <div className="mx-auto max-w-6xl p-6">
       {params.conectado && (
-        <p className="mb-4 rounded bg-green-50 p-3 text-sm text-green-700">
+        <p className="mb-4 rounded bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
           Conta &quot;{params.conectado}&quot; conectada com sucesso.
         </p>
       )}
       {params.erro && (
-        <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">{params.erro}</p>
+        <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {params.erro}
+        </p>
       )}
 
-      <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Resumo</h1>
+      <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)] dark:text-white">Resumo</h1>
       <p className="mb-6 text-sm text-gray-500">
         Consolidado de todas as {contas?.length ?? 0} contas conectadas
       </p>
@@ -218,28 +266,19 @@ export default async function ResumoPage({
         {new Date(ateAnterior + "T00:00:00").toLocaleDateString("pt-BR")}
       </p>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded border border-t-4 border-t-[var(--color-sixxis-navy)] border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Vendas brutas</p>
-          <p className="text-xl font-bold text-gray-900">{formatarMoeda(faturamentoTotal, moeda)}</p>
-          <Variacao pct={variacaoPercentual(faturamentoTotal, faturamentoAnterior)} />
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Quantidade de vendas</p>
-          <p className="text-xl font-bold text-gray-900">{vendasTotais}</p>
-          <Variacao pct={variacaoPercentual(vendasTotais, vendasAnteriores)} />
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Visualizações</p>
-          <p className="text-xl font-bold text-gray-900">{visitasTotais.toLocaleString("pt-BR")}</p>
-          <Variacao pct={variacaoPercentual(visitasTotais, visitasAnteriores)} />
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Conversão</p>
-          <p className="text-xl font-bold text-gray-900">{conversao.toFixed(2)}%</p>
-          <Variacao pct={variacaoPercentual(conversao, conversaoAnterior)} />
-        </div>
-      </div>
+      <ResumoInterativo
+        cards={{
+          vendasBrutas: { valor: faturamentoTotal, variacaoPct: variacaoPercentual(faturamentoTotal, faturamentoAnterior) },
+          quantidadeVendas: { valor: vendasTotais, variacaoPct: variacaoPercentual(vendasTotais, vendasAnteriores) },
+          visualizacoes: { valor: visitasTotais, variacaoPct: variacaoPercentual(visitasTotais, visitasAnteriores) },
+          conversao: { valor: conversao, variacaoPct: variacaoPercentual(conversao, conversaoAnterior) },
+        }}
+        moeda={moeda ?? "BRL"}
+        periodo={{ de, ate, deAnterior, ateAnterior }}
+        contas={contasParaGrafico}
+        seriesPorConta={seriesPorConta}
+        pizza={pizza}
+      />
 
       {canceladosTotal > 0 && (
         <p className="mb-8 text-xs text-gray-500">

@@ -40,26 +40,43 @@ export async function GET(req: NextRequest) {
     const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
 
     const admin = createAdminClient();
-    const { error: dbError } = await admin.from("ml_accounts").upsert(
-      {
-        ml_user_id: conta.id,
-        nickname: conta.nickname,
-        access_token: token.access_token,
-        refresh_token: token.refresh_token,
-        token_expires_at: expiresAt,
-        scope: token.scope,
-        site_id: conta.site_id,
-        connected_by: user.id,
-      },
-      { onConflict: "ml_user_id" }
-    );
+
+    const { data: contaExistente } = await admin
+      .from("ml_accounts")
+      .select("id")
+      .eq("ml_user_id", conta.id)
+      .maybeSingle();
+    const eraNova = !contaExistente;
+
+    const { data: contaSalva, error: dbError } = await admin
+      .from("ml_accounts")
+      .upsert(
+        {
+          ml_user_id: conta.id,
+          nickname: conta.nickname,
+          access_token: token.access_token,
+          refresh_token: token.refresh_token,
+          token_expires_at: expiresAt,
+          scope: token.scope,
+          site_id: conta.site_id,
+          connected_by: user.id,
+        },
+        { onConflict: "ml_user_id" }
+      )
+      .select("id")
+      .single();
 
     if (dbError) {
       console.error("Erro ao salvar ml_accounts:", dbError);
       return redirectComErro(req, "Conta autorizada, mas houve erro ao salvar no banco.");
     }
 
-    const response = NextResponse.redirect(new URL("/dashboard?conectado=" + conta.nickname, req.url));
+    // Conta nova: manda escolher a cor antes de ir para o painel.
+    const destino = eraNova
+      ? `/dashboard/contas/${contaSalva.id}?nova=1`
+      : "/dashboard?conectado=" + conta.nickname;
+
+    const response = NextResponse.redirect(new URL(destino, req.url));
     response.cookies.delete("ml_oauth_state");
     return response;
   } catch (err) {
