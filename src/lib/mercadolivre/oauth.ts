@@ -73,3 +73,18 @@ export async function refreshAccessToken(refreshToken: string) {
     refresh_token: string;
   }>;
 }
+
+export async function getUserInfo(accessToken: string) {
+  const res = await fetch("https://api.mercadolibre.com/users/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Falha ao buscar dados da conta ML: ${res.status}`);
+  }
+  return res.json() as Promise<{
+    id: number;
+    nickname: string;
+    email?: string;
+    site_id: string;
+  }>;
+}
