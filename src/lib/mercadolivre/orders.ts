@@ -185,7 +185,12 @@ export async function getTotaisPorStatus(
     totalNaApi = data.paging.total;
 
     for (const p of data.results) {
-      valor += p.paid_amount ?? p.total_amount ?? 0;
+      // Para pedidos pagos, "paid_amount" e o valor real recebido (produto + frete),
+      // que e o que a plataforma chama de "Vendas brutas". Ja para pedidos cancelados
+      // o paid_amount vem zerado (nada foi efetivamente recebido), entao usamos o
+      // total_amount (valor da venda que foi cancelada) para bater com o "Valor de
+      // vendas canceladas" do painel do Mercado Livre.
+      valor += status === "paid" ? p.paid_amount ?? p.total_amount ?? 0 : p.total_amount ?? 0;
       if (!moeda) moeda = p.currency_id;
       quantidadeContada++;
     }
