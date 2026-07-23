@@ -42,22 +42,21 @@ export async function GET() {
   }
 
   await testar(
-    "com_marketplace_v2",
+    "app_version_query",
+    `https://api.mercadolibre.com/seller-promotions/users/${conta.ml_user_id}?limit=10&app_version=v2`
+  );
+  await testar(
+    "app_version_query_num",
+    `https://api.mercadolibre.com/seller-promotions/users/${conta.ml_user_id}?limit=10&app_version=2`
+  );
+  await testar(
+    "marketplace_app_version_query",
+    `https://api.mercadolibre.com/marketplace/seller-promotions/users/${conta.ml_user_id}?limit=10&app_version=v2`
+  );
+  await testar(
+    "caller_id_header",
     `https://api.mercadolibre.com/marketplace/seller-promotions/users/${conta.ml_user_id}?limit=10`,
-    { version: "v2" }
-  );
-  await testar(
-    "sem_marketplace_v2",
-    `https://api.mercadolibre.com/seller-promotions/users/${conta.ml_user_id}?limit=10`,
-    { version: "v2" }
-  );
-  await testar(
-    "sem_marketplace_sem_header",
-    `https://api.mercadolibre.com/seller-promotions/users/${conta.ml_user_id}?limit=10`
-  );
-  await testar(
-    "com_marketplace_sem_header",
-    `https://api.mercadolibre.com/marketplace/seller-promotions/users/${conta.ml_user_id}?limit=10`
+    { version: "v2", "caller-id": String(conta.ml_user_id) }
   );
 
   return NextResponse.json({ contaId: conta.id, mlUserId: conta.ml_user_id, resultado });
