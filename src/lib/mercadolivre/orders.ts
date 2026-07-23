@@ -203,3 +203,76 @@ export async function getTotaisPorStatus(
 
   return { quantidade: totalNaApi, valor, moeda };
 }
+
+export type ProdutoRanking = {
+  itemId: string;
+  titulo: string;
+  quantidade: number;
+  valor: number;
+};
+
+type PedidoApiCompleto = PedidoApi & {
+  order_items?: {
+    item?: { id?: string; title?: string };
+    quantity?: number;
+    unit_price?: number;
+  }[];
+};
+
+// Agrega os itens vendidos (pedidos pagos) no periodo, somando quantidade e
+// valor por produto, para montar o ranking de produtos mais vendidos.
+export async function getProdutosMaisVendidos(
+  accessToken: string,
+  mlUserId: number,
+  periodo: PeriodoISO
+): Promise<ProdutoRanking[]> {
+  let offset = 0;
+  let totalNaApi = 0;
+  const porProduto = new Map<string, ProdutoRanking>();
+
+  while (true) {
+    const params = new URLSearchParams({
+      seller: String(mlUserId),
+      "order.status": "paid",
+      "order.date_created.from": periodo.desde,
+      "order.date_created.to": periodo.ate,
+      limit: String(LIMITE_POR_PAGINA),
+      offset: String(offset),
+    });
+
+    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Falha ao buscar produtos vendidos: ${res.status}`);
+    }
+
+    const data = (await res.json()) as { paging: { total: number }; results: PedidoApiCompleto[] };
+    totalNaApi = data.paging.total;
+
+    for (const pedido of data.results) {
+      for (const oi of pedido.order_items ?? []) {
+        const id = oi.item?.id ?? "sem-id";
+        const titulo = oi.item?.title ?? "Produto sem título";
+        const quantidade = oi.quantity ?? 0;
+        const valor = (oi.unit_price ?? 0) * quantidade;
+
+        const atual = porProduto.get(id);
+        if (atual) {
+          atual.quantidade += quantidade;
+          atual.valor += valor;
+        } else {
+          porProduto.set(id, { itemId: id, titulo, quantidade, valor });
+        }
+      }
+    }
+
+    offset += LIMITE_POR_PAGINA;
+    if (offset >= totalNaApi || offset >= TETO_PEDIDOS || data.results.length === 0) {
+      break;
+    }
+  }
+
+  return Array.from(porProduto.values()).sort((a, b) => b.quantidade - a.quantidade);
+}
