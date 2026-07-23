@@ -43,15 +43,14 @@ export async function getPromocoesVendedor(
   let searchAfter: string | undefined;
 
   for (let pagina = 0; pagina < 10; pagina++) {
-    const params = new URLSearchParams({ limit: "50" });
+    const params = new URLSearchParams({ limit: "50", app_version: "v2" });
     if (searchAfter) params.set("search_after", searchAfter);
 
     const res = await fetch(
-      `${ML_API}/marketplace/seller-promotions/users/${mlUserId}?${params.toString()}`,
+      `${ML_API}/seller-promotions/users/${mlUserId}?${params.toString()}`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          version: "v2",
         },
       }
     );
