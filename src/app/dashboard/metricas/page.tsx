@@ -178,7 +178,7 @@ export default async function MetricasPage({
       </div>
 
       <div className="mb-8 rounded border border-dashed border-gray-300 p-4 text-xs text-gray-500">
-        Pedidos devolvidos: em desenvolvimento — a API de devoluções do Mercado Livire ainda
+        Pedidos devolvidos: em desenvolvimento — a API de devoluções do Mercado Livre ainda
         está sendo validada para garantir que o número mostrado seja exato antes de aparecer aqui.
       </div>
 
