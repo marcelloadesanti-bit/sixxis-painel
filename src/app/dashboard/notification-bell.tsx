@@ -24,9 +24,11 @@ const CONFIG: Record<Categoria, { label: string; som: string; href: string }> = 
 };
 
 const CHAVE_CONTAGEM = "sixxis-ultimos-contadores-v2";
-const CHAVE_NOTIFICACOES = "sixxis-notificacoes-v1";
+const CHAVE_NOTIFICACOES = "sixxis-notificacoes-v2";
 const MAX_NOTIFICACOES = 50;
-const INTERVALO_MS = 45_000;
+const INTERVALO_VERIFICACAO_MS = 45_000;
+const INTERVALO_LEMBRETE_MS = 30_000;
+const REPETIR_APOS_MS = 5 * 60_000; // 5 minutos
 
 type Notificacao = {
   id: string;
@@ -37,6 +39,7 @@ type Notificacao = {
   quantidade: number;
   hora: string;
   lida: boolean;
+  ultimoAlerta: number;
 };
 
 function carregarNotificacoes(): Notificacao[] {
@@ -60,6 +63,7 @@ export default function NotificationBell() {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [aberto, setAberto] = useState(false);
   const iniciado = useRef(false);
+  const audioPronto = useRef(false);
 
   const tocarSom = useCallback((categoria: Categoria) => {
     try {
@@ -72,6 +76,29 @@ export default function NotificationBell() {
     } catch {
       // ignora falha de audio
     }
+  }, []);
+
+  // "Destrava" o audio na primeira interacao do usuario com a pagina, para
+  // reduzir a chance do navegador bloquear o som quando ele tocar sozinho
+  // (disparado pelo timer, sem clique direto no momento).
+  useEffect(() => {
+    if (audioPronto.current) return;
+    const destravar = () => {
+      audioPronto.current = true;
+      Object.values(CONFIG).forEach(({ som }) => {
+        const audio = new Audio(som);
+        audio.volume = 0;
+        audio.play().then(() => audio.pause()).catch(() => {});
+      });
+      window.removeEventListener("click", destravar);
+      window.removeEventListener("keydown", destravar);
+    };
+    window.addEventListener("click", destravar, { once: true });
+    window.addEventListener("keydown", destravar, { once: true });
+    return () => {
+      window.removeEventListener("click", destravar);
+      window.removeEventListener("keydown", destravar);
+    };
   }, []);
 
   const verificar = useCallback(async () => {
@@ -88,6 +115,7 @@ export default function NotificationBell() {
       const categorias: Categoria[] = ["vendas", "perguntas", "mensagens", "reclamacoes"];
       const categoriasComNovidade = new Set<Categoria>();
       const novas: Notificacao[] = [];
+      const agora = Date.now();
 
       if (salvos) {
         for (const conta of atual.contas) {
@@ -98,7 +126,7 @@ export default function NotificationBell() {
             if (diff > 0) {
               categoriasComNovidade.add(cat);
               novas.push({
-                id: `${conta.contaId}-${cat}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                id: `${conta.contaId}-${cat}-${agora}-${Math.random().toString(36).slice(2, 7)}`,
                 categoria: cat,
                 contaId: conta.contaId,
                 contaNickname: conta.nickname,
@@ -110,6 +138,7 @@ export default function NotificationBell() {
                   timeZone: "America/Sao_Paulo",
                 }).format(new Date()),
                 lida: false,
+                ultimoAlerta: agora,
               });
             }
           }
@@ -140,20 +169,57 @@ export default function NotificationBell() {
     }
   }, [tocarSom]);
 
+  // A cada notificacao nao lida que passou de 5 minutos sem ser aberta, o
+  // som daquela categoria toca de novo - continua repetindo ate o usuario
+  // abrir (marca como lida) ou excluir a notificacao.
+  const repetirLembretes = useCallback(() => {
+    setNotificacoes((prev) => {
+      const agora = Date.now();
+      const categoriasParaTocar = new Set<Categoria>();
+      let mudou = false;
+      const atualizada = prev.map((n) => {
+        if (!n.lida && agora - n.ultimoAlerta >= REPETIR_APOS_MS) {
+          categoriasParaTocar.add(n.categoria);
+          mudou = true;
+          return { ...n, ultimoAlerta: agora };
+        }
+        return n;
+      });
+      if (mudou) {
+        categoriasParaTocar.forEach((cat) => tocarSom(cat));
+        salvarNotificacoes(atualizada);
+        return atualizada;
+      }
+      return prev;
+    });
+  }, [tocarSom]);
+
   useEffect(() => {
     setNotificacoes(carregarNotificacoes());
     if (iniciado.current) return;
     iniciado.current = true;
     verificar();
-    const id = setInterval(verificar, INTERVALO_MS);
-    return () => clearInterval(id);
-  }, [verificar]);
+    const idVerificacao = setInterval(verificar, INTERVALO_VERIFICACAO_MS);
+    const idLembrete = setInterval(repetirLembretes, INTERVALO_LEMBRETE_MS);
+    return () => {
+      clearInterval(idVerificacao);
+      clearInterval(idLembrete);
+    };
+  }, [verificar, repetirLembretes]);
 
   const naoLidas = notificacoes.filter((n) => !n.lida).length;
 
   const marcarTodasComoLidas = () => {
     setNotificacoes((prev) => {
       const atualizada = prev.map((n) => ({ ...n, lida: true }));
+      salvarNotificacoes(atualizada);
+      return atualizada;
+    });
+  };
+
+  const abrirNotificacao = (id: string) => {
+    setNotificacoes((prev) => {
+      const atualizada = prev.map((n) => (n.id === id ? { ...n, lida: true } : n));
       salvarNotificacoes(atualizada);
       return atualizada;
     });
@@ -215,12 +281,19 @@ export default function NotificationBell() {
                       style={{ backgroundColor: n.cor }}
                       title={n.contaNickname}
                     />
-                    <a href={CONFIG[n.categoria].href} className="min-w-0 flex-1">
+                    <a
+                      href={CONFIG[n.categoria].href}
+                      onClick={() => abrirNotificacao(n.id)}
+                      className="min-w-0 flex-1"
+                    >
                       <span className="block truncate text-gray-700">
                         {CONFIG[n.categoria].label}
                         {n.quantidade > 1 ? ` (${n.quantidade})` : ""} · {n.contaNickname}
                       </span>
-                      <span className="text-xs text-gray-400">{n.hora}</span>
+                      <span className="text-xs text-gray-400">
+                        {n.hora}
+                        {!n.lida ? " · toca de novo em até 5 min" : ""}
+                      </span>
                     </a>
                     <button
                       onClick={(e) => {
