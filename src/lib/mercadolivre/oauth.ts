@@ -1,6 +1,7 @@
 // Fluxo de autorizacao OAuth do Mercado Livre.
-// Cada uma das 5 contas autoriza o app UMA VEZ, gerando um refresh_token
+// Cada conta ML autoriza o app UMA VEZ, gerando um refresh_token
 // que fica salvo no Supabase (tabela ml_accounts) associado a conta.
+// Nao ha limite fixo de quantas contas podem ser conectadas.
 //
 // Documentacao oficial: developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao
 
