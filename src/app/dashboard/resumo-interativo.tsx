@@ -117,8 +117,16 @@ export default function ResumoInterativo({
   );
 
   const contasParaSomar = contaSelecionada === "todas" ? contas : contas.filter((c) => c.id === contaSelecionada);
+  // A linha usa a cor da conta selecionada. No modo "Consolidado", se so
+  // existir uma conta cadastrada, usa a cor dela mesma (ex: SIXXIS = rosa);
+  // com mais de uma conta somadas, usa uma cor neutra (navy) porque a linha
+  // ali representa a soma de varias lojas, nao uma loja especifica.
   const corLinha =
-    contaSelecionada === "todas" ? "var(--color-sixxis-navy)" : contas.find((c) => c.id === contaSelecionada)?.cor ?? "#64748b";
+    contaSelecionada !== "todas"
+      ? contas.find((c) => c.id === contaSelecionada)?.cor ?? "#64748b"
+      : contas.length === 1
+        ? contas[0].cor
+        : "var(--color-sixxis-navy)";
 
   const dadosGrafico = useMemo(() => {
     return datasAtual.map((diaAtual, i) => {
