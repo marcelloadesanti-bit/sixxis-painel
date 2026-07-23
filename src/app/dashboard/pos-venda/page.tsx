@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getPerguntasNaoRespondidas, type Pergunta } from "@/lib/mercadolivre/questions";
 import { getMensagensNaoLidas, type ConversaNaoLida } from "@/lib/mercadolivre/messages";
 import { getReclamacoesAbertas, type Reclamacao } from "@/lib/mercadolivre/claims";
 import { responderPerguntaAction } from "./actions";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { temAcessoSubsecao } from "@/lib/permissoes";
 
 const formatarDataHora = (iso: string) =>
   new Intl.DateTimeFormat("pt-BR", {
@@ -44,15 +45,13 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 export default async function PosVendaPage() {
+  const { isAdmin, permissoes, podeEditar } = await exigirAcessoSecao("pos_venda");
+
+  const verPerguntas = temAcessoSubsecao(isAdmin, permissoes, "pos_venda", "perguntas");
+  const verMensagens = temAcessoSubsecao(isAdmin, permissoes, "pos_venda", "mensagens");
+  const verReclamacoes = temAcessoSubsecao(isAdmin, permissoes, "pos_venda", "reclamacoes");
+
   const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
 
   const { data: contas } = await supabase
     .from("ml_accounts")
@@ -64,9 +63,15 @@ export default async function PosVendaPage() {
       try {
         const accessToken = await getValidAccessToken(conta.id);
         const [perguntas, mensagens, reclamacoes] = await Promise.all([
-          getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
-          getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
-          getReclamacoesAbertas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
+          verPerguntas
+            ? getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname)
+            : Promise.resolve({ total: 0, perguntas: [] as Pergunta[] }),
+          verMensagens
+            ? getMensagensNaoLidas(accessToken, conta.id, conta.nickname)
+            : Promise.resolve({ conversas: [] as ConversaNaoLida[], totalMensagens: 0 }),
+          verReclamacoes
+            ? getReclamacoesAbertas(accessToken, conta.ml_user_id, conta.id, conta.nickname)
+            : Promise.resolve({ total: 0, reclamacoes: [] as Reclamacao[] }),
         ]);
         return { conta, perguntas, mensagens, reclamacoes, erro: null as string | null };
       } catch (err) {
@@ -105,121 +110,143 @@ export default async function PosVendaPage() {
       </p>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Perguntas não respondidas</p>
-          <p className="text-xl font-bold text-gray-900">{totalPerguntas}</p>
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Conversas com mensagens novas</p>
-          <p className="text-xl font-bold text-gray-900">{totalConversasComPendencia}</p>
-          <p className="text-xs text-gray-400">{totalMensagensNaoLidas} mensagem(ns) não lida(s)</p>
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Reclamações em aberto</p>
-          <p className="text-xl font-bold text-gray-900">{totalReclamacoes}</p>
-        </div>
+        {verPerguntas && (
+          <div className="rounded border border-gray-200 bg-white p-4">
+            <p className="text-xs uppercase text-gray-400">Perguntas não respondidas</p>
+            <p className="text-xl font-bold text-gray-900">{totalPerguntas}</p>
+          </div>
+        )}
+        {verMensagens && (
+          <div className="rounded border border-gray-200 bg-white p-4">
+            <p className="text-xs uppercase text-gray-400">Conversas com mensagens novas</p>
+            <p className="text-xl font-bold text-gray-900">{totalConversasComPendencia}</p>
+            <p className="text-xs text-gray-400">{totalMensagensNaoLidas} mensagem(ns) não lida(s)</p>
+          </div>
+        )}
+        {verReclamacoes && (
+          <div className="rounded border border-gray-200 bg-white p-4">
+            <p className="text-xs uppercase text-gray-400">Reclamações em aberto</p>
+            <p className="text-xl font-bold text-gray-900">{totalReclamacoes}</p>
+          </div>
+        )}
       </div>
 
       {/* Perguntas */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">
-        Perguntas não respondidas ({todasPerguntas.length}
-        {totalPerguntas > todasPerguntas.length ? ` de ${totalPerguntas}` : ""})
-      </h2>
-      {todasPerguntas.length === 0 ? (
-        <p className="mb-8 text-sm text-gray-400">Nenhuma pergunta pendente. 🎉</p>
-      ) : (
-        <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
-          {todasPerguntas.map((p) => (
-            <li key={p.id} className="p-4">
-              <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
-                <span>
-                  {p.compradorNickname ?? (p.compradorId ? `comprador #${p.compradorId}` : "comprador não identificado")}
-                  {" · "}
-                  {p.contaNickname} · anúncio {p.itemId} · {formatarHora(p.dataCriacao)} · {formatarData(p.dataCriacao)}
-                </span>
-              </div>
-              <p className="mb-3 text-sm text-gray-800">{p.texto}</p>
-              <form action={responderPerguntaAction} className="flex items-start gap-2">
-                <input type="hidden" name="contaId" value={p.contaId} />
-                <input type="hidden" name="questionId" value={p.id} />
-                <textarea
-                  name="texto"
-                  required
-                  rows={2}
-                  placeholder="Escreva a resposta..."
-                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                />
-                <button
-                  type="submit"
-                  className="rounded bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
-                >
-                  Responder
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
+      {verPerguntas && (
+        <>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">
+            Perguntas não respondidas ({todasPerguntas.length}
+            {totalPerguntas > todasPerguntas.length ? ` de ${totalPerguntas}` : ""})
+          </h2>
+          {todasPerguntas.length === 0 ? (
+            <p className="mb-8 text-sm text-gray-400">Nenhuma pergunta pendente. 🎉</p>
+          ) : (
+            <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
+              {todasPerguntas.map((p) => (
+                <li key={p.id} className="p-4">
+                  <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
+                    <span>
+                      {p.compradorNickname ?? (p.compradorId ? `comprador #${p.compradorId}` : "comprador não identificado")}
+                      {" · "}
+                      {p.contaNickname} · anúncio {p.itemId} · {formatarHora(p.dataCriacao)} · {formatarData(p.dataCriacao)}
+                    </span>
+                  </div>
+                  <p className="mb-3 text-sm text-gray-800">{p.texto}</p>
+                  {podeEditar ? (
+                    <form action={responderPerguntaAction} className="flex items-start gap-2">
+                      <input type="hidden" name="contaId" value={p.contaId} />
+                      <input type="hidden" name="questionId" value={p.id} />
+                      <textarea
+                        name="texto"
+                        required
+                        rows={2}
+                        placeholder="Escreva a resposta..."
+                        className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="rounded bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
+                      >
+                        Responder
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="text-xs italic text-gray-400">Acesso somente leitura.</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {/* Mensagens */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Mensagens com pendência</h2>
-      {todasConversas.length === 0 ? (
-        <p className="mb-8 text-sm text-gray-400">Nenhuma mensagem pendente. 🎉</p>
-      ) : (
-        <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
-          {todasConversas.map((c) => {
-            const packId = c.resource.split("/packs/")[1]?.split("/")[0];
-            return (
-              <li key={`${c.contaId}-${c.resource}`}>
-                <Link
-                  href={packId ? `/dashboard/pos-venda/mensagens/${packId}?conta=${c.contaId}` : "#"}
-                  className="flex items-center justify-between p-3 text-sm hover:bg-gray-50"
-                >
-                  <div>
-                    <p className="font-medium text-gray-800">{c.contaNickname}</p>
-                    <p className="text-xs text-gray-400">{c.resource} · clique para ver e responder</p>
-                  </div>
-                  <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
-                    {c.quantidade} não lida{c.quantidade > 1 ? "s" : ""}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      {verMensagens && (
+        <>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">Mensagens com pendência</h2>
+          {todasConversas.length === 0 ? (
+            <p className="mb-8 text-sm text-gray-400">Nenhuma mensagem pendente. 🎉</p>
+          ) : (
+            <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
+              {todasConversas.map((c) => {
+                const packId = c.resource.split("/packs/")[1]?.split("/")[0];
+                return (
+                  <li key={`${c.contaId}-${c.resource}`}>
+                    <Link
+                      href={packId ? `/dashboard/pos-venda/mensagens/${packId}?conta=${c.contaId}` : "#"}
+                      className="flex items-center justify-between p-3 text-sm hover:bg-gray-50"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-800">{c.contaNickname}</p>
+                        <p className="text-xs text-gray-400">{c.resource} · clique para ver{podeEditar ? " e responder" : ""}</p>
+                      </div>
+                      <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
+                        {c.quantidade} não lida{c.quantidade > 1 ? "s" : ""}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       {/* Reclamações */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">
-        Reclamações em aberto ({todasReclamacoes.length}
-        {totalReclamacoes > todasReclamacoes.length ? ` de ${totalReclamacoes}` : ""})
-      </h2>
-      {todasReclamacoes.length === 0 ? (
-        <p className="mb-8 text-sm text-gray-400">Nenhuma reclamação em aberto. 🎉</p>
-      ) : (
-        <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
-          {todasReclamacoes.map((r) => (
-            <li key={r.id}>
-              <Link
-                href={`/dashboard/pos-venda/reclamacoes/${r.id}?conta=${r.contaId}`}
-                className="block p-3 text-sm hover:bg-gray-50"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-gray-800">
-                    {r.contaNickname} · pedido {r.resourceId}
-                  </span>
-                  <span className="rounded-full bg-yellow-50 px-2 py-1 text-xs font-medium text-yellow-700">
-                    {r.etapa}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400">
-                  {REASON_LABELS[r.tipo] ?? r.tipo} · aberta em {formatarDataHora(r.dataCriacao)} ·
-                  atualizada em {formatarDataHora(r.ultimaAtualizacao)} · clique para ver conversa e agir →
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      {verReclamacoes && (
+        <>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">
+            Reclamações em aberto ({todasReclamacoes.length}
+            {totalReclamacoes > todasReclamacoes.length ? ` de ${totalReclamacoes}` : ""})
+          </h2>
+          {todasReclamacoes.length === 0 ? (
+            <p className="mb-8 text-sm text-gray-400">Nenhuma reclamação em aberto. 🎉</p>
+          ) : (
+            <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
+              {todasReclamacoes.map((r) => (
+                <li key={r.id}>
+                  <Link
+                    href={`/dashboard/pos-venda/reclamacoes/${r.id}?conta=${r.contaId}`}
+                    className="block p-3 text-sm hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-800">
+                        {r.contaNickname} · pedido {r.resourceId}
+                      </span>
+                      <span className="rounded-full bg-yellow-50 px-2 py-1 text-xs font-medium text-yellow-700">
+                        {r.etapa}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {REASON_LABELS[r.tipo] ?? r.tipo} · aberta em {formatarDataHora(r.dataCriacao)} ·
+                      atualizada em {formatarDataHora(r.ultimaAtualizacao)} · clique para ver conversa{podeEditar ? " e agir" : ""} →
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       {resultados.some((r) => r.erro) && (

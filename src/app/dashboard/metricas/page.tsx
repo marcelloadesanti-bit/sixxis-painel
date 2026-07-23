@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getTotaisPorStatus, periodoDeDatas, type PeriodoISO } from "@/lib/mercadolivre/orders";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -43,6 +44,7 @@ export default async function MetricasPage({
 }: {
   searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
 }) {
+  await exigirAcessoSecao("vendas");
   const params = await searchParams;
   const supabase = await createClient();
 

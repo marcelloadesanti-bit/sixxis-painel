@@ -1,4 +1,7 @@
-export default function FaturamentoPage() {
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+
+export default async function FaturamentoPage() {
+  await exigirAcessoSecao("faturamento");
   return (
     <div className="mx-auto max-w-6xl p-6">
       <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Faturamento</h1>

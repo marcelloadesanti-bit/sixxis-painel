@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getConversaPack } from "@/lib/mercadolivre/messages";
 import { enviarMensagemPackAction, marcarComoLidoAction } from "../../actions";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarDataHora = (iso: string | null) =>
   iso
@@ -24,6 +25,7 @@ export default async function ConversaPackPage({
   params: Promise<{ packId: string }>;
   searchParams: Promise<{ conta?: string }>;
 }) {
+  const { podeEditar } = await exigirAcessoSecao("pos_venda", "mensagens");
   const { packId } = await params;
   const { conta: contaId } = await searchParams;
 
@@ -107,7 +109,7 @@ export default async function ConversaPackPage({
             )}
           </div>
 
-          {compradorId ? (
+          {compradorId && podeEditar ? (
             <form action={enviarMensagemPackAction} className="flex items-start gap-2">
               <input type="hidden" name="contaId" value={contaId} />
               <input type="hidden" name="packId" value={packId} />
@@ -127,6 +129,8 @@ export default async function ConversaPackPage({
                 Enviar
               </button>
             </form>
+          ) : !podeEditar ? (
+            <p className="text-xs italic text-gray-400">Acesso somente leitura.</p>
           ) : (
             <p className="text-xs text-gray-400">
               Não foi possível identificar o comprador desta conversa para responder.

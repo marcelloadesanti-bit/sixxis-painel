@@ -5,6 +5,7 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getPedidoDetalhe, getEnvioPedido } from "@/lib/mercadolivre/orders";
 import ConfirmButton from "../../confirm-button";
 import { enviarMensagemCompradorAction, atualizarStatusEnvioAction } from "../actions";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarMoeda = (valor: number, moeda: string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
@@ -38,6 +39,7 @@ export default async function DetalhePedidoPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ conta?: string }>;
 }) {
+  const { podeEditar } = await exigirAcessoSecao("vendas");
   const { id } = await params;
   const { conta: contaId } = await searchParams;
   const orderId = Number(id);
@@ -138,7 +140,7 @@ export default async function DetalhePedidoPage({
                 Modo: {envio.modo === "me1" ? "Envio autogerenciado (ME1)" : envio.modo.toUpperCase()}
               </p>
 
-              {envio.modo === "me1" && envio.status !== "delivered" && envio.status !== "not_delivered" && (
+              {envio.modo === "me1" && envio.status !== "delivered" && envio.status !== "not_delivered" && podeEditar && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   <form action={atualizarStatusEnvioAction}>
                     <input type="hidden" name="contaId" value={contaId} />
@@ -189,7 +191,7 @@ export default async function DetalhePedidoPage({
           )}
 
           <h2 className="mb-2 text-sm font-semibold text-gray-700">Mensagem ao comprador</h2>
-          {pedido.packId && pedido.comprador ? (
+          {pedido.packId && pedido.comprador && podeEditar ? (
             <form action={enviarMensagemCompradorAction} className="flex items-start gap-2">
               <input type="hidden" name="contaId" value={contaId} />
               <input type="hidden" name="orderId" value={orderId} />
@@ -210,6 +212,8 @@ export default async function DetalhePedidoPage({
                 Enviar
               </button>
             </form>
+          ) : !podeEditar ? (
+            <p className="text-xs italic text-gray-400">Acesso somente leitura.</p>
           ) : (
             <p className="text-xs text-gray-400">Não foi possível identificar a conversa deste pedido.</p>
           )}

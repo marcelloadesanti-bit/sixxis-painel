@@ -3,26 +3,33 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { secoesVisiveis, type PermissoesUsuario } from "@/lib/permissoes";
 
 type ItemMenu = {
   href: string;
   label: string;
   icon: string;
-  badge?: string;
 };
 
-const ITENS: ItemMenu[] = [
-  { href: "/dashboard", label: "Resumo", icon: "🏠" },
-  { href: "/dashboard/vendas", label: "Vendas", icon: "🏷️" },
-  { href: "/dashboard/publicidade", label: "Publicidade", icon: "📣" },
-  { href: "/dashboard/promocoes", label: "Central de promoções", icon: "🏷" },
-  { href: "/dashboard/pos-venda", label: "Pós-venda", icon: "📦" },
-  { href: "/dashboard/faturamento", label: "Faturamento", icon: "🧾" },
-];
-
-export default function AppSidebar() {
+export default function AppSidebar({
+  isAdmin,
+  permissoes,
+}: {
+  isAdmin: boolean;
+  permissoes: PermissoesUsuario;
+}) {
   const [aberto, setAberto] = useState(false);
   const pathname = usePathname();
+
+  const itensSecoes: ItemMenu[] = secoesVisiveis(isAdmin, permissoes).map((s) => ({
+    href: s.href,
+    label: s.label,
+    icon: s.icon,
+  }));
+
+  const itens: ItemMenu[] = isAdmin
+    ? [...itensSecoes, { href: "/dashboard/configuracoes", label: "Configurações", icon: "⚙️" }]
+    : itensSecoes;
 
   const ativo = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname?.startsWith(href);
@@ -38,7 +45,7 @@ export default function AppSidebar() {
         >
           ☰
         </button>
-        {ITENS.map((item) => (
+        {itens.map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -71,7 +78,7 @@ export default function AppSidebar() {
               </button>
             </div>
             <ul className="flex flex-col gap-1">
-              {ITENS.map((item) => (
+              {itens.map((item) => (
                 <li key={item.href}>
                   <Link
                     href={item.href}

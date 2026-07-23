@@ -5,6 +5,7 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getClaimDetalhe, getMensagensClaim } from "@/lib/mercadolivre/claims";
 import ConfirmButton from "../../../confirm-button";
 import { enviarMensagemReclamacaoAction, abrirDisputaAction, reembolsarAction } from "../../actions";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarDataHora = (iso: string) =>
   new Intl.DateTimeFormat("pt-BR", {
@@ -35,6 +36,7 @@ export default async function DetalheReclamacaoPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ conta?: string }>;
 }) {
+  const { podeEditar } = await exigirAcessoSecao("pos_venda", "reclamacoes");
   const { id } = await params;
   const { conta: contaId } = await searchParams;
   const claimId = Number(id);
@@ -114,7 +116,7 @@ export default async function DetalheReclamacaoPage({
             )}
           </div>
 
-          {(acoes.has("refund") || acoes.has("open_dispute")) && (
+          {podeEditar && (acoes.has("refund") || acoes.has("open_dispute")) && (
             <div className="mb-6 flex flex-wrap gap-2">
               {acoes.has("refund") && (
                 <form action={reembolsarAction}>
@@ -165,7 +167,7 @@ export default async function DetalheReclamacaoPage({
             )}
           </div>
 
-          {opcoesDestinatario.length > 0 ? (
+          {opcoesDestinatario.length > 0 && podeEditar ? (
             <form action={enviarMensagemReclamacaoAction} className="flex items-start gap-2">
               <input type="hidden" name="contaId" value={contaId} />
               <input type="hidden" name="claimId" value={claimId} />
@@ -194,6 +196,8 @@ export default async function DetalheReclamacaoPage({
                 Enviar
               </button>
             </form>
+          ) : !podeEditar ? (
+            <p className="text-xs italic text-gray-400">Acesso somente leitura.</p>
           ) : (
             <p className="text-xs text-gray-400">
               Não há ação de envio de mensagem disponível para esta reclamação no momento.

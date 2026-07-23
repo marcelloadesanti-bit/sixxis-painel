@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getAnunciantes, getCampanhas, type Campanha } from "@/lib/mercadolivre/ads";
 import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarMoeda = (valor: number, moeda: string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
@@ -19,6 +20,7 @@ export default async function PublicidadePage({
 }: {
   searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
 }) {
+  await exigirAcessoSecao("publicidade");
   const params = await searchParams;
   const supabase = await createClient();
 

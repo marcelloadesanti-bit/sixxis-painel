@@ -20,6 +20,7 @@ import {
 } from "@/lib/date-utils";
 import ResumoInterativo from "./resumo-interativo";
 import { COR_PADRAO } from "@/lib/account-colors";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
   new Intl.NumberFormat("pt-BR", {
@@ -32,6 +33,7 @@ export default async function ResumoPage({
 }: {
   searchParams: Promise<{ periodo?: string; de?: string; ate?: string; conectado?: string; erro?: string }>;
 }) {
+  await exigirAcessoSecao("resumo");
   const params = await searchParams;
   const supabase = await createClient();
 

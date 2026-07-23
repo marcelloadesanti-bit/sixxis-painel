@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getPromocoesVendedor, labelTipoPromocao, type Promocao } from "@/lib/mercadolivre/promotions";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarData = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso)) : "—";
@@ -14,6 +15,7 @@ const STATUS_LABELS: Record<string, { label: string; cor: string }> = {
 };
 
 export default async function PromocoesPage() {
+  await exigirAcessoSecao("promocoes");
   const supabase = await createClient();
 
   const {
