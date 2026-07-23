@@ -145,3 +145,53 @@ export async function getResumoVendas(
 
   return { totalPedidos, valorSomado, amostraParcial: cortado, moeda };
 }
+
+// Versao leve de getVendas: soma quantidade e valor de pedidos por status,
+// sem montar a lista detalhada de pedidos (usado nos cards de metricas).
+export async function getTotaisPorStatus(
+  accessToken: string,
+  mlUserId: number,
+  periodo: PeriodoISO,
+  status: "paid" | "cancelled"
+): Promise<{ quantidade: number; valor: number; moeda: string | null }> {
+  let offset = 0;
+  let totalNaApi = 0;
+  let quantidadeContada = 0;
+  let valor = 0;
+  let moeda: string | null = null;
+
+  while (true) {
+    const params = new URLSearchParams({
+      seller: String(mlUserId),
+      "order.status": status,
+      "order.date_created.from": periodo.desde,
+      "order.date_created.to": periodo.ate,
+      limit: String(LIMITE_POR_PAGINA),
+      offset: String(offset),
+    });
+
+    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Falha ao buscar pedidos (${status}): ${res.status}`);
+    }
+
+    const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
+    totalNaApi = data.paging.total;
+
+    for (const p of data.results) {
+      valor += p.total_amount ?? 0;
+      if (!moeda) moeda = p.currency_id;
+      quantidadeContada++;
+    }
+
+    offset += LIMITE_POR_PAGINA;
+    if (offset >= totalNaApi || offset >= TETO_PEDIDOS || data.results.length === 0) {
+      break;
+    }
+  }
+
+  return { quantidade: totalNaApi, valor, moeda };
+}

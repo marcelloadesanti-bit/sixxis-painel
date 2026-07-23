@@ -1,30 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getResumoVendas } from "@/lib/mercadolivre/orders";
 import LogoutButton from "./logout-button";
-
-type ContaComResumo = {
-  id: string;
-  ml_user_id: number;
-  nickname: string;
-  site_id: string;
-  created_at: string;
-  vendas?: {
-    totalPedidos: number;
-    valorSomado: number;
-    amostraParcial: boolean;
-    moeda: string | null;
-  };
-  erroVendas?: string;
-};
-
-const formatarMoeda = (valor: number, moeda: string | null) =>
-  new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: moeda ?? "BRL",
-  }).format(valor);
 
 export default async function DashboardPage({
   searchParams,
@@ -48,38 +25,12 @@ export default async function DashboardPage({
     .eq("id", user.id)
     .maybeSingle();
 
-  const { data: contasBase } = await supabase
+  const { data: contas } = await supabase
     .from("ml_accounts")
     .select("id, ml_user_id, nickname, site_id, created_at")
     .order("created_at", { ascending: true });
 
   const isAdmin = profile?.role === "admin";
-
-  // Busca o resumo de vendas (ultimos 30 dias) de cada conta em paralelo.
-  // Se uma conta falhar (token invalido, API fora do ar, etc.), as demais
-  // continuam funcionando normalmente.
-  const contas: ContaComResumo[] = await Promise.all(
-    (contasBase ?? []).map(async (conta) => {
-      try {
-        const accessToken = await getValidAccessToken(conta.id);
-        const vendas = await getResumoVendas(accessToken, conta.ml_user_id);
-        return { ...conta, vendas };
-      } catch (err) {
-        console.error(`Erro ao buscar vendas da conta ${conta.nickname}:`, err);
-        return { ...conta, erroVendas: "Não foi possível carregar as vendas agora." };
-      }
-    })
-  );
-
-  const totalPedidosConsolidado = contas.reduce(
-    (soma, c) => soma + (c.vendas?.totalPedidos ?? 0),
-    0
-  );
-  const totalValorConsolidado = contas.reduce(
-    (soma, c) => soma + (c.vendas?.valorSomado ?? 0),
-    0
-  );
-  const moedaConsolidada = contas.find((c) => c.vendas?.moeda)?.vendas?.moeda ?? "BRL";
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
@@ -105,32 +56,36 @@ export default async function DashboardPage({
         <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">{params.erro}</p>
       )}
 
-      {contas.length > 0 && (
-        <div className="mb-8">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded border border-gray-200 p-4">
-              <p className="text-xs uppercase text-gray-400">Pedidos pagos (30 dias)</p>
-              <p className="text-2xl font-bold text-gray-900">{totalPedidosConsolidado}</p>
-            </div>
-            <div className="rounded border border-gray-200 p-4">
-              <p className="text-xs uppercase text-gray-400">Valor vendido (30 dias)</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatarMoeda(totalValorConsolidado, moedaConsolidada)}
-              </p>
-            </div>
-          </div>
+      {contas && contas.length > 0 && (
+        <div className="mb-8 grid grid-cols-2 gap-4">
+          <Link
+            href="/dashboard/metricas"
+            className="rounded border border-gray-200 p-4 hover:bg-gray-50"
+          >
+            <p className="text-sm font-semibold text-[var(--color-sixxis-navy)]">
+              Métricas →
+            </p>
+            <p className="text-xs text-gray-500">
+              Faturamento bruto, pedidos, cancelados e devolvidos, com filtro de período
+            </p>
+          </Link>
           <Link
             href="/dashboard/vendas"
-            className="mt-2 inline-block text-sm text-[var(--color-sixxis-blue)] underline"
+            className="rounded border border-gray-200 p-4 hover:bg-gray-50"
           >
-            Ver relatório de vendas com filtro de datas →
+            <p className="text-sm font-semibold text-[var(--color-sixxis-navy)]">
+              Extrato de vendas →
+            </p>
+            <p className="text-xs text-gray-500">
+              Lista detalhada de pedidos por conta, com filtro de datas
+            </p>
           </Link>
         </div>
       )}
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-800">
-          Contas Mercado Livre conectadas ({contas.length})
+          Contas Mercado Livre conectadas ({contas?.length ?? 0})
         </h2>
         {isAdmin && (
           <a
@@ -142,7 +97,7 @@ export default async function DashboardPage({
         )}
       </div>
 
-      {contas.length === 0 ? (
+      {!contas || contas.length === 0 ? (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
           Nenhuma conta Mercado Livre conectada ainda.
           {isAdmin && " Clique em \"Conectar conta\" para autorizar a primeira."}
@@ -156,16 +111,6 @@ export default async function DashboardPage({
                 <p className="text-xs text-gray-500">
                   ID {conta.ml_user_id} · Site {conta.site_id}
                 </p>
-                {conta.vendas && (
-                  <p className="mt-1 text-xs text-gray-600">
-                    {conta.vendas.totalPedidos} pedidos pagos (30 dias) ·{" "}
-                    {formatarMoeda(conta.vendas.valorSomado, conta.vendas.moeda)}
-                    {conta.vendas.amostraParcial && " (parcial)"}
-                  </p>
-                )}
-                {conta.erroVendas && (
-                  <p className="mt-1 text-xs text-red-500">{conta.erroVendas}</p>
-                )}
               </div>
               <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
                 Conectada
@@ -179,12 +124,7 @@ export default async function DashboardPage({
         <div className="rounded border border-gray-100 p-4">Anúncios (em breve)</div>
         <div className="rounded border border-gray-100 p-4">Mercado Ads (em breve)</div>
         <div className="rounded border border-gray-100 p-4">Perguntas/Mensagens (em breve)</div>
-        <Link
-          href="/dashboard/vendas"
-          className="rounded border border-gray-100 p-4 text-[var(--color-sixxis-blue)] hover:bg-gray-50"
-        >
-          Relatórios de vendas →
-        </Link>
+        <div className="rounded border border-gray-100 p-4">Faturamento (por último)</div>
       </div>
     </main>
   );
