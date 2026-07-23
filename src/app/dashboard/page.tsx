@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getTotaisPorStatus, getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
+import { getPerguntasNaoRespondidas } from "@/lib/mercadolivre/questions";
+import { getMensagensNaoLidas } from "@/lib/mercadolivre/messages";
 import {
   PRESETS,
   type PresetKey,
@@ -66,14 +68,17 @@ export default async function ResumoPage({
     (contas ?? []).map(async (conta) => {
       try {
         const accessToken = await getValidAccessToken(conta.id);
-        const [pagas, canceladas, visitas, produtos, pagasAnterior, visitasAnterior] = await Promise.all([
-          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "paid"),
-          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "cancelled"),
-          getTotalVisitas(accessToken, conta.ml_user_id, de, ate),
-          getProdutosMaisVendidos(accessToken, conta.ml_user_id, periodoAtual),
-          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
-          getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
-        ]);
+        const [pagas, canceladas, visitas, produtos, pagasAnterior, visitasAnterior, perguntas, mensagens] =
+          await Promise.all([
+            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "paid"),
+            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "cancelled"),
+            getTotalVisitas(accessToken, conta.ml_user_id, de, ate),
+            getProdutosMaisVendidos(accessToken, conta.ml_user_id, periodoAtual),
+            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
+            getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
+            getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
+            getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
+          ]);
         return {
           conta,
           pagas,
@@ -82,6 +87,8 @@ export default async function ResumoPage({
           produtos,
           pagasAnterior,
           visitasAnterior,
+          perguntas,
+          mensagens,
           erro: null as string | null,
         };
       } catch (err) {
@@ -94,6 +101,8 @@ export default async function ResumoPage({
           produtos: [],
           pagasAnterior: null,
           visitasAnterior: 0,
+          perguntas: { total: 0, perguntas: [] },
+          mensagens: { conversas: [], totalMensagens: 0 },
           erro: "Falha ao buscar dados desta conta.",
         };
       }
@@ -111,6 +120,10 @@ export default async function ResumoPage({
   const vendasAnteriores = resultados.reduce((s, r) => s + (r.pagasAnterior?.quantidade ?? 0), 0);
   const visitasAnteriores = resultados.reduce((s, r) => s + r.visitasAnterior, 0);
   const conversaoAnterior = visitasAnteriores > 0 ? (vendasAnteriores / visitasAnteriores) * 100 : 0;
+
+  const perguntasNaoRespondidas = resultados.reduce((s, r) => s + r.perguntas.total, 0);
+  const mensagensNovas = resultados.reduce((s, r) => s + r.mensagens.conversas.length, 0);
+  const mensagensNaoRespondidas = resultados.reduce((s, r) => s + r.mensagens.totalMensagens, 0);
 
   // Produtos mais vendidos consolidado entre todas as contas (chave por
   // conta+item, ja que o mesmo id de anuncio pode existir em contas diferentes).
@@ -250,24 +263,21 @@ export default async function ResumoPage({
           className="rounded border border-gray-200 bg-white p-4 hover:bg-gray-50"
         >
           <p className="text-xs uppercase text-gray-400">Perguntas não respondidas</p>
-          <p className="text-xl font-bold text-gray-400">—</p>
-          <p className="text-xs text-gray-400">em desenvolvimento</p>
+          <p className="text-xl font-bold text-gray-900">{perguntasNaoRespondidas}</p>
         </Link>
         <Link
           href="/dashboard/pos-venda"
           className="rounded border border-gray-200 bg-white p-4 hover:bg-gray-50"
         >
-          <p className="text-xs uppercase text-gray-400">Mensagens novas</p>
-          <p className="text-xl font-bold text-gray-400">—</p>
-          <p className="text-xs text-gray-400">em desenvolvimento</p>
+          <p className="text-xs uppercase text-gray-400">Conversas com mensagens novas</p>
+          <p className="text-xl font-bold text-gray-900">{mensagensNovas}</p>
         </Link>
         <Link
           href="/dashboard/pos-venda"
           className="rounded border border-gray-200 bg-white p-4 hover:bg-gray-50"
         >
           <p className="text-xs uppercase text-gray-400">Mensagens não respondidas</p>
-          <p className="text-xl font-bold text-gray-400">—</p>
-          <p className="text-xs text-gray-400">em desenvolvimento</p>
+          <p className="text-xl font-bold text-gray-900">{mensagensNaoRespondidas}</p>
         </Link>
       </div>
 
