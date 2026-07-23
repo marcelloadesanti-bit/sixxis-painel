@@ -45,6 +45,7 @@ type PedidoApi = {
   date_created: string;
   status: string;
   total_amount: number;
+  paid_amount?: number;
   currency_id: string;
   buyer?: { nickname?: string };
   order_items?: { item?: { title?: string }; quantity?: number }[];
@@ -91,7 +92,9 @@ export async function getVendas(
         id: p.id,
         dataCriacao: p.date_created,
         status: p.status,
-        valor: p.total_amount ?? 0,
+        // paid_amount = total_amount + frete pago pelo comprador; e o que a
+        // plataforma do Mercado Livre chama de "Vendas brutas".
+        valor: p.paid_amount ?? p.total_amount ?? 0,
         moeda: p.currency_id,
         comprador: p.buyer?.nickname ?? "—",
         produto: p.order_items?.[0]?.item?.title
@@ -182,7 +185,7 @@ export async function getTotaisPorStatus(
     totalNaApi = data.paging.total;
 
     for (const p of data.results) {
-      valor += p.total_amount ?? 0;
+      valor += p.paid_amount ?? p.total_amount ?? 0;
       if (!moeda) moeda = p.currency_id;
       quantidadeContada++;
     }
