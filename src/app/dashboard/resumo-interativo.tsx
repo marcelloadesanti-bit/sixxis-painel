@@ -38,13 +38,19 @@ const METRICAS: { key: MetricaKey; label: string }[] = [
   { key: "conversao", label: "Conversão" },
 ];
 
+// Gera a lista de datas (YYYY-MM-DD) entre de/ate, tratando as strings como
+// datas de calendario "puras" (sem hora/timezone), via Date.UTC - evitando o
+// bug classico de "new Date(str + 'T00:00:00')" mudar de dia dependendo do
+// fuso horario do navegador de quem estiver vendo o painel.
 function listarDatas(de: string, ate: string): string[] {
+  const [anoDe, mesDe, diaDe] = de.split("-").map(Number);
+  const [anoAte, mesAte, diaAte] = ate.split("-").map(Number);
   const datas: string[] = [];
-  const cursor = new Date(de + "T00:00:00");
-  const fim = new Date(ate + "T00:00:00");
-  while (cursor <= fim) {
+  const cursor = new Date(Date.UTC(anoDe, mesDe - 1, diaDe));
+  const fim = new Date(Date.UTC(anoAte, mesAte - 1, diaAte));
+  while (cursor.getTime() <= fim.getTime()) {
     datas.push(cursor.toISOString().slice(0, 10));
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return datas;
 }
