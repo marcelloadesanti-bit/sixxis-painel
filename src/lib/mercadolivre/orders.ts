@@ -312,7 +312,9 @@ export async function getPedidoDetalhe(accessToken: string, orderId: number): Pr
     id: o.id,
     status: o.status,
     dataCriacao: o.date_created,
-    packId: o.pack_id ? String(o.pack_id) : null,
+    // Se pack_id vier nulo, a doc do ML orienta usar o order_id no lugar,
+    // mantendo o recurso /packs na chamada (pedidos sem carrinho compartilhado).
+    packId: o.pack_id ? String(o.pack_id) : String(o.id),
     totalPago: o.paid_amount ?? o.total_amount ?? 0,
     moeda: o.currency_id,
     comprador: o.buyer ? { id: o.buyer.id, nickname: o.buyer.nickname } : null,
