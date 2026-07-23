@@ -85,10 +85,12 @@ export default async function MetricasPage({
     })
   );
 
-  const faturamentoBruto = resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0);
-  const pedidosFeitos = resultados.reduce((s, r) => s + (r.pagas?.quantidade ?? 0), 0);
+  // "Faturamento bruto" no painel real do ML soma pedidos pagos + cancelados
+  // do período (o cancelamento é informativo, não é descontado do bruto).
   const pedidosCancelados = resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
   const valorCancelado = resultados.reduce((s, r) => s + (r.canceladas?.valor ?? 0), 0);
+  const faturamentoBruto = resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0) + valorCancelado;
+  const pedidosFeitos = resultados.reduce((s, r) => s + (r.pagas?.quantidade ?? 0), 0) + pedidosCancelados;
   const moeda = resultados.find((r) => r.pagas?.moeda)?.pagas?.moeda ?? "BRL";
   const ticketMedio = pedidosFeitos > 0 ? faturamentoBruto / pedidosFeitos : 0;
 

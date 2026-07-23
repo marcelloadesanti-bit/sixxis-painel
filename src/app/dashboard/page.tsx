@@ -68,13 +68,14 @@ export default async function ResumoPage({
     (contas ?? []).map(async (conta) => {
       try {
         const accessToken = await getValidAccessToken(conta.id);
-        const [pagas, canceladas, visitas, produtos, pagasAnterior, visitasAnterior, perguntas, mensagens] =
+        const [pagas, canceladas, visitas, produtos, pagasAnterior, canceladasAnterior, visitasAnterior, perguntas, mensagens] =
           await Promise.all([
             getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "paid"),
             getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAtual, "cancelled"),
             getTotalVisitas(accessToken, conta.ml_user_id, de, ate),
             getProdutosMaisVendidos(accessToken, conta.ml_user_id, periodoAtual),
             getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
+            getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "cancelled"),
             getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
             getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
             getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
@@ -86,6 +87,7 @@ export default async function ResumoPage({
           visitas,
           produtos,
           pagasAnterior,
+          canceladasAnterior,
           visitasAnterior,
           perguntas,
           mensagens,
@@ -100,6 +102,7 @@ export default async function ResumoPage({
           visitas: 0,
           produtos: [],
           pagasAnterior: null,
+          canceladasAnterior: null,
           visitasAnterior: 0,
           perguntas: { total: 0, perguntas: [] },
           mensagens: { conversas: [], totalMensagens: 0 },
@@ -109,15 +112,27 @@ export default async function ResumoPage({
     })
   );
 
-  const faturamentoTotal = resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0);
-  const vendasTotais = resultados.reduce((s, r) => s + (r.pagas?.quantidade ?? 0), 0);
+  // "Vendas brutas" no painel real do Mercado Livre soma pedidos pagos +
+  // pedidos cancelados no período (o cancelamento é informativo, não é
+  // descontado do total bruto). Validado batendo com o painel real: usar só
+  // pedidos pagos ficava ~4% abaixo do valor mostrado pela Meli.
+  const faturamentoTotal =
+    resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0) +
+    resultados.reduce((s, r) => s + (r.canceladas?.valor ?? 0), 0);
+  const vendasTotais =
+    resultados.reduce((s, r) => s + (r.pagas?.quantidade ?? 0), 0) +
+    resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
   const canceladosTotal = resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
   const visitasTotais = resultados.reduce((s, r) => s + r.visitas, 0);
   const moeda = resultados.find((r) => r.pagas?.moeda)?.pagas?.moeda ?? "BRL";
   const conversao = visitasTotais > 0 ? (vendasTotais / visitasTotais) * 100 : 0;
 
-  const faturamentoAnterior = resultados.reduce((s, r) => s + (r.pagasAnterior?.valor ?? 0), 0);
-  const vendasAnteriores = resultados.reduce((s, r) => s + (r.pagasAnterior?.quantidade ?? 0), 0);
+  const faturamentoAnterior =
+    resultados.reduce((s, r) => s + (r.pagasAnterior?.valor ?? 0), 0) +
+    resultados.reduce((s, r) => s + (r.canceladasAnterior?.valor ?? 0), 0);
+  const vendasAnteriores =
+    resultados.reduce((s, r) => s + (r.pagasAnterior?.quantidade ?? 0), 0) +
+    resultados.reduce((s, r) => s + (r.canceladasAnterior?.quantidade ?? 0), 0);
   const visitasAnteriores = resultados.reduce((s, r) => s + r.visitasAnterior, 0);
   const conversaoAnterior = visitasAnteriores > 0 ? (vendasAnteriores / visitasAnteriores) * 100 : 0;
 
@@ -205,12 +220,12 @@ export default async function ResumoPage({
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div className="rounded border border-t-4 border-t-[var(--color-sixxis-navy)] border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Faturamento total</p>
+          <p className="text-xs uppercase text-gray-400">Vendas brutas</p>
           <p className="text-xl font-bold text-gray-900">{formatarMoeda(faturamentoTotal, moeda)}</p>
           <Variacao pct={variacaoPercentual(faturamentoTotal, faturamentoAnterior)} />
         </div>
         <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Vendas totais</p>
+          <p className="text-xs uppercase text-gray-400">Quantidade de vendas</p>
           <p className="text-xl font-bold text-gray-900">{vendasTotais}</p>
           <Variacao pct={variacaoPercentual(vendasTotais, vendasAnteriores)} />
         </div>
