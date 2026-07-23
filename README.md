@@ -1,9 +1,10 @@
 # Painel Sixxis — Gestão Unificada Mercado Livre (+ Amazon depois)
 
-Ferramenta interna e exclusiva da Sixxis para gerir 5 contas do Mercado Livre
-em um só lugar: anúncios, publicidade (Mercado Ads), vendas, perguntas,
-mensagens, relatórios, market share e análise de concorrência. Amazon entra
-como Fase 2. Sem gestão de afiliados por enquanto.
+Ferramenta interna e exclusiva da Sixxis para gerir contas do Mercado Livre
+em um só lugar (sem limite fixo de quantas contas — hoje 5, podendo crescer):
+anúncios, publicidade (Mercado Ads), vendas, perguntas, mensagens, relatórios,
+market share e análise de concorrência. Amazon entra como Fase 2. Sem gestão
+de afiliados por enquanto.
 
 ## Stack
 
@@ -30,11 +31,16 @@ como Fase 2. Sem gestão de afiliados por enquanto.
 - [x] Aplicação registrada no Mercado Livre Developers (Client ID/Secret configurados na Vercel)
 - [x] Projeto Supabase real criado, com tabelas `profiles` (usuários/papéis admin-colaborador)
       e `ml_accounts` (contas ML conectadas), RLS habilitado
-- [ ] Tela de login/cadastro do painel (Supabase Auth)
-- [ ] Primeira conta ML autorizada de verdade (fluxo OAuth completo salvando token no Supabase)
+- [x] Tela de login/cadastro do painel (Supabase Auth), primeiro cadastro vira admin
+- [x] Fluxo OAuth completo (`/api/mercadolivre/connect` + `/api/mercadolivre/callback`
+      com proteção CSRF via state), salvando token, nickname e site_id em `ml_accounts`
+- [x] Dashboard inicial com lista de contas ML conectadas e botão para conectar novas
+- [x] Primeira conta ML real autorizada e salva com sucesso em produção
 - [ ] Rota de webhook do Mercado Livre (`/api/mercadolivre/webhook`) implementada
-- [ ] Dashboard consolidado e individual (Fase 1 do roadmap)
+- [ ] Renovação automática de token (refresh_token) antes de expirar
+- [ ] Dashboard consolidado e individual com métricas reais (Fase 1 do roadmap)
 - [ ] Central de perguntas e mensagens unificada (Fase 1)
+- [ ] Gestão de anúncios e Mercado Ads (Fase 1)
 
 Ver o roadmap completo no documento de escopo original (`saas_mercado_livre_blueprint.docx`).
 
@@ -71,10 +77,10 @@ Duas tabelas criadas até agora:
 
 ## Próximos passos (retomar por aqui)
 
-1. Criar a tela de login/cadastro (Supabase Auth) — primeiro cadastro vira admin.
-2. Completar a rota `/api/mercadolivre/callback` para salvar o token recebido
-   na tabela `ml_accounts` (hoje ela só troca o code por token e loga no console).
-3. Testar o fluxo OAuth do início ao fim com uma das 5 contas ML.
-4. Implementar `/api/mercadolivre/webhook` para receber notificações em tempo real.
-5. Construir o dashboard consolidado e por conta (Fase 1 do escopo).
-6. Construir a central única de perguntas e mensagens (Fase 1 do escopo).
+1. Conectar as demais contas ML quando for conveniente (sem prazo, sem limite técnico).
+2. Implementar `/api/mercadolivre/webhook` para receber notificações em tempo real.
+3. Implementar renovação automática de `refresh_token` (expira em poucas horas).
+4. Buscar e exibir pedidos/vendas reais por conta e consolidado (Fase 1).
+5. Construir a central única de perguntas e mensagens (Fase 1).
+6. Construir gestão de anúncios e Mercado Ads (Fase 1).
+7. Relatórios (fechamento mensal, histórico, market share, concorrência).
