@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
@@ -148,23 +149,27 @@ export default async function PosVendaPage() {
         <p className="mb-8 text-sm text-gray-400">Nenhuma mensagem pendente. 🎉</p>
       ) : (
         <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
-          {todasConversas.map((c) => (
-            <li key={`${c.contaId}-${c.resource}`} className="flex items-center justify-between p-3 text-sm">
-              <div>
-                <p className="font-medium text-gray-800">{c.contaNickname}</p>
-                <p className="text-xs text-gray-400">{c.resource}</p>
-              </div>
-              <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
-                {c.quantidade} não lida{c.quantidade > 1 ? "s" : ""}
-              </span>
-            </li>
-          ))}
+          {todasConversas.map((c) => {
+            const packId = c.resource.split("/packs/")[1]?.split("/")[0];
+            return (
+              <li key={`${c.contaId}-${c.resource}`}>
+                <Link
+                  href={packId ? `/dashboard/pos-venda/mensagens/${packId}?conta=${c.contaId}` : "#"}
+                  className="flex items-center justify-between p-3 text-sm hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="font-medium text-gray-800">{c.contaNickname}</p>
+                    <p className="text-xs text-gray-400">{c.resource} · clique para ver e responder</p>
+                  </div>
+                  <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
+                    {c.quantidade} não lida{c.quantidade > 1 ? "s" : ""}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
-      <p className="mb-8 text-xs text-gray-400">
-        Responder mensagens ainda só é possível diretamente no Mercado Livre — a resposta por aqui
-        está em desenvolvimento.
-      </p>
 
       {/* Reclamações */}
       <h2 className="mb-2 text-sm font-semibold text-gray-700">
@@ -176,19 +181,24 @@ export default async function PosVendaPage() {
       ) : (
         <ul className="mb-8 divide-y divide-gray-200 rounded border border-gray-200 bg-white">
           {todasReclamacoes.map((r) => (
-            <li key={r.id} className="p-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-800">
-                  {r.contaNickname} · pedido {r.resourceId}
-                </span>
-                <span className="rounded-full bg-yellow-50 px-2 py-1 text-xs font-medium text-yellow-700">
-                  {r.etapa}
-                </span>
-              </div>
-              <p className="text-xs text-gray-400">
-                {REASON_LABELS[r.tipo] ?? r.tipo} · aberta em {formatarDataHora(r.dataCriacao)} ·
-                atualizada em {formatarDataHora(r.ultimaAtualizacao)}
-              </p>
+            <li key={r.id}>
+              <Link
+                href={`/dashboard/pos-venda/reclamacoes/${r.id}?conta=${r.contaId}`}
+                className="block p-3 text-sm hover:bg-gray-50"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-800">
+                    {r.contaNickname} · pedido {r.resourceId}
+                  </span>
+                  <span className="rounded-full bg-yellow-50 px-2 py-1 text-xs font-medium text-yellow-700">
+                    {r.etapa}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {REASON_LABELS[r.tipo] ?? r.tipo} · aberta em {formatarDataHora(r.dataCriacao)} ·
+                  atualizada em {formatarDataHora(r.ultimaAtualizacao)} · clique para ver conversa e agir →
+                </p>
+              </Link>
             </li>
           ))}
         </ul>

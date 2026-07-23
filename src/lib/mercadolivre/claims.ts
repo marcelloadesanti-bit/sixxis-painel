@@ -81,3 +81,151 @@ export async function getReclamacoesAbertas(
 
   return { total, reclamacoes };
 }
+
+// --- Detalhe, mensagens e acoes de uma reclamacao especifica ---
+// Docs: gerenciar-mensagem-de-uma-eclamacao / gerenciar-resolucao-de-reclamacoes
+
+export type AcaoDisponivel = {
+  action: string;
+  mandatory: boolean;
+  dueDate: string | null;
+};
+
+export type ClaimPlayer = {
+  role: string;
+  type: string;
+  userId: number;
+  acoesDisponiveis: AcaoDisponivel[];
+};
+
+export type ClaimDetalhe = {
+  id: number;
+  resourceId: number;
+  status: string;
+  tipo: string;
+  etapa: string;
+  reasonId: string | null;
+  players: ClaimPlayer[];
+  dataCriacao: string;
+  ultimaAtualizacao: string;
+};
+
+export async function getClaimDetalhe(accessToken: string, claimId: number): Promise<ClaimDetalhe> {
+  const res = await fetch(`${ML_API}/post-purchase/v1/claims/${claimId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Falha ao buscar detalhe da reclamação: ${res.status}`);
+
+  const c = (await res.json()) as {
+    id: number;
+    resource_id: number;
+    status: string;
+    type: string;
+    stage: string;
+    reason_id: string | null;
+    date_created: string;
+    last_updated: string;
+    players: {
+      role: string;
+      type: string;
+      user_id: number;
+      available_actions?: { action: string; mandatory?: boolean; due_date?: string | null }[];
+    }[];
+  };
+
+  return {
+    id: c.id,
+    resourceId: c.resource_id,
+    status: c.status,
+    tipo: c.type,
+    etapa: c.stage,
+    reasonId: c.reason_id,
+    dataCriacao: c.date_created,
+    ultimaAtualizacao: c.last_updated,
+    players: c.players.map((p) => ({
+      role: p.role,
+      type: p.type,
+      userId: p.user_id,
+      acoesDisponiveis: (p.available_actions ?? []).map((a) => ({
+        action: a.action,
+        mandatory: a.mandatory ?? false,
+        dueDate: a.due_date ?? null,
+      })),
+    })),
+  };
+}
+
+export type MensagemClaim = {
+  senderRole: string;
+  receiverRole: string;
+  mensagem: string;
+  dataCriacao: string;
+  etapa: string;
+};
+
+export async function getMensagensClaim(accessToken: string, claimId: number): Promise<MensagemClaim[]> {
+  const res = await fetch(`${ML_API}/post-purchase/v1/claims/${claimId}/messages`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Falha ao buscar mensagens da reclamação: ${res.status}`);
+
+  const data = (await res.json()) as {
+    sender_role: string;
+    receiver_role: string;
+    message: string;
+    date_created: string;
+    stage: string;
+  }[];
+
+  return data
+    .map((m) => ({
+      senderRole: m.sender_role,
+      receiverRole: m.receiver_role,
+      mensagem: m.message,
+      dataCriacao: m.date_created,
+      etapa: m.stage,
+    }))
+    .sort((a, b) => new Date(a.dataCriacao).getTime() - new Date(b.dataCriacao).getTime());
+}
+
+export async function enviarMensagemClaim(
+  accessToken: string,
+  claimId: number,
+  receiverRole: "complainant" | "mediator" | "respondent",
+  mensagem: string
+): Promise<void> {
+  const res = await fetch(`${ML_API}/post-purchase/v1/claims/${claimId}/actions/send-message`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ receiver_role: receiverRole, message: mensagem, attachments: [] }),
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao enviar mensagem da reclamação ${claimId}: ${res.status} ${corpo}`);
+  }
+}
+
+export async function abrirDisputaClaim(accessToken: string, claimId: number): Promise<void> {
+  const res = await fetch(`${ML_API}/post-purchase/v1/claims/${claimId}/actions/open-dispute`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao abrir disputa da reclamação ${claimId}: ${res.status} ${corpo}`);
+  }
+}
+
+export async function reembolsarTotalClaim(accessToken: string, claimId: number): Promise<void> {
+  const res = await fetch(`${ML_API}/post-purchase/v1/claims/${claimId}/expected-resolutions/refund`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao reembolsar reclamação ${claimId}: ${res.status} ${corpo}`);
+  }
+}

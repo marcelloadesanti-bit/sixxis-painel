@@ -276,3 +276,113 @@ export async function getProdutosMaisVendidos(
 
   return Array.from(porProduto.values()).sort((a, b) => b.quantidade - a.quantidade);
 }
+
+// --- Detalhe de um pedido especifico + envio (para a pagina de detalhe/acoes) ---
+
+export type PedidoDetalhe = {
+  id: number;
+  status: string;
+  dataCriacao: string;
+  packId: string | null;
+  totalPago: number;
+  moeda: string;
+  comprador: { id: number; nickname: string } | null;
+  itens: { titulo: string; quantidade: number; precoUnitario: number }[];
+};
+
+export async function getPedidoDetalhe(accessToken: string, orderId: number): Promise<PedidoDetalhe> {
+  const res = await fetch(`${ML_API}/orders/${orderId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Falha ao buscar pedido ${orderId}: ${res.status}`);
+
+  const o = (await res.json()) as {
+    id: number;
+    status: string;
+    date_created: string;
+    pack_id: number | null;
+    total_amount: number;
+    paid_amount?: number;
+    currency_id: string;
+    buyer?: { id: number; nickname: string };
+    order_items?: { item: { title: string }; quantity: number; unit_price: number }[];
+  };
+
+  return {
+    id: o.id,
+    status: o.status,
+    dataCriacao: o.date_created,
+    packId: o.pack_id ? String(o.pack_id) : null,
+    totalPago: o.paid_amount ?? o.total_amount ?? 0,
+    moeda: o.currency_id,
+    comprador: o.buyer ? { id: o.buyer.id, nickname: o.buyer.nickname } : null,
+    itens: (o.order_items ?? []).map((i) => ({
+      titulo: i.item.title,
+      quantidade: i.quantity,
+      precoUnitario: i.unit_price,
+    })),
+  };
+}
+
+export type EnvioPedido = {
+  shipmentId: number;
+  modo: string;
+  status: string;
+  substatus: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+};
+
+export async function getEnvioPedido(accessToken: string, orderId: number): Promise<EnvioPedido | null> {
+  const res = await fetch(`${ML_API}/orders/${orderId}/shipments`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Falha ao buscar envio do pedido ${orderId}: ${res.status}`);
+
+  const s = (await res.json()) as {
+    id: number;
+    mode: string;
+    status: string;
+    substatus: string | null;
+    tracking_number: string | null;
+    tracking_url?: string | null;
+  };
+
+  return {
+    shipmentId: s.id,
+    modo: s.mode,
+    status: s.status,
+    substatus: s.substatus,
+    trackingNumber: s.tracking_number,
+    trackingUrl: s.tracking_url ?? null,
+  };
+}
+
+// Atualiza status de envio ME1 (autogerenciado). Nao se aplica a envios ME2
+// (logistica gerenciada pelo Mercado Livre), que sao atualizados pela
+// transportadora automaticamente.
+export async function notificarStatusEnvioME1(
+  accessToken: string,
+  shipmentId: number,
+  status: "shipped" | "not_delivered" | "delivered",
+  substatus: string | null,
+  comentario: string
+): Promise<void> {
+  const res = await fetch(`${ML_API}/shipments/${shipmentId}/seller_notifications`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      payload: { comment: comentario, date: new Date().toISOString() },
+      status,
+      substatus,
+    }),
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao notificar status do envio ${shipmentId}: ${res.status} ${corpo}`);
+  }
+}

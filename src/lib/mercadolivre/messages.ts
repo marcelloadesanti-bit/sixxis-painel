@@ -48,3 +48,89 @@ export async function getMensagensNaoLidas(
 
   return { conversas, totalMensagens };
 }
+
+// --- Conversa (thread) de um pack e envio de resposta ---
+// Docs: developers.mercadolivre.com.br/pt_br/mensagens-post-venda
+
+export type MensagemPack = {
+  id: string;
+  texto: string;
+  remetenteId: number;
+  remetenteNome: string | null;
+  dataRecebida: string | null;
+  dataLeitura: string | null;
+};
+
+export async function getConversaPack(
+  accessToken: string,
+  packId: string,
+  mlUserId: number
+): Promise<{ mensagens: MensagemPack[]; statusConversa: string | null }> {
+  const res = await fetch(`${ML_API}/messages/packs/${packId}/sellers/${mlUserId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Falha ao buscar conversa do pack ${packId}: ${res.status}`);
+  }
+
+  const data = (await res.json()) as {
+    conversation_status?: { status?: string };
+    messages: {
+      id: string;
+      text: string;
+      from: { user_id: string; name?: string };
+      message_date?: { received?: string; read?: string | null };
+    }[];
+  };
+
+  const mensagens: MensagemPack[] = (data.messages ?? [])
+    .map((m) => ({
+      id: m.id,
+      texto: m.text,
+      remetenteId: Number(m.from.user_id),
+      remetenteNome: m.from.name ?? null,
+      dataRecebida: m.message_date?.received ?? null,
+      dataLeitura: m.message_date?.read ?? null,
+    }))
+    .sort((a, b) => new Date(a.dataRecebida ?? 0).getTime() - new Date(b.dataRecebida ?? 0).getTime());
+
+  return { mensagens, statusConversa: data.conversation_status?.status ?? null };
+}
+
+export async function enviarMensagemPack(
+  accessToken: string,
+  packId: string,
+  mlUserId: number,
+  buyerId: number,
+  texto: string
+): Promise<void> {
+  const res = await fetch(`${ML_API}/messages/packs/${packId}/sellers/${mlUserId}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: { user_id: String(mlUserId) },
+      to: { user_id: String(buyerId) },
+      text: texto,
+    }),
+  });
+
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao enviar mensagem do pack ${packId}: ${res.status} ${corpo}`);
+  }
+}
+
+export async function marcarMensagensComoLidas(accessToken: string, messageIds: string[]): Promise<void> {
+  if (messageIds.length === 0) return;
+  const res = await fetch(`${ML_API}/messages/mark_as_read/${messageIds.join(",")}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    console.error(`Falha ao marcar mensagens como lidas: ${res.status}`);
+  }
+}

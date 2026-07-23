@@ -238,8 +238,15 @@ export default async function VendasPage({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {todosPedidos.slice(0, 300).map((pedido) => (
-                <tr key={pedido.id}>
-                  <td className="p-3 text-gray-600">{formatarDataHora(pedido.dataCriacao)}</td>
+                <tr key={pedido.id} className="cursor-pointer hover:bg-gray-50">
+                  <td className="p-0">
+                    <Link
+                      href={`/dashboard/vendas/${pedido.id}?conta=${pedido.contaId}`}
+                      className="block p-3 text-gray-600"
+                    >
+                      {formatarDataHora(pedido.dataCriacao)}
+                    </Link>
+                  </td>
                   <td className="p-3 text-gray-600">{pedido.contaNickname}</td>
                   <td className="p-3 text-gray-600">{pedido.comprador}</td>
                   <td className="p-3 text-gray-600">{pedido.produto}</td>
