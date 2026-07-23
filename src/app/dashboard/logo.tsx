@@ -1,12 +1,13 @@
-// Logomarca do cabecalho. Por enquanto e um wordmark de texto (ate o
-// usuario enviar os arquivos PNG/SVG oficiais - preta para modo claro,
-// branca para modo escuro). Quando os arquivos chegarem, trocar por:
-//   <img src="/logo-preta.svg" className="block dark:hidden h-8" />
-//   <img src="/logo-branca.svg" className="hidden dark:block h-8" />
+// Logomarca do cabecalho: preta (com detalhe menta) no modo claro,
+// branca (com detalhe menta) no modo escuro. Arquivos extraidos e
+// vetorizados a partir do PDF oficial enviado pelo usuario.
 export default function Logo() {
   return (
-    <span className="select-none text-lg font-extrabold tracking-tight text-[var(--color-sixxis-navy)] dark:text-white">
-      SIXXIS
+    <span className="flex items-center">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-preta.png" alt="Sixxis" className="block h-6 w-auto dark:hidden" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-branca.png" alt="Sixxis" className="hidden h-6 w-auto dark:block" />
     </span>
   );
 }
