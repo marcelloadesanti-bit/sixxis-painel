@@ -22,6 +22,12 @@ export async function getMensagensNaoLidas(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
+  // Algumas contas/aplicacoes nao tem esse recurso habilitado (404) - nesse
+  // caso tratamos como "sem mensagens pendentes" em vez de propagar erro,
+  // para nao derrubar perguntas/reclamacoes que vieram OK na mesma consulta.
+  if (res.status === 404) {
+    return { conversas: [], totalMensagens: 0 };
+  }
   if (!res.ok) {
     throw new Error(`Falha ao buscar mensagens nao lidas: ${res.status}`);
   }
