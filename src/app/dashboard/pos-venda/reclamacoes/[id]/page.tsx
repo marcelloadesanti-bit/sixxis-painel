@@ -13,6 +13,7 @@ const formatarDataHora = (iso: string) =>
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(iso));
 
 const PAPEL_LABEL: Record<string, string> = {

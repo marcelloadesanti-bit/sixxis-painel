@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import AppSidebar from "./app-sidebar";
 import LogoutButton from "./logout-button";
 import ThemeToggle from "./theme-toggle";
+import NotificationBell from "./notification-bell";
 import Logo from "./logo";
 
 export default async function DashboardLayout({
@@ -59,6 +60,7 @@ export default async function DashboardLayout({
                 + Conectar conta
               </a>
             )}
+            <NotificationBell />
             <ThemeToggle />
             <LogoutButton />
           </div>

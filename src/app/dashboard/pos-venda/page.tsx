@@ -14,6 +14,22 @@ const formatarDataHora = (iso: string) =>
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(iso));
+
+const formatarHora = (iso: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(iso));
+
+const formatarData = (iso: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(iso));
 
 const REASON_LABELS: Record<string, string> = {
@@ -117,7 +133,9 @@ export default async function PosVendaPage() {
             <li key={p.id} className="p-4">
               <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
                 <span>
-                  {p.contaNickname} · anúncio {p.itemId} · {formatarDataHora(p.dataCriacao)}
+                  {p.compradorNickname ?? (p.compradorId ? `comprador #${p.compradorId}` : "comprador não identificado")}
+                  {" · "}
+                  {p.contaNickname} · anúncio {p.itemId} · {formatarHora(p.dataCriacao)} · {formatarData(p.dataCriacao)}
                 </span>
               </div>
               <p className="mb-3 text-sm text-gray-800">{p.texto}</p>

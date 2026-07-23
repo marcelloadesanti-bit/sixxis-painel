@@ -11,6 +11,7 @@ export type Pergunta = {
   texto: string;
   dataCriacao: string;
   compradorId: number | null;
+  compradorNickname: string | null;
   contaId: string;
   contaNickname: string;
 };
@@ -66,6 +67,7 @@ export async function getPerguntasNaoRespondidas(
         texto: q.text,
         dataCriacao: q.date_created,
         compradorId: q.from?.id ?? null,
+        compradorNickname: null,
         contaId,
         contaNickname,
       });
@@ -74,6 +76,32 @@ export async function getPerguntasNaoRespondidas(
     offset += LIMITE_POR_PAGINA;
     if (offset >= total || offset >= TETO_PERGUNTAS || data.questions.length === 0) {
       break;
+    }
+  }
+
+  // Busca o nickname de cada comprador (uma chamada por comprador unico, em
+  // paralelo). O Mercado Livre pode restringir esse dado por privacidade
+  // (LGPD) dependendo do caso - nesse cenario o campo fica null e a tela usa
+  // o ID do comprador como alternativa.
+  const idsUnicos = Array.from(new Set(perguntas.map((p) => p.compradorId).filter((id): id is number => id !== null)));
+  const nicknames = await Promise.all(
+    idsUnicos.map(async (id) => {
+      try {
+        const res = await fetch(`${ML_API}/users/${id}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) return [id, null] as const;
+        const data = (await res.json()) as { nickname?: string };
+        return [id, data.nickname ?? null] as const;
+      } catch {
+        return [id, null] as const;
+      }
+    })
+  );
+  const nicknamePorId = new Map(nicknames);
+  for (const p of perguntas) {
+    if (p.compradorId !== null) {
+      p.compradorNickname = nicknamePorId.get(p.compradorId) ?? null;
     }
   }
 
@@ -99,4 +127,31 @@ export async function responderPergunta(
     const corpo = await res.text();
     throw new Error(`Falha ao responder pergunta ${questionId}: ${res.status} ${corpo}`);
   }
+}
+
+// Versao leve: so o total de perguntas nao respondidas (uma unica chamada,
+// sem paginar nem buscar nickname dos compradores). Usada para polling
+// frequente (sino de notificacoes).
+export async function getContagemPerguntasNaoRespondidas(
+  accessToken: string,
+  mlUserId: number
+): Promise<number> {
+  const params = new URLSearchParams({
+    seller_id: String(mlUserId),
+    status: "UNANSWERED",
+    api_version: "4",
+    limit: "1",
+    offset: "0",
+  });
+
+  const res = await fetch(`${ML_API}/questions/search?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Falha ao contar perguntas: ${res.status}`);
+  }
+
+  const data = (await res.json()) as { total: number };
+  return data.total;
 }
