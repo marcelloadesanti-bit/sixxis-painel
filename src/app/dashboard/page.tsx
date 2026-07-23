@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
@@ -105,17 +106,25 @@ export default async function DashboardPage({
       )}
 
       {contas.length > 0 && (
-        <div className="mb-8 grid grid-cols-2 gap-4">
-          <div className="rounded border border-gray-200 p-4">
-            <p className="text-xs uppercase text-gray-400">Pedidos pagos (30 dias)</p>
-            <p className="text-2xl font-bold text-gray-900">{totalPedidosConsolidado}</p>
+        <div className="mb-8">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded border border-gray-200 p-4">
+              <p className="text-xs uppercase text-gray-400">Pedidos pagos (30 dias)</p>
+              <p className="text-2xl font-bold text-gray-900">{totalPedidosConsolidado}</p>
+            </div>
+            <div className="rounded border border-gray-200 p-4">
+              <p className="text-xs uppercase text-gray-400">Valor vendido (30 dias)</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {formatarMoeda(totalValorConsolidado, moedaConsolidada)}
+              </p>
+            </div>
           </div>
-          <div className="rounded border border-gray-200 p-4">
-            <p className="text-xs uppercase text-gray-400">Valor vendido (30 dias)</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {formatarMoeda(totalValorConsolidado, moedaConsolidada)}
-            </p>
-          </div>
+          <Link
+            href="/dashboard/vendas"
+            className="mt-2 inline-block text-sm text-[var(--color-sixxis-blue)] underline"
+          >
+            Ver relatório de vendas com filtro de datas →
+          </Link>
         </div>
       )}
 
@@ -170,7 +179,12 @@ export default async function DashboardPage({
         <div className="rounded border border-gray-100 p-4">Anúncios (em breve)</div>
         <div className="rounded border border-gray-100 p-4">Mercado Ads (em breve)</div>
         <div className="rounded border border-gray-100 p-4">Perguntas/Mensagens (em breve)</div>
-        <div className="rounded border border-gray-100 p-4">Relatórios (em breve)</div>
+        <Link
+          href="/dashboard/vendas"
+          className="rounded border border-gray-100 p-4 text-[var(--color-sixxis-blue)] hover:bg-gray-50"
+        >
+          Relatórios de vendas →
+        </Link>
       </div>
     </main>
   );
