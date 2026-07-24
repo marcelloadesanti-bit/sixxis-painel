@@ -102,7 +102,7 @@ export default async function EscolherCorContaPage({
           type="submit"
           className="rounded bg-[var(--color-sixxis-navy)] px-4 py-2 text-sm font-medium text-white"
         >
-          {nova === "1" ? "Salvar e ir para o painel" : "Salvar cor"}
+          {nova === "1" ? "Salvar e ir para o painel" : "Salvar alterações"}
         </button>
       </form>
     </main>
