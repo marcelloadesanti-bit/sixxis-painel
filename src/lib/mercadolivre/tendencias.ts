@@ -16,6 +16,7 @@ export type TermoTendencia = { termo: string; url: string; posicao: number };
 
 export type DadosCompetitivos = {
   termo: string;
+  disponivel: boolean; // false quando a API de busca publica nao esta liberada para este app
   totalAnuncios: number;
   precoMin: number | null;
   precoMax: number | null;
@@ -59,23 +60,35 @@ export async function buscarTendenciasCategoria(
 // Retrato competitivo para um termo de busca livre (usado como
 // complemento quando o termo nao esta no top 50 de tendencias, ou como
 // contexto extra mesmo quando esta).
+//
+// Observacao (descoberta ao testar em producao): o endpoint publico de
+// busca geral (/sites/MLB/search?q=) retorna 403 "forbidden" para a nossa
+// aplicacao -- o ML restringiu esse endpoint a parceiros aprovados. Por
+// isso a funcao nunca lanca erro: quando a busca nao estiver liberada,
+// devolve `disponivel: false` e a tela mostra um aviso honesto em vez de
+// numeros inventados.
 export async function buscarDadosCompetitivos(
   accessToken: string,
   termo: string
 ): Promise<DadosCompetitivos> {
-  const dados = await chamarML<any>(
-    `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(termo)}&limit=50`,
-    accessToken
-  );
-  const precos: number[] = (dados.results ?? [])
-    .map((r: any) => Number(r.price))
-    .filter((p: number) => Number.isFinite(p) && p > 0);
+  try {
+    const dados = await chamarML<any>(
+      `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(termo)}&limit=50`,
+      accessToken
+    );
+    const precos: number[] = (dados.results ?? [])
+      .map((r: any) => Number(r.price))
+      .filter((p: number) => Number.isFinite(p) && p > 0);
 
-  return {
-    termo,
-    totalAnuncios: dados.paging?.total ?? dados.results?.length ?? 0,
-    precoMin: precos.length ? Math.min(...precos) : null,
-    precoMax: precos.length ? Math.max(...precos) : null,
-    precoMedio: precos.length ? precos.reduce((a, b) => a + b, 0) / precos.length : null,
-  };
+    return {
+      termo,
+      disponivel: true,
+      totalAnuncios: dados.paging?.total ?? dados.results?.length ?? 0,
+      precoMin: precos.length ? Math.min(...precos) : null,
+      precoMax: precos.length ? Math.max(...precos) : null,
+      precoMedio: precos.length ? precos.reduce((a, b) => a + b, 0) / precos.length : null,
+    };
+  } catch {
+    return { termo, disponivel: false, totalAnuncios: 0, precoMin: null, precoMax: null, precoMedio: null };
+  }
 }

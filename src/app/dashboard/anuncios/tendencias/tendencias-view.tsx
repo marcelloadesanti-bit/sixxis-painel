@@ -195,24 +195,32 @@ export default function TendenciasView() {
               </p>
             ) : null}
 
-            <div className="grid grid-cols-3 gap-2 rounded bg-gray-50 p-3 text-center text-sm">
-              <div>
-                <div className="text-lg font-semibold text-gray-800">{resultado.competitivo.totalAnuncios}</div>
-                <div className="text-xs text-gray-400">anúncios concorrentes</div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold text-gray-800">
-                  {formatarPreco(resultado.competitivo.precoMin)}
+            {resultado.competitivo.disponivel ? (
+              <div className="grid grid-cols-3 gap-2 rounded bg-gray-50 p-3 text-center text-sm">
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">{resultado.competitivo.totalAnuncios}</div>
+                  <div className="text-xs text-gray-400">anúncios concorrentes</div>
                 </div>
-                <div className="text-xs text-gray-400">menor preço</div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold text-gray-800">
-                  {formatarPreco(resultado.competitivo.precoMax)}
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {formatarPreco(resultado.competitivo.precoMin)}
+                  </div>
+                  <div className="text-xs text-gray-400">menor preço</div>
                 </div>
-                <div className="text-xs text-gray-400">maior preço</div>
+                <div>
+                  <div className="text-lg font-semibold text-gray-800">
+                    {formatarPreco(resultado.competitivo.precoMax)}
+                  </div>
+                  <div className="text-xs text-gray-400">maior preço</div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <p className="rounded bg-gray-50 p-2 text-xs text-gray-400">
+                Dados de concorrência (nº de anúncios, faixa de preço) não estão disponíveis: o Mercado Livre restringe
+                a busca geral por termo livre a aplicativos parceiros aprovados. As tendências acima continuam
+                confiáveis.
+              </p>
+            )}
 
             {resultado.tendenciasCategoria.length > 0 && (
               <div>
