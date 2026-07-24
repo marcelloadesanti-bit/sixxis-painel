@@ -3,14 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 
-async function chamar(url: string, accessToken: string) {
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  const texto = await resp.text();
-  let corpo: unknown = texto;
-  try { corpo = JSON.parse(texto); } catch {}
-  return { status: resp.status, ok: resp.ok, corpo };
-}
-
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -22,32 +14,25 @@ export async function GET(req: NextRequest) {
   if (!conta) return NextResponse.json({ erro: "sem conta conectada" }, { status: 400 });
   const accessToken = await getValidAccessToken(conta.id as string);
 
-  const modo = req.nextUrl.searchParams.get("modo") ?? "arvore";
-  const resultado: Record<string, unknown> = {};
-
   try {
-    if (modo === "arvore") {
-      resultado.raiz = await chamar("https://api.mercadolibre.com/sites/MLB/categories", accessToken);
-      const raizCorpo = (resultado.raiz as any).corpo;
-      if (Array.isArray(raizCorpo) && raizCorpo[0]) {
-        resultado.filho = await chamar(`https://api.mercadolibre.com/categories/${raizCorpo[0].id}`, accessToken);
-      }
-    }
+    // imagem publica de teste pequena
+    const imgUrl = "https://http2.mlstatic.com/storage/categories-api/images/6fc20d84-2ce6-44ee-8e7e-e5479a78eab0.png";
+    const imgResp = await fetch(imgUrl);
+    const buffer = await imgResp.arrayBuffer();
+    const blob = new Blob([buffer], { type: imgResp.headers.get("content-type") ?? "image/png" });
+    const form = new FormData();
+    form.append("file", blob, "teste.png");
 
-    if (modo === "atributos") {
-      const catId = req.nextUrl.searchParams.get("cat") ?? "MLB1051";
-      resultado.atributos = await chamar(`https://api.mercadolibre.com/categories/${catId}/attributes`, accessToken);
-    }
+    const up = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    });
+    const texto = await up.text();
+    let corpo: unknown = texto;
+    try { corpo = JSON.parse(texto); } catch {}
 
-    if (modo === "predict") {
-      const titulo = req.nextUrl.searchParams.get("titulo") ?? "Bicicleta Spinning Sixxis";
-      resultado.predicao = await chamar(
-        `https://api.mercadolibre.com/sites/MLB/domain_discovery/search?limit=3&q=${encodeURIComponent(titulo)}`,
-        accessToken
-      );
-    }
-
-    return NextResponse.json(resultado);
+    return NextResponse.json({ status: up.status, ok: up.ok, corpo });
   } catch (err) {
     return NextResponse.json({ erroFetch: String(err) }, { status: 500 });
   }
