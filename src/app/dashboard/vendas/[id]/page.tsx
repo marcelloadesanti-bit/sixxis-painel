@@ -6,6 +6,7 @@ import { getPedidoDetalhe, getEnvioPedido } from "@/lib/mercadolivre/orders";
 import ConfirmButton from "../../confirm-button";
 import { enviarMensagemCompradorAction, atualizarStatusEnvioAction } from "../actions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 const formatarMoeda = (valor: number, moeda: string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
@@ -63,7 +64,7 @@ export default async function DetalhePedidoPage({
 
   const { data: conta } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .eq("id", contaId)
     .maybeSingle();
 
@@ -91,7 +92,7 @@ export default async function DetalhePedidoPage({
       </Link>
 
       <h1 className="mt-2 mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Pedido #{orderId}</h1>
-      <p className="mb-6 text-sm text-gray-500">{conta?.nickname ?? "Conta"}</p>
+      <p className="mb-6 text-sm text-gray-500">{conta ? nomeConta(conta) : "Conta"}</p>
 
       {erro && <p className="mb-6 rounded bg-red-50 p-3 text-sm text-red-600">{erro}</p>}
 

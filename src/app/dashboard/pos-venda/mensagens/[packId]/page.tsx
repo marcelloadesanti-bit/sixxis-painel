@@ -5,6 +5,7 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getConversaPack } from "@/lib/mercadolivre/messages";
 import { enviarMensagemPackAction, marcarComoLidoAction } from "../../actions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 const formatarDataHora = (iso: string | null) =>
   iso
@@ -48,7 +49,7 @@ export default async function ConversaPackPage({
 
   const { data: conta } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .eq("id", contaId)
     .maybeSingle();
 
@@ -82,7 +83,7 @@ export default async function ConversaPackPage({
       </Link>
 
       <h1 className="mt-2 mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Conversa</h1>
-      <p className="mb-6 text-sm text-gray-500">{conta?.nickname ?? "Conta"} · pack {packId}</p>
+      <p className="mb-6 text-sm text-gray-500">{conta ? nomeConta(conta) : "Conta"} · pack {packId}</p>
 
       {erro && <p className="mb-6 rounded bg-red-50 p-3 text-sm text-red-600">{erro}</p>}
 

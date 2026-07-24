@@ -117,10 +117,16 @@ export default function ResumoInterativo({
   );
 
   const contasParaSomar = contaSelecionada === "todas" ? contas : contas.filter((c) => c.id === contaSelecionada);
-  // A linha usa a cor da conta selecionada. No modo "Consolidado", se so
-  // existir uma conta cadastrada, usa a cor dela mesma (ex: SIXXIS = rosa);
-  // com mais de uma conta somadas, usa uma cor neutra (navy) porque a linha
-  // ali representa a soma de varias lojas, nao uma loja especifica.
+  // Quando "Consolidado" esta selecionado e ha mais de uma conta, o grafico
+  // mostra uma linha por conta (cada uma na sua cor) em vez de somar tudo
+  // numa unica linha neutra -- assim da pra ver a participacao de cada loja
+  // na mesma visualizacao. Nesse modo nao mostramos a comparacao com o
+  // periodo anterior (ficaria poluido com 2 linhas por conta); ela continua
+  // disponivel selecionando uma conta especifica no filtro.
+  const modoMultiConta = contaSelecionada === "todas" && contas.length > 1;
+
+  // A linha usa a cor da conta selecionada. No modo "Consolidado" com uma
+  // unica conta cadastrada, usa a cor dela mesma (ex: SIXXIS = rosa).
   const corLinha =
     contaSelecionada !== "todas"
       ? contas.find((c) => c.id === contaSelecionada)?.cor ?? "#64748b"
@@ -129,6 +135,19 @@ export default function ResumoInterativo({
         : "var(--color-sixxis-navy)";
 
   const dadosGrafico = useMemo(() => {
+    if (modoMultiConta) {
+      return datasAtual.map((diaAtual) => {
+        const linha: Record<string, string | number> = { dia: formatarDataCurta(diaAtual) };
+        for (const conta of contas) {
+          const serie = seriesPorConta[conta.id];
+          const vendaDia = serie?.atual.vendas.find((v) => v.data === diaAtual);
+          const visitaDia = serie?.atual.visitas.find((v) => v.data === diaAtual)?.total ?? 0;
+          linha[conta.id] = Math.round(valorMetricaDoDia(metrica, vendaDia, visitaDia) * 100) / 100;
+        }
+        return linha;
+      });
+    }
+
     return datasAtual.map((diaAtual, i) => {
       const diaAnterior = datasAnterior[i];
 
@@ -156,7 +175,11 @@ export default function ResumoInterativo({
         anterior: Math.round(valorAnterior * 100) / 100,
       };
     });
-  }, [datasAtual, datasAnterior, contasParaSomar, seriesPorConta, metrica]);
+  }, [datasAtual, datasAnterior, contasParaSomar, seriesPorConta, metrica, modoMultiConta, contas]);
+
+  const semDados = modoMultiConta
+    ? dadosGrafico.every((d) => contas.every((c) => (d[c.id] as number) === 0))
+    : dadosGrafico.every((d) => (d as { atual: number; anterior: number }).atual === 0 && (d as { atual: number; anterior: number }).anterior === 0);
 
   return (
     <div>
@@ -213,7 +236,7 @@ export default function ResumoInterativo({
           )}
         </div>
 
-        {dadosGrafico.every((d) => d.atual === 0 && d.anterior === 0) ? (
+        {semDados ? (
           <p className="py-12 text-center text-sm text-gray-400">Sem dados para o período selecionado.</p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
@@ -232,24 +255,40 @@ export default function ResumoInterativo({
               />
               <Tooltip formatter={(value) => formatarValor(metrica, Number(value) || 0, moeda)} />
               <Legend />
-              <Line
-                type="monotone"
-                dataKey="atual"
-                name="Atual"
-                stroke={corLinha}
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="anterior"
-                name="Período anterior"
-                stroke={corLinha}
-                strokeOpacity={0.4}
-                strokeDasharray="5 4"
-                strokeWidth={2}
-                dot={false}
-              />
+              {modoMultiConta ? (
+                contas.map((conta) => (
+                  <Line
+                    key={conta.id}
+                    type="monotone"
+                    dataKey={conta.id}
+                    name={conta.nickname}
+                    stroke={conta.cor}
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                ))
+              ) : (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="atual"
+                    name="Atual"
+                    stroke={corLinha}
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="anterior"
+                    name="Período anterior"
+                    stroke={corLinha}
+                    strokeOpacity={0.4}
+                    strokeDasharray="5 4"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </>
+              )}
             </LineChart>
           </ResponsiveContainer>
         )}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { nomeConta } from "@/lib/account-colors";
 
 export default async function ContasPage() {
   const supabase = await createClient();
@@ -19,7 +20,7 @@ export default async function ContasPage() {
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, nickname, site_id, cor")
+    .select("id, nickname, apelido, site_id, cor")
     .order("nickname", { ascending: true });
 
   return (
@@ -31,7 +32,7 @@ export default async function ContasPage() {
         Contas conectadas
       </h1>
       <p className="mb-6 text-sm text-gray-500">
-        Gerencie a cor de identificação de cada conta usada nos gráficos.
+        Gerencie o apelido e a cor de identificação de cada conta usada nos gráficos.
       </p>
 
       <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white">
@@ -43,15 +44,18 @@ export default async function ContasPage() {
                 style={{ backgroundColor: c.cor ?? "#64748b" }}
               />
               <div>
-                <p className="text-sm font-medium text-gray-800">{c.nickname}</p>
-                <p className="text-xs text-gray-400">{c.site_id}</p>
+                <p className="text-sm font-medium text-gray-800">{nomeConta(c)}</p>
+                <p className="text-xs text-gray-400">
+                  {c.apelido ? `${c.nickname} · ` : ""}
+                  {c.site_id}
+                </p>
               </div>
             </div>
             <Link
               href={`/dashboard/contas/${c.id}`}
               className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
             >
-              Editar cor
+              Editar
             </Link>
           </li>
         ))}

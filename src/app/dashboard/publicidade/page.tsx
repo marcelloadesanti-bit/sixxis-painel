@@ -5,6 +5,7 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getAnunciantes, getCampanhas, type Campanha } from "@/lib/mercadolivre/ads";
 import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 const formatarMoeda = (valor: number, moeda: string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
@@ -41,7 +42,7 @@ export default async function PublicidadePage({
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
@@ -73,7 +74,7 @@ export default async function PublicidadePage({
   );
 
   const todasCampanhas = resultados.flatMap((r) =>
-    r.campanhas.map((c) => ({ ...c, contaNickname: r.conta.nickname }))
+    r.campanhas.map((c) => ({ ...c, contaNickname: nomeConta(r.conta) }))
   );
 
   const investimentoTotal = todasCampanhas.reduce((s, c) => s + c.metricas.cost, 0);
@@ -184,7 +185,7 @@ export default async function PublicidadePage({
           Contas sem Mercado Ads ativo:{" "}
           {resultados
             .filter((r) => r.semAnuncios)
-            .map((r) => r.conta.nickname)
+            .map((r) => nomeConta(r.conta))
             .join(", ")}
         </p>
       )}
@@ -195,7 +196,7 @@ export default async function PublicidadePage({
             .filter((r) => r.erro)
             .map((r) => (
               <li key={r.conta.id}>
-                {r.conta.nickname}: {r.erro}
+                {nomeConta(r.conta)}: {r.erro}
               </li>
             ))}
         </ul>

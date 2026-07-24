@@ -5,7 +5,7 @@ import { getTotaisPorStatus, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getContagemPerguntasNaoRespondidas } from "@/lib/mercadolivre/questions";
 import { getMensagensNaoLidas } from "@/lib/mercadolivre/messages";
 import { getReclamacoesAbertas } from "@/lib/mercadolivre/claims";
-import { COR_PADRAO } from "@/lib/account-colors";
+import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 
 // Rota leve para o sino de notificacoes: retorna os contadores atuais POR
 // CONTA (perguntas, mensagens, reclamacoes, vendas de hoje), para o cliente
@@ -20,7 +20,7 @@ export async function GET() {
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname, cor")
+    .select("id, ml_user_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
   const hoje = new Date();
@@ -40,7 +40,7 @@ export async function GET() {
         ]);
         return {
           contaId: conta.id,
-          nickname: conta.nickname,
+          nickname: nomeConta(conta),
           cor: conta.cor ?? COR_PADRAO,
           perguntas: p,
           mensagens: m.totalMensagens,
@@ -51,7 +51,7 @@ export async function GET() {
         console.error(`Erro ao contar notificacoes de ${conta.id}:`, err);
         return {
           contaId: conta.id,
-          nickname: conta.nickname,
+          nickname: nomeConta(conta),
           cor: conta.cor ?? COR_PADRAO,
           perguntas: 0,
           mensagens: 0,

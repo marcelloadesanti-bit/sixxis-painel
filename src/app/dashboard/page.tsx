@@ -19,7 +19,7 @@ import {
   variacaoPercentual,
 } from "@/lib/date-utils";
 import ResumoInterativo from "./resumo-interativo";
-import { COR_PADRAO } from "@/lib/account-colors";
+import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
@@ -59,7 +59,7 @@ export default async function ResumoPage({
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname, cor")
+    .select("id, ml_user_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
@@ -88,8 +88,8 @@ export default async function ResumoPage({
           getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "paid"),
           getTotaisPorStatus(accessToken, conta.ml_user_id, periodoAnterior, "cancelled"),
           getTotalVisitas(accessToken, conta.ml_user_id, deAnterior, ateAnterior),
-          getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname),
-          getMensagensNaoLidas(accessToken, conta.id, conta.nickname),
+          getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, nomeConta(conta)),
+          getMensagensNaoLidas(accessToken, conta.id, nomeConta(conta)),
           getSerieDiariaVendas(accessToken, conta.ml_user_id, periodoAtual),
           getSerieDiariaVisitas(accessToken, conta.ml_user_id, de, ate),
           getSerieDiariaVendas(accessToken, conta.ml_user_id, periodoAnterior),
@@ -172,14 +172,14 @@ export default async function ResumoPage({
   // conta+item, ja que o mesmo id de anuncio pode existir em contas diferentes).
   const produtosConsolidados = resultados
     .flatMap((r) =>
-      r.produtos.map((p) => ({ ...p, contaNickname: r.conta.nickname }))
+      r.produtos.map((p) => ({ ...p, contaNickname: nomeConta(r.conta) }))
     )
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 5);
 
   const contasParaGrafico = resultados.map((r) => ({
     id: r.conta.id,
-    nickname: r.conta.nickname,
+    nickname: nomeConta(r.conta),
     cor: r.conta.cor ?? COR_PADRAO,
   }));
 
@@ -196,7 +196,7 @@ export default async function ResumoPage({
   const pizza = resultados
     .map((r) => ({
       contaId: r.conta.id,
-      nickname: r.conta.nickname,
+      nickname: nomeConta(r.conta),
       cor: r.conta.cor ?? COR_PADRAO,
       valor: (r.pagas?.valor ?? 0) + (r.canceladas?.valor ?? 0),
     }))
@@ -348,7 +348,7 @@ export default async function ResumoPage({
             .filter((r) => r.erro)
             .map((r) => (
               <li key={r.conta.id}>
-                {r.conta.nickname}: {r.erro}
+                {nomeConta(r.conta)}: {r.erro}
               </li>
             ))}
         </ul>

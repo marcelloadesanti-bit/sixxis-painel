@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getTotaisPorStatus, periodoDeDatas, type PeriodoISO } from "@/lib/mercadolivre/orders";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -68,7 +69,7 @@ export default async function MetricasPage({
 
   const { data: contasBase } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
@@ -190,7 +191,7 @@ export default async function MetricasPage({
       <ul className="divide-y divide-gray-200 rounded border border-gray-200">
         {resultados.map(({ conta, pagas, canceladas, erro }) => (
           <li key={conta.id} className="flex items-center justify-between p-4 text-sm">
-            <span className="font-medium text-gray-800">{conta.nickname}</span>
+            <span className="font-medium text-gray-800">{nomeConta(conta)}</span>
             {pagas && canceladas ? (
               <span className="text-right text-gray-600">
                 <span className="block">

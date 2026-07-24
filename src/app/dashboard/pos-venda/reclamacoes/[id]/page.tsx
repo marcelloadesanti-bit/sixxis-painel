@@ -6,6 +6,7 @@ import { getClaimDetalhe, getMensagensClaim } from "@/lib/mercadolivre/claims";
 import ConfirmButton from "../../../confirm-button";
 import { enviarMensagemReclamacaoAction, abrirDisputaAction, reembolsarAction } from "../../actions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 const formatarDataHora = (iso: string) =>
   new Intl.DateTimeFormat("pt-BR", {
@@ -60,7 +61,7 @@ export default async function DetalheReclamacaoPage({
 
   const { data: conta } = await supabase
     .from("ml_accounts")
-    .select("id, nickname")
+    .select("id, nickname, apelido")
     .eq("id", contaId)
     .maybeSingle();
 
@@ -95,7 +96,7 @@ export default async function DetalheReclamacaoPage({
         Reclamação #{claimId}
       </h1>
       <p className="mb-6 text-sm text-gray-500">
-        {conta?.nickname ?? "Conta"} · pedido {claim?.resourceId ?? "—"}
+        {conta ? nomeConta(conta) : "Conta"} · pedido {claim?.resourceId ?? "—"}
       </p>
 
       {erro && <p className="mb-6 rounded bg-red-50 p-3 text-sm text-red-600">{erro}</p>}

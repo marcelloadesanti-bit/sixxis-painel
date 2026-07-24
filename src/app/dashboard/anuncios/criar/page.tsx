@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { createClient } from "@/lib/supabase/server";
-import { COR_PADRAO } from "@/lib/account-colors";
+import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import CriarAnuncioForm from "./criar-anuncio-form";
 
 export default async function CriarAnuncioPage() {
@@ -10,12 +10,12 @@ export default async function CriarAnuncioPage() {
   const supabase = await createClient();
   const { data: contasRaw } = await supabase
     .from("ml_accounts")
-    .select("id, nickname, cor")
+    .select("id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
   const contas = (contasRaw ?? []).map((c) => ({
     id: c.id as string,
-    nickname: c.nickname as string,
+    nickname: nomeConta({ nickname: c.nickname as string, apelido: c.apelido as string | null }),
     cor: (c.cor as string) ?? COR_PADRAO,
   }));
 

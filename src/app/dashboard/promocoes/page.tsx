@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getPromocoesVendedor, labelTipoPromocao, type Promocao } from "@/lib/mercadolivre/promotions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 const formatarData = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso)) : "—";
@@ -28,7 +29,7 @@ export default async function PromocoesPage() {
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
@@ -38,7 +39,7 @@ export default async function PromocoesPage() {
           await getValidAccessToken(conta.id),
           conta.ml_user_id,
           conta.id,
-          conta.nickname
+          nomeConta(conta)
         );
         return { conta, promocoes, erro: null as string | null };
       } catch (err) {
@@ -125,7 +126,7 @@ export default async function PromocoesPage() {
             .filter((r) => r.erro)
             .map((r) => (
               <li key={r.conta.id}>
-                {r.conta.nickname}: {r.erro}
+                {nomeConta(r.conta)}: {r.erro}
               </li>
             ))}
         </ul>

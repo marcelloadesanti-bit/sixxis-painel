@@ -6,6 +6,7 @@ import { getMensagensNaoLidas, type ConversaNaoLida } from "@/lib/mercadolivre/m
 import { getReclamacoesAbertas, type Reclamacao } from "@/lib/mercadolivre/claims";
 import { responderPerguntaAction } from "./actions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 import { temAcessoSubsecao } from "@/lib/permissoes";
 
 const formatarDataHora = (iso: string) =>
@@ -55,7 +56,7 @@ export default async function PosVendaPage() {
 
   const { data: contas } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .order("nickname", { ascending: true });
 
   const resultados = await Promise.all(
@@ -64,13 +65,13 @@ export default async function PosVendaPage() {
         const accessToken = await getValidAccessToken(conta.id);
         const [perguntas, mensagens, reclamacoes] = await Promise.all([
           verPerguntas
-            ? getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, conta.nickname)
+            ? getPerguntasNaoRespondidas(accessToken, conta.ml_user_id, conta.id, nomeConta(conta))
             : Promise.resolve({ total: 0, perguntas: [] as Pergunta[] }),
           verMensagens
-            ? getMensagensNaoLidas(accessToken, conta.id, conta.nickname)
+            ? getMensagensNaoLidas(accessToken, conta.id, nomeConta(conta))
             : Promise.resolve({ conversas: [] as ConversaNaoLida[], totalMensagens: 0 }),
           verReclamacoes
-            ? getReclamacoesAbertas(accessToken, conta.ml_user_id, conta.id, conta.nickname)
+            ? getReclamacoesAbertas(accessToken, conta.ml_user_id, conta.id, nomeConta(conta))
             : Promise.resolve({ total: 0, reclamacoes: [] as Reclamacao[] }),
         ]);
         return { conta, perguntas, mensagens, reclamacoes, erro: null as string | null };
@@ -255,7 +256,7 @@ export default async function PosVendaPage() {
             .filter((r) => r.erro)
             .map((r) => (
               <li key={r.conta.id}>
-                {r.conta.nickname}: {r.erro}
+                {nomeConta(r.conta)}: {r.erro}
               </li>
             ))}
         </ul>

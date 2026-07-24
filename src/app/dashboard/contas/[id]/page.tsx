@@ -29,7 +29,7 @@ export default async function EscolherCorContaPage({
 
   const { data: conta } = await supabase
     .from("ml_accounts")
-    .select("id, nickname, cor")
+    .select("id, nickname, apelido, cor")
     .eq("id", id)
     .maybeSingle();
 
@@ -43,21 +43,40 @@ export default async function EscolherCorContaPage({
 
       {nova === "1" && (
         <p className="mt-4 rounded bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
-          Conta &quot;{conta.nickname}&quot; conectada com sucesso! Escolha uma cor para identificá-la
-          nos gráficos.
+          Conta &quot;{conta.nickname}&quot; conectada com sucesso! Dê um apelido e escolha uma cor
+          para identificá-la nos gráficos.
         </p>
       )}
 
       <h1 className="mt-4 mb-1 text-xl font-bold text-[var(--color-sixxis-navy)] dark:text-white">
-        Cor da conta {conta.nickname}
+        Editar conta {conta.nickname}
       </h1>
       <p className="mb-6 text-sm text-gray-500">
-        Essa cor identifica a conta nos gráficos e legendas do painel.
+        O apelido e a cor identificam a conta nos gráficos, filtros e legendas do painel.
       </p>
 
       <form action={atualizarCorContaAction} className="flex flex-col gap-6">
         <input type="hidden" name="contaId" value={conta.id} />
         {nova === "1" && <input type="hidden" name="nova" value="1" />}
+
+        <div>
+          <label htmlFor="apelido" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            Apelido (opcional)
+          </label>
+          <input
+            id="apelido"
+            type="text"
+            name="apelido"
+            maxLength={40}
+            defaultValue={conta.apelido ?? ""}
+            placeholder={conta.nickname}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Nome usado em vez de &quot;{conta.nickname}&quot; em todo o painel. Deixe em branco para usar
+            o nickname real da conta no Mercado Livre.
+          </p>
+        </div>
 
         <div className="grid grid-cols-6 gap-3">
           {PALETA_CORES_CONTA.map((c) => (

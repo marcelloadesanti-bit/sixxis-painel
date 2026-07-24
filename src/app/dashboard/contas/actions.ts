@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 export async function atualizarCorContaAction(formData: FormData) {
   const contaId = String(formData.get("contaId"));
   const cor = String(formData.get("cor"));
+  const apelidoBruto = String(formData.get("apelido") ?? "").trim();
+  const apelido = apelidoBruto.length > 0 ? apelidoBruto : null;
   const nova = formData.get("nova") === "1";
 
   const supabase = await createClient();
@@ -21,10 +23,10 @@ export async function atualizarCorContaAction(formData: FormData) {
     .eq("id", user.id)
     .maybeSingle();
   if (profile?.role !== "admin") {
-    throw new Error("Apenas administradores podem alterar a cor de uma conta.");
+    throw new Error("Apenas administradores podem alterar a cor ou o apelido de uma conta.");
   }
 
-  await supabase.from("ml_accounts").update({ cor }).eq("id", contaId);
+  await supabase.from("ml_accounts").update({ cor, apelido }).eq("id", contaId);
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/contas");

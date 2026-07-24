@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { listarAnunciosResumo, type OrdenacaoAnuncios } from "@/lib/mercadolivre/items";
 import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
-import { COR_PADRAO } from "@/lib/account-colors";
+import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import AnunciosFiltros from "../anuncios-filtros";
 import AnunciosTabela from "../anuncios-tabela";
@@ -37,13 +37,13 @@ export default async function GestaoAnunciosPage({
   const supabase = await createClient();
   const { data: contasRaw } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname, cor")
+    .select("id, ml_user_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
   const todasContas = (contasRaw ?? []).map((c) => ({
     id: c.id as string,
     ml_user_id: String(c.ml_user_id),
-    nickname: c.nickname as string,
+    nickname: nomeConta({ nickname: c.nickname as string, apelido: c.apelido as string | null }),
     cor: (c.cor as string) ?? COR_PADRAO,
   }));
 

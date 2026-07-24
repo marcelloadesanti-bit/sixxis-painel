@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { nomeConta } from "@/lib/account-colors";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { podeEditar as temPermissaoEdicao } from "@/lib/permissoes";
@@ -135,7 +136,7 @@ export async function criarAnuncioAction(formData: FormData): Promise<{
   const admin = createAdminClient();
   const { data: contasRaw } = await admin
     .from("ml_accounts")
-    .select("id, nickname")
+    .select("id, nickname, apelido")
     .in("id", contaIds);
   const contas = contasRaw ?? [];
 
@@ -181,7 +182,7 @@ export async function criarAnuncioAction(formData: FormData): Promise<{
 
   for (const conta of contas) {
     const contaId = conta.id as string;
-    const contaNickname = conta.nickname as string;
+    const contaNickname = nomeConta({ nickname: conta.nickname as string, apelido: conta.apelido as string | null });
     try {
       const accessToken = await getValidAccessToken(contaId);
 

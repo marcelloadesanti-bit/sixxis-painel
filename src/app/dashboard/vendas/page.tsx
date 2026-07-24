@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getVendas, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { nomeConta } from "@/lib/account-colors";
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -63,7 +64,7 @@ export default async function VendasPage({
 
   const { data: contasBase } = await supabase
     .from("ml_accounts")
-    .select("id, ml_user_id, nickname")
+    .select("id, ml_user_id, nickname, apelido")
     .order("nickname", { ascending: true });
 
   const contasParaBuscar = (contasBase ?? []).filter(
@@ -74,7 +75,7 @@ export default async function VendasPage({
     contasParaBuscar.map(async (conta) => {
       try {
         const accessToken = await getValidAccessToken(conta.id);
-        const vendas = await getVendas(accessToken, conta.ml_user_id, periodo, conta.id, conta.nickname);
+        const vendas = await getVendas(accessToken, conta.ml_user_id, periodo, conta.id, nomeConta(conta));
         return { conta, vendas, erro: null as string | null };
       } catch (err) {
         console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
@@ -154,7 +155,7 @@ export default async function VendasPage({
             <option value="todas">Todas as contas</option>
             {(contasBase ?? []).map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nickname}
+                {nomeConta(c)}
               </option>
             ))}
           </select>
@@ -201,7 +202,7 @@ export default async function VendasPage({
           <ul className="divide-y divide-gray-200 rounded border border-gray-200">
             {resultados.map(({ conta, vendas, erro }) => (
               <li key={conta.id} className="flex items-center justify-between p-3 text-sm">
-                <span className="font-medium text-gray-800">{conta.nickname}</span>
+                <span className="font-medium text-gray-800">{nomeConta(conta)}</span>
                 {vendas ? (
                   <span className="text-gray-600">
                     {vendas.totalPedidos} pedidos · {formatarMoeda(vendas.valorSomado, vendas.moeda)}
