@@ -84,7 +84,7 @@ export async function criarAnuncioAction(formData: FormData): Promise<{
     .split(",")
     .filter(Boolean);
   const atributosJson = String(formData.get("atributosJson") ?? "[]");
-  const atributos = JSON.parse(atributosJson) as { id: string; value_name: string }[];
+  const atributos = JSON.parse(atributosJson) as { id: string; value_name?: string; value_id?: string }[];
   const imagens = formData.getAll("imagens").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!titulo || !categoriaId || !preco || !estoque || contaIds.length === 0) {

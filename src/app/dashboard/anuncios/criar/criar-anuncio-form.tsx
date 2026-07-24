@@ -122,7 +122,13 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
     fd.set("contaIds", contasSelecionadas.join(","));
     fd.set(
       "atributosJson",
-      JSON.stringify(atributos.map((a) => ({ id: a.id, value_name: valoresAtributos[a.id] })))
+      JSON.stringify(
+        atributos.map((a) =>
+          a.valores
+            ? { id: a.id, value_id: valoresAtributos[a.id] }
+            : { id: a.id, value_name: valoresAtributos[a.id] }
+        )
+      )
     );
     for (const img of imagens) fd.append("imagens", img);
 
@@ -247,7 +253,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
                     >
                       <option value="">Selecione...</option>
                       {a.valores.map((v) => (
-                        <option key={v.id} value={v.nome}>
+                        <option key={v.id} value={v.id}>
                           {v.nome}
                         </option>
                       ))}

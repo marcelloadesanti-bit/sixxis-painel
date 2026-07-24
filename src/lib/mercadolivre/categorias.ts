@@ -94,7 +94,10 @@ export async function buscarAtributosCategoria(
       tipo: a.value_type,
       obrigatorio: Boolean(a.tags?.required),
       dica: a.hint ?? a.tooltip ?? null,
-      valores: a.value_type === "list" ? (a.values ?? []).map((v: any) => ({ id: v.id, nome: v.name })) : null,
+      valores:
+        a.value_type === "list" || a.value_type === "boolean"
+          ? (a.values ?? []).map((v: any) => ({ id: v.id, nome: v.name }))
+          : null,
     }));
 }
 
