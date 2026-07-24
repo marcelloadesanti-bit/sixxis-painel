@@ -162,6 +162,11 @@ export async function buscarTiposAnuncio(
   );
   return dados
     .filter((d) => d && d.listing_type_id && !d.error)
+    // A API retorna todos os tipos existentes no site, mesmo os que nao se
+    // aplicam a esta conta/categoria (aparecem com tarifa zerada). So
+    // mostramos os que realmente tem custo calculado -- os mesmos que a
+    // propria plataforma exibe como opcao real na tela de publicacao.
+    .filter((d) => (d.sale_fee_amount ?? 0) > 0 || (d.listing_fee_amount ?? 0) > 0)
     .map((d) => ({
       id: d.listing_type_id,
       nome: d.listing_type_name ?? d.listing_type_id,
