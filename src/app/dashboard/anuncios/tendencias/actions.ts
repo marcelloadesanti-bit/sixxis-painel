@@ -91,7 +91,10 @@ export async function pesquisarProdutoAction(termo: string): Promise<ResultadoPe
   }
 
   const termoNormalizado = termoLimpo.toLowerCase();
-  const match = tendenciasCategoria.find((t) => t.termo.toLowerCase().includes(termoNormalizado));
+  const match =
+    tendenciasCategoria.find((t) => t.termo.toLowerCase() === termoNormalizado) ??
+    tendenciasCategoria.find((t) => t.termo.toLowerCase().startsWith(termoNormalizado)) ??
+    tendenciasCategoria.find((t) => t.termo.toLowerCase().includes(termoNormalizado));
 
   return {
     categoriaSugerida: sugestao
