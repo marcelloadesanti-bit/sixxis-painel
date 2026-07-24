@@ -18,7 +18,13 @@ function badgeCatalogo(status: LinhaAnuncio["precoParaGanhar"]) {
   return { label: "Perdendo", cor: "bg-red-50 text-red-600" };
 }
 
-export default function AnunciosTabela({ linhas }: { linhas: LinhaAnuncio[] }) {
+export default function AnunciosTabela({
+  linhas,
+  periodoLabel,
+}: {
+  linhas: LinhaAnuncio[];
+  periodoLabel?: string;
+}) {
   if (linhas.length === 0) {
     return (
       <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
@@ -35,8 +41,8 @@ export default function AnunciosTabela({ linhas }: { linhas: LinhaAnuncio[] }) {
             <th className="px-3 py-2">Anúncio</th>
             <th className="px-3 py-2">Preço</th>
             <th className="px-3 py-2">Estoque</th>
-            <th className="px-3 py-2">Vendidos</th>
-            <th className="px-3 py-2">Visitas 7d</th>
+            <th className="px-3 py-2">Vendidos{periodoLabel ? ` (${periodoLabel})` : ""}</th>
+            <th className="px-3 py-2">Visitas{periodoLabel ? ` (${periodoLabel})` : ""}</th>
             <th className="px-3 py-2">Conversão</th>
             <th className="px-3 py-2">Qualidade</th>
             <th className="px-3 py-2">Catálogo</th>
@@ -72,7 +78,7 @@ export default function AnunciosTabela({ linhas }: { linhas: LinhaAnuncio[] }) {
                 <td className="px-3 py-2 text-gray-800">{formatarMoeda(linha.preco, linha.moeda)}</td>
                 <td className="px-3 py-2 text-gray-600">{linha.estoqueDisponivel}</td>
                 <td className="px-3 py-2 text-gray-600">{linha.vendidos}</td>
-                <td className="px-3 py-2 text-gray-600">{linha.visitas7dias ?? "—"}</td>
+                <td className="px-3 py-2 text-gray-600">{linha.visitasPeriodo ?? "—"}</td>
                 <td className="px-3 py-2 text-gray-600">
                   {linha.conversao !== null ? `${linha.conversao}%` : "—"}
                 </td>

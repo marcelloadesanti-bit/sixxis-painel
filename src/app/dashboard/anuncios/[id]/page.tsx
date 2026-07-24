@@ -126,7 +126,7 @@ export default async function GestaoAnuncioPage({
         </div>
         <div className="rounded border border-gray-200 bg-white p-4">
           <p className="text-xs uppercase text-gray-400">Visitas 7 dias</p>
-          <p className="text-sm font-semibold text-gray-900">{anuncio.visitas7dias ?? "—"}</p>
+          <p className="text-sm font-semibold text-gray-900">{anuncio.visitasPeriodo ?? "—"}</p>
         </div>
         <div className="rounded border border-gray-200 bg-white p-4">
           <p className="mb-1 text-xs uppercase text-gray-400">Qualidade do anúncio</p>

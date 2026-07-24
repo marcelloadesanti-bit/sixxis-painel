@@ -17,8 +17,8 @@ export type AnuncioResumo = {
   dataInicio: string;
   dataAtualizacao: string;
   catalogoAtivo: boolean;
-  visitas7dias: number | null;
-  conversao: number | null; // % vendas/visitas nos ultimos 7 dias
+  visitasPeriodo: number | null;
+  conversao: number | null; // % vendas/visitas no periodo selecionado
   precoParaGanhar: StatusCatalogo | null;
 };
 
@@ -114,28 +114,33 @@ function mapearAnuncio(item: any): AnuncioResumo {
     dataInicio: item.date_created,
     dataAtualizacao: item.last_updated,
     catalogoAtivo: Boolean(item.catalog_listing),
-    visitas7dias: null,
+    visitasPeriodo: null,
     conversao: null,
     precoParaGanhar: null,
   };
 }
 
-// Busca visitas (ultimos 7 dias) de uma lista de anuncios, em paralelo com
-// concorrencia limitada para nao estourar rate-limit da API do ML.
+// Busca visitas no periodo selecionado (de/ate) de uma lista de anuncios,
+// em paralelo com concorrencia limitada para nao estourar rate-limit da API.
 async function buscarVisitas(
   accessToken: string,
   ids: string[],
+  de: string,
+  ate: string,
   concorrencia = 8
 ): Promise<Map<string, number>> {
   const mapa = new Map<string, number>();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const dias = Math.min(
+    150,
+    Math.max(1, Math.round((new Date(ate + "T00:00:00").getTime() - new Date(de + "T00:00:00").getTime()) / 86400000) + 1)
+  );
 
   for (let i = 0; i < ids.length; i += concorrencia) {
     const lote = ids.slice(i, i + concorrencia);
     const resultados = await Promise.all(
       lote.map(async (id) => {
         try {
-          const url = `https://api.mercadolibre.com/items/${id}/visits/time_window?last=7&unit=day&ending=${hoje}`;
+          const url = `https://api.mercadolibre.com/items/${id}/visits/time_window?last=${dias}&unit=day&ending=${ate}`;
           const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
           if (!resp.ok) return [id, 0] as const;
           const data = await resp.json();
@@ -193,6 +198,7 @@ export async function listarAnunciosResumo(
   contas: { conta: ContaParaAnuncios; accessToken: string }[],
   ordenacao: OrdenacaoAnuncios,
   pagina: number,
+  periodo: { de: string; ate: string },
   porPagina = 25
 ): Promise<{ linhas: LinhaAnuncio[]; total: number }> {
   // 1. ids ordenados por conta (nativo do ML)
@@ -237,17 +243,16 @@ export async function listarAnunciosResumo(
 
   if (ordenacao === "mais_visualizados") {
     // precisa de visitas de todo o conjunto coletado para poder ordenar direito
-    const porConta = new Map(contas.map((c) => [c.conta.id, c.accessToken]));
     const visitasPorLinha = new Map<string, number>();
     for (const conta of contas) {
       const idsDaConta = todasLinhas.filter((l) => l.contaId === conta.conta.id).map((l) => l.id);
-      const visitas = await buscarVisitas(conta.accessToken, idsDaConta);
+      const visitas = await buscarVisitas(conta.accessToken, idsDaConta, periodo.de, periodo.ate);
       for (const [id, total] of visitas) visitasPorLinha.set(id, total);
     }
     ordenadas = [...todasLinhas].sort(
       (a, b) => (visitasPorLinha.get(b.id) ?? 0) - (visitasPorLinha.get(a.id) ?? 0)
     );
-    for (const linha of ordenadas) linha.visitas7dias = visitasPorLinha.get(linha.id) ?? 0;
+    for (const linha of ordenadas) linha.visitasPeriodo = visitasPorLinha.get(linha.id) ?? 0;
   }
 
   // 4. pagina
@@ -262,16 +267,15 @@ export async function listarAnunciosResumo(
     idsPorContaPagina.get(linha.contaId)!.push(linha.id);
   }
 
-  const hoje = new Date();
-  const seteDiasAtras = new Date(hoje.getTime() - 6 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const periodoVendas = periodoDeDatas(fmt(seteDiasAtras), fmt(hoje));
+  const periodoVendas = periodoDeDatas(periodo.de, periodo.ate);
 
   for (const [contaId, ids] of idsPorContaPagina) {
     const accessToken = porConta.get(contaId)!;
     const contaInfo = contas.find((c) => c.conta.id === contaId)!.conta;
     const [visitas, precoParaGanhar, vendidosPeriodo] = await Promise.all([
-      ordenacao === "mais_visualizados" ? Promise.resolve(new Map<string, number>()) : buscarVisitas(accessToken, ids),
+      ordenacao === "mais_visualizados"
+        ? Promise.resolve(new Map<string, number>())
+        : buscarVisitas(accessToken, ids, periodo.de, periodo.ate),
       buscarPrecoParaGanhar(accessToken, ids),
       getProdutosMaisVendidos(accessToken, Number(contaInfo.ml_user_id), periodoVendas).catch(() => []),
     ]);
@@ -279,11 +283,14 @@ export async function listarAnunciosResumo(
 
     for (const linha of linhasPagina) {
       if (linha.contaId !== contaId) continue;
-      if (visitas.has(linha.id)) linha.visitas7dias = visitas.get(linha.id) ?? 0;
+      if (visitas.has(linha.id)) linha.visitasPeriodo = visitas.get(linha.id) ?? 0;
       if (precoParaGanhar.has(linha.id)) linha.precoParaGanhar = precoParaGanhar.get(linha.id)!;
-      if (linha.visitas7dias && linha.visitas7dias > 0) {
-        const vendidos = vendidosPorItem.get(linha.id) ?? 0;
-        linha.conversao = Math.round((vendidos / linha.visitas7dias) * 1000) / 10;
+      // "vendidos" passa a refletir o periodo selecionado, nao o total historico do anuncio
+      linha.vendidos = vendidosPorItem.get(linha.id) ?? 0;
+      if (linha.visitasPeriodo && linha.visitasPeriodo > 0) {
+        linha.conversao = Math.round((linha.vendidos / linha.visitasPeriodo) * 1000) / 10;
+      } else {
+        linha.conversao = linha.vendidos > 0 ? 100 : 0;
       }
     }
   }

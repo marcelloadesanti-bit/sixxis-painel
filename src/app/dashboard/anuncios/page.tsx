@@ -59,20 +59,20 @@ export default async function AnunciosPage({
     }))
   );
 
+  const { de, ate } = periodoDoPreset(preset, new Date());
+
   let linhas: Awaited<ReturnType<typeof listarAnunciosResumo>>["linhas"] = [];
   let total = 0;
   let erroLista: string | null = null;
 
   try {
-    const resultado = await listarAnunciosResumo(contasComToken, ordenacao, pagina, 25);
+    const resultado = await listarAnunciosResumo(contasComToken, ordenacao, pagina, { de, ate }, 25);
     linhas = resultado.linhas;
     total = resultado.total;
   } catch (err) {
     console.error("Erro ao listar anuncios:", err);
     erroLista = "Não foi possível carregar os anúncios agora.";
   }
-
-  const { de, ate } = periodoDoPreset(preset, new Date());
 
   let seriesVisitas: { contaId: string; nickname: string; cor: string; pontos: { data: string; total: number }[] }[] = [];
   try {
@@ -126,7 +126,7 @@ export default async function AnunciosPage({
 
       {erroLista && <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{erroLista}</p>}
 
-      <AnunciosTabela linhas={linhas} />
+      <AnunciosTabela linhas={linhas} periodoLabel={PRESETS.find((p) => p.key === preset)?.label} />
 
       {totalPaginas > 1 && (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-1">
