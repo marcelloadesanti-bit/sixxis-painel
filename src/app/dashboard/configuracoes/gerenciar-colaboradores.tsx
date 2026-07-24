@@ -6,6 +6,7 @@ import {
   PERMISSOES_PADRAO_COLABORADOR,
   type PermissoesUsuario,
   type CodigoSecao,
+  type DefinicaoSecao,
 } from "@/lib/permissoes";
 import {
   criarColaboradorAction,
@@ -24,12 +25,16 @@ function clonarPadrao(): PermissoesUsuario {
   return JSON.parse(JSON.stringify(PERMISSOES_PADRAO_COLABORADOR));
 }
 
-function SeletorPermissoes({
+// Reutilizado tambem por GerenciarAdministradores, passando `secoes` com a
+// lista estendida (operacionais + administrativas).
+export function SeletorPermissoes({
   permissoes,
   onChange,
+  secoes = SECOES,
 }: {
   permissoes: PermissoesUsuario;
   onChange: (p: PermissoesUsuario) => void;
+  secoes?: DefinicaoSecao[];
 }) {
   function alternarAcesso(secao: CodigoSecao, acesso: boolean) {
     const atual = permissoes[secao] ?? { acesso: false, nivel: "leitura" as const };
@@ -54,7 +59,7 @@ function SeletorPermissoes({
 
   return (
     <div className="flex flex-col gap-3">
-      {SECOES.map((secao) => {
+      {secoes.map((secao) => {
         const config = permissoes[secao.codigo] ?? { acesso: false, nivel: "leitura" as const };
         const todasSubsecoes = secao.subsecoes?.map((s) => s.codigo) ?? [];
         const subsecoesSelecionadas = config.subsecoes ?? todasSubsecoes;
@@ -116,8 +121,8 @@ function SeletorPermissoes({
   );
 }
 
-function resumoPermissoes(permissoes: PermissoesUsuario): string {
-  const ativas = SECOES.filter((s) => permissoes[s.codigo]?.acesso);
+export function resumoPermissoes(permissoes: PermissoesUsuario, secoes: DefinicaoSecao[] = SECOES): string {
+  const ativas = secoes.filter((s) => permissoes[s.codigo]?.acesso);
   if (ativas.length === 0) return "Sem acesso a nenhuma seção";
   return ativas
     .map((s) => `${s.label} (${permissoes[s.codigo]?.nivel === "edicao" ? "edição" : "leitura"})`)
@@ -126,8 +131,10 @@ function resumoPermissoes(permissoes: PermissoesUsuario): string {
 
 export default function GerenciarColaboradores({
   colaboradoresIniciais,
+  podeGerenciar = true,
 }: {
   colaboradoresIniciais: Colaborador[];
+  podeGerenciar?: boolean;
 }) {
   const [colaboradores, setColaboradores] = useState(colaboradoresIniciais);
   const [mostrarNovo, setMostrarNovo] = useState(false);
@@ -231,7 +238,7 @@ export default function GerenciarColaboradores({
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-800">Colaboradores</h2>
-          {!mostrarNovo && (
+          {podeGerenciar && !mostrarNovo && (
             <button
               onClick={abrirNovo}
               className="rounded bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
@@ -254,24 +261,26 @@ export default function GerenciarColaboradores({
                   <p className="text-xs text-gray-500">{c.email}</p>
                   <p className="mt-0.5 text-xs text-gray-400">{resumoPermissoes(c.permissoes)}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => (editandoId === c.id ? setEditandoId(null) : abrirEdicao(c))}
-                    className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                  >
-                    {editandoId === c.id ? "Fechar" : "Editar"}
-                  </button>
-                  <button
-                    onClick={() => excluir(c.id)}
-                    disabled={pending}
-                    className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                  >
-                    Remover
-                  </button>
-                </div>
+                {podeGerenciar && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => (editandoId === c.id ? setEditandoId(null) : abrirEdicao(c))}
+                      className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      {editandoId === c.id ? "Fechar" : "Editar"}
+                    </button>
+                    <button
+                      onClick={() => excluir(c.id)}
+                      disabled={pending}
+                      className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {editandoId === c.id && (
+              {podeGerenciar && editandoId === c.id && (
                 <div className="border-t border-gray-100 p-3">
                   <div className="mb-3 flex flex-col gap-2">
                     <input
@@ -304,7 +313,7 @@ export default function GerenciarColaboradores({
         </ul>
       </div>
 
-      {mostrarNovo && (
+      {podeGerenciar && mostrarNovo && (
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-gray-800">Novo colaborador</h2>
           <div className="mb-3 flex flex-col gap-2">

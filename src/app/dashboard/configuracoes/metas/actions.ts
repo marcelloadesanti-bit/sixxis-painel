@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { podeEditar, type PermissoesUsuario } from "@/lib/permissoes";
 
 export async function definirMetaMesAction(formData: FormData) {
   const ano = Number(formData.get("ano"));
@@ -17,11 +18,13 @@ export async function definirMetaMesAction(formData: FormData) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, permissoes")
     .eq("id", user.id)
     .maybeSingle();
-  if (profile?.role !== "admin") {
-    throw new Error("Apenas administradores podem definir metas.");
+  const isAdmin = profile?.role === "admin";
+  const permissoes = (profile?.permissoes as PermissoesUsuario) ?? {};
+  if (!podeEditar(isAdmin, permissoes, "metas")) {
+    throw new Error("Você não tem permissão para definir metas.");
   }
 
   if (!ano || !mes || mes < 1 || mes > 12 || !valor || valor <= 0) {

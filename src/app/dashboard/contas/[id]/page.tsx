@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PALETA_CORES_CONTA } from "@/lib/account-colors";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { atualizarCorContaAction } from "../actions";
 
 export default async function EscolherCorContaPage({
@@ -13,20 +14,11 @@ export default async function EscolherCorContaPage({
 }) {
   const { id } = await params;
   const { nova } = await searchParams;
+
+  const { podeEditar } = await exigirAcessoSecao("contas");
+  if (!podeEditar) redirect("/dashboard/contas");
+
   const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (profile?.role !== "admin") redirect("/dashboard");
-
   const { data: conta } = await supabase
     .from("ml_accounts")
     .select("id, nickname, apelido, cor")

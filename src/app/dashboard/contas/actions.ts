@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { podeEditar, type PermissoesUsuario } from "@/lib/permissoes";
 
 export async function atualizarCorContaAction(formData: FormData) {
   const contaId = String(formData.get("contaId"));
@@ -19,11 +20,13 @@ export async function atualizarCorContaAction(formData: FormData) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, permissoes")
     .eq("id", user.id)
     .maybeSingle();
-  if (profile?.role !== "admin") {
-    throw new Error("Apenas administradores podem alterar a cor ou o apelido de uma conta.");
+  const isAdmin = profile?.role === "admin";
+  const permissoes = (profile?.permissoes as PermissoesUsuario) ?? {};
+  if (!podeEditar(isAdmin, permissoes, "contas")) {
+    throw new Error("Você não tem permissão para alterar a cor ou o apelido de uma conta.");
   }
 
   await supabase.from("ml_accounts").update({ cor, apelido }).eq("id", contaId);

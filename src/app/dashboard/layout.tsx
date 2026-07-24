@@ -5,7 +5,7 @@ import LogoutButton from "./logout-button";
 import ThemeToggle from "./theme-toggle";
 import NotificationBell from "./notification-bell";
 import Logo from "./logo";
-import type { PermissoesUsuario } from "@/lib/permissoes";
+import { temAcessoSecao, podeEditar, type PermissoesUsuario } from "@/lib/permissoes";
 
 export default async function DashboardLayout({
   children,
@@ -29,7 +29,14 @@ export default async function DashboardLayout({
     .maybeSingle();
 
   const isAdmin = profile?.role === "admin";
+  const isAdministrador = profile?.role === "administrador";
   const permissoes = (profile?.permissoes as PermissoesUsuario) ?? {};
+
+  const rotuloCargo = isAdmin ? "Administrador master" : isAdministrador ? "Administrador" : "Colaborador";
+  const podeEquipe = temAcessoSecao(isAdmin, permissoes, "equipe");
+  const podeVerContas = temAcessoSecao(isAdmin, permissoes, "contas");
+  const podeEditarContas = podeEditar(isAdmin, permissoes, "contas");
+  const podeVerMetas = temAcessoSecao(isAdmin, permissoes, "metas");
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -41,12 +48,12 @@ export default async function DashboardLayout({
             <div className="hidden sm:block">
               <p className="text-sm font-semibold text-[var(--color-sixxis-navy)]">Painel Sixxis</p>
               <p className="text-xs text-gray-500">
-                {profile?.full_name ?? user.email} · {isAdmin ? "Administrador" : "Colaborador"}
+                {profile?.full_name ?? user.email} · {rotuloCargo}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {isAdmin && (
+            {podeEquipe && (
               <a
                 href="/dashboard/configuracoes"
                 className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
@@ -54,7 +61,7 @@ export default async function DashboardLayout({
                 Configurações
               </a>
             )}
-            {isAdmin && (
+            {podeVerContas && (
               <a
                 href="/dashboard/contas"
                 className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
@@ -62,7 +69,7 @@ export default async function DashboardLayout({
                 Contas conectadas
               </a>
             )}
-            {isAdmin && (
+            {podeVerMetas && (
               <a
                 href="/dashboard/configuracoes/metas"
                 className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
@@ -70,7 +77,7 @@ export default async function DashboardLayout({
                 Metas
               </a>
             )}
-            {isAdmin && (
+            {podeEditarContas && (
               <a
                 href="/api/mercadolivre/connect"
                 className="rounded bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"

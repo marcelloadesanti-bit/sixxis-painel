@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { secoesVisiveis, temAcessoSubsecao, type PermissoesUsuario } from "@/lib/permissoes";
+import { secoesVisiveis, secoesAdminVisiveis, temAcessoSubsecao, type PermissoesUsuario } from "@/lib/permissoes";
 
 type SubItemMenu = { href: string; label: string };
 
@@ -36,9 +36,13 @@ export default function AppSidebar({
     };
   });
 
-  const itens: ItemMenu[] = isAdmin
-    ? [...itensSecoes, { href: "/dashboard/configuracoes", label: "Configurações", icon: "⚙️" }]
-    : itensSecoes;
+  const itensAdmin: ItemMenu[] = secoesAdminVisiveis(isAdmin, permissoes).map((s) => ({
+    href: s.href,
+    label: s.label,
+    icon: s.icon,
+  }));
+
+  const itens: ItemMenu[] = [...itensSecoes, ...itensAdmin];
 
   const ativo = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname?.startsWith(href);

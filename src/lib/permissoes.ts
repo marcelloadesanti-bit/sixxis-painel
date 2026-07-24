@@ -30,7 +30,20 @@ export type CodigoSecao =
   | "publicidade"
   | "promocoes"
   | "pos_venda"
-  | "faturamento";
+  | "faturamento"
+  // Secoes administrativas: nunca ficam disponiveis para colaboradores comuns.
+  // So podem ser concedidas a usuarios com role "administrador" (ou ao admin
+  // master, que sempre tem acesso total). Ver README de seguranca em
+  // configuracoes/actions.ts sobre por que essa distincao existe.
+  | "equipe"
+  | "contas"
+  | "metas";
+
+// Codigos de secao que sao exclusivamente administrativos. Usados para
+// impedir, em profundidade (defesa em camadas), que essas chaves entrem no
+// objeto `permissoes` de um colaborador comum mesmo que alguem tente burlar
+// a UI.
+export const CODIGOS_SECOES_ADMIN: CodigoSecao[] = ["equipe", "contas", "metas"];
 
 export type PermissoesUsuario = Partial<Record<CodigoSecao, PermissaoSecao>>;
 
@@ -80,9 +93,40 @@ export const SECOES: DefinicaoSecao[] = [
   { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "🧾" },
 ];
 
+// Secoes administrativas: gestao de equipe, contas ML conectadas e metas.
+// So aparecem no seletor de permissoes ao criar/editar um ADMINISTRADOR
+// (nunca um colaborador comum) e so ficam visiveis no sidebar/cabecalho para
+// quem tiver acesso concedido a elas (ou for o admin master).
+export const SECOES_ADMIN: DefinicaoSecao[] = [
+  { codigo: "equipe", label: "Configurações", href: "/dashboard/configuracoes", icon: "⚙️" },
+  { codigo: "contas", label: "Contas conectadas", href: "/dashboard/contas", icon: "🔗" },
+  { codigo: "metas", label: "Metas", href: "/dashboard/configuracoes/metas", icon: "🎯" },
+];
+
+// Todas as secoes existentes no painel (operacionais + administrativas).
+// Usada no seletor de permissoes ao gerenciar ADMINISTRADORES.
+export const TODAS_SECOES: DefinicaoSecao[] = [...SECOES, ...SECOES_ADMIN];
+
 export const PERMISSOES_PADRAO_COLABORADOR: PermissoesUsuario = Object.fromEntries(
   SECOES.map((s) => [s.codigo, { acesso: false, nivel: "leitura" as NivelAcesso }])
 ) as PermissoesUsuario;
+
+export const PERMISSOES_PADRAO_ADMINISTRADOR: PermissoesUsuario = Object.fromEntries(
+  TODAS_SECOES.map((s) => [s.codigo, { acesso: false, nivel: "leitura" as NivelAcesso }])
+) as PermissoesUsuario;
+
+// Remove qualquer chave de secao administrativa de um objeto de permissoes.
+// Defesa em profundidade: usada no server action de colaborador comum para
+// garantir que, mesmo que alguem tente enviar `equipe`/`contas`/`metas` via
+// uma requisicao manipulada, essas chaves nunca sejam persistidas para uma
+// role que nao seja "administrador" ou "admin".
+export function removerPermissoesAdmin(permissoes: PermissoesUsuario): PermissoesUsuario {
+  const limpo = { ...permissoes };
+  for (const codigo of CODIGOS_SECOES_ADMIN) {
+    delete limpo[codigo];
+  }
+  return limpo;
+}
 
 export function temAcessoSecao(
   isAdmin: boolean,
@@ -123,11 +167,25 @@ export function temAcessoSubsecao(
   return config.subsecoes.includes(subsecao);
 }
 
-// Lista de secoes (com href) que o usuario deve ver no sidebar.
+// Lista de secoes operacionais (com href) que o usuario deve ver no sidebar.
+// Secoes administrativas (equipe/contas/metas) tem visibilidade propria via
+// `secoesAdminVisiveis`, pois no cabecalho elas aparecem como botoes
+// dedicados em vez de itens de sidebar.
 export function secoesVisiveis(
   isAdmin: boolean,
   permissoes: PermissoesUsuario | null | undefined
 ): DefinicaoSecao[] {
   if (isAdmin) return SECOES;
   return SECOES.filter((s) => temAcessoSecao(isAdmin, permissoes, s.codigo));
+}
+
+// Secoes administrativas que o usuario pode ver (admin master sempre ve
+// todas; administrador só as que tiverem `acesso: true`; colaborador nunca
+// ve nenhuma, pois essas chaves sao removidas do seu `permissoes`).
+export function secoesAdminVisiveis(
+  isAdmin: boolean,
+  permissoes: PermissoesUsuario | null | undefined
+): DefinicaoSecao[] {
+  if (isAdmin) return SECOES_ADMIN;
+  return SECOES_ADMIN.filter((s) => temAcessoSecao(isAdmin, permissoes, s.codigo));
 }

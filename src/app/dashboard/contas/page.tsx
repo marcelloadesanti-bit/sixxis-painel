@@ -1,23 +1,12 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { nomeConta } from "@/lib/account-colors";
+import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
 export default async function ContasPage() {
+  const { podeEditar } = await exigirAcessoSecao("contas");
+
   const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (profile?.role !== "admin") redirect("/dashboard");
-
   const { data: contas } = await supabase
     .from("ml_accounts")
     .select("id, nickname, apelido, site_id, cor")
@@ -51,12 +40,14 @@ export default async function ContasPage() {
                 </p>
               </div>
             </div>
-            <Link
-              href={`/dashboard/contas/${c.id}`}
-              className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-            >
-              Editar
-            </Link>
+            {podeEditar && (
+              <Link
+                href={`/dashboard/contas/${c.id}`}
+                className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                Editar
+              </Link>
+            )}
           </li>
         ))}
       </ul>
