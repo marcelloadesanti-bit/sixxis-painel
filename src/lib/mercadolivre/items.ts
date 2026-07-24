@@ -10,7 +10,8 @@ export type AnuncioResumo = {
   moeda: string;
   estoqueDisponivel: number;
   estoqueInicial: number;
-  vendidos: number;
+  vendidosTotal: number; // vendas desde a criacao do anuncio (item.sold_quantity, vitalicio)
+  vendidosPeriodo: number; // vendas dentro do periodo selecionado no filtro
   status: string;
   saude: number | null; // 0 a 1
   permalink: string;
@@ -49,7 +50,8 @@ export type AnuncioDetalhe = AnuncioResumo & {
 const SORT_MAP: Record<string, string> = {
   criados_recente: "start_time_desc",
   modificados_recente: "last_updated_desc",
-  mais_vendidos: "sold_quantity_desc",
+  mais_vendidos: "last_updated_desc", // busca normal; reordenamos por vendas do periodo depois
+  mais_vendidos_total: "sold_quantity_desc", // ordenacao nativa ja e por vendas desde a criacao
   mais_visualizados: "last_updated_desc", // busca normal; reordenamos por visitas depois
 };
 
@@ -107,7 +109,8 @@ function mapearAnuncio(item: any): AnuncioResumo {
     moeda: item.currency_id,
     estoqueDisponivel: item.available_quantity,
     estoqueInicial: item.initial_quantity,
-    vendidos: item.sold_quantity,
+    vendidosTotal: item.sold_quantity,
+    vendidosPeriodo: 0,
     status: item.status,
     saude: typeof item.health === "number" ? item.health : null,
     permalink: item.permalink,
@@ -226,11 +229,37 @@ export async function listarAnunciosResumo(
     }
   }
 
-  // 3. ordenacao final (merge de contas + caso especial "mais visualizados")
+  // 2.5 vendas do periodo selecionado, por conta (pedidos pagos no intervalo).
+  // Buscado sempre (independente da ordenacao) pois alimenta tanto a coluna
+  // "Vendidos (periodo)" quanto a Conversao, e tambem o ranking quando
+  // ordenacao === "mais_vendidos" (vendas do periodo, nao vitalicio).
+  const periodoVendas = periodoDeDatas(periodo.de, periodo.ate);
+  const vendasPorContaPeriodo = new Map<string, Map<string, number>>();
+  await Promise.all(
+    contas.map(async ({ conta, accessToken }) => {
+      try {
+        const lista = await getProdutosMaisVendidos(accessToken, Number(conta.ml_user_id), periodoVendas);
+        vendasPorContaPeriodo.set(conta.id, new Map(lista.map((p) => [p.itemId, p.quantidade])));
+      } catch (err) {
+        console.error(`Erro ao buscar vendas do periodo da conta ${conta.id}:`, err);
+        vendasPorContaPeriodo.set(conta.id, new Map());
+      }
+    })
+  );
+  for (const linha of todasLinhas) {
+    linha.vendidosPeriodo = vendasPorContaPeriodo.get(linha.contaId)?.get(linha.id) ?? 0;
+  }
+
+  // 3. ordenacao final (merge de contas + casos especiais que exigem o
+  // conjunto completo de candidatos antes de paginar)
   let ordenadas = todasLinhas;
 
   if (ordenacao === "mais_vendidos") {
-    ordenadas = [...todasLinhas].sort((a, b) => b.vendidos - a.vendidos);
+    // vendas dentro do periodo selecionado (nao vitalicio)
+    ordenadas = [...todasLinhas].sort((a, b) => b.vendidosPeriodo - a.vendidosPeriodo);
+  } else if (ordenacao === "mais_vendidos_total") {
+    // vendas desde a criacao do anuncio (vitalicio, ignora o periodo do filtro)
+    ordenadas = [...todasLinhas].sort((a, b) => b.vendidosTotal - a.vendidosTotal);
   } else if (ordenacao === "criados_recente") {
     ordenadas = [...todasLinhas].sort(
       (a, b) => new Date(b.dataInicio).getTime() - new Date(a.dataInicio).getTime()
@@ -267,30 +296,23 @@ export async function listarAnunciosResumo(
     idsPorContaPagina.get(linha.contaId)!.push(linha.id);
   }
 
-  const periodoVendas = periodoDeDatas(periodo.de, periodo.ate);
-
   for (const [contaId, ids] of idsPorContaPagina) {
     const accessToken = porConta.get(contaId)!;
-    const contaInfo = contas.find((c) => c.conta.id === contaId)!.conta;
-    const [visitas, precoParaGanhar, vendidosPeriodo] = await Promise.all([
+    const [visitas, precoParaGanhar] = await Promise.all([
       ordenacao === "mais_visualizados"
         ? Promise.resolve(new Map<string, number>())
         : buscarVisitas(accessToken, ids, periodo.de, periodo.ate),
       buscarPrecoParaGanhar(accessToken, ids),
-      getProdutosMaisVendidos(accessToken, Number(contaInfo.ml_user_id), periodoVendas).catch(() => []),
     ]);
-    const vendidosPorItem = new Map(vendidosPeriodo.map((p) => [p.itemId, p.quantidade]));
 
     for (const linha of linhasPagina) {
       if (linha.contaId !== contaId) continue;
       if (visitas.has(linha.id)) linha.visitasPeriodo = visitas.get(linha.id) ?? 0;
       if (precoParaGanhar.has(linha.id)) linha.precoParaGanhar = precoParaGanhar.get(linha.id)!;
-      // "vendidos" passa a refletir o periodo selecionado, nao o total historico do anuncio
-      linha.vendidos = vendidosPorItem.get(linha.id) ?? 0;
       if (linha.visitasPeriodo && linha.visitasPeriodo > 0) {
-        linha.conversao = Math.round((linha.vendidos / linha.visitasPeriodo) * 1000) / 10;
+        linha.conversao = Math.round((linha.vendidosPeriodo / linha.visitasPeriodo) * 1000) / 10;
       } else {
-        linha.conversao = linha.vendidos > 0 ? 100 : 0;
+        linha.conversao = linha.vendidosPeriodo > 0 ? 100 : 0;
       }
     }
   }

@@ -12,7 +12,8 @@ import AnunciosTabela from "./anuncios-tabela";
 const OPCOES_ORDENACAO: { key: OrdenacaoAnuncios; label: string }[] = [
   { key: "modificados_recente", label: "Modificados recentemente" },
   { key: "criados_recente", label: "Criados recentemente" },
-  { key: "mais_vendidos", label: "Mais vendidos" },
+  { key: "mais_vendidos", label: "Mais vendidos (no período)" },
+  { key: "mais_vendidos_total", label: "Mais vendidos (desde a criação)" },
   { key: "mais_visualizados", label: "Mais visualizados" },
 ];
 
@@ -126,7 +127,11 @@ export default async function AnunciosPage({
 
       {erroLista && <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{erroLista}</p>}
 
-      <AnunciosTabela linhas={linhas} periodoLabel={PRESETS.find((p) => p.key === preset)?.label} />
+      <AnunciosTabela
+        linhas={linhas}
+        periodoLabel={PRESETS.find((p) => p.key === preset)?.label}
+        colunaVendidos={ordenacao === "mais_vendidos_total" ? "total" : "periodo"}
+      />
 
       {totalPaginas > 1 && (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-1">

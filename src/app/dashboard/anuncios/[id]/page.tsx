@@ -122,7 +122,7 @@ export default async function GestaoAnuncioPage({
         </div>
         <div className="rounded border border-gray-200 bg-white p-4">
           <p className="text-xs uppercase text-gray-400">Vendidos</p>
-          <p className="text-sm font-semibold text-gray-900">{anuncio.vendidos}</p>
+          <p className="text-sm font-semibold text-gray-900">{anuncio.vendidosTotal}</p>
         </div>
         <div className="rounded border border-gray-200 bg-white p-4">
           <p className="text-xs uppercase text-gray-400">Visitas 7 dias</p>
