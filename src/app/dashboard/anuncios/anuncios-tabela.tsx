@@ -22,10 +22,14 @@ export default function AnunciosTabela({
   linhas,
   periodoLabel,
   colunaVendidos = "periodo",
+  editavel = false,
 }: {
   linhas: LinhaAnuncio[];
   periodoLabel?: string;
   colunaVendidos?: "periodo" | "total";
+  // Quando true, o anuncio vira link para a tela de edicao (Editar anuncios).
+  // Quando false (Resumo), a linha e apenas informativa, sem navegacao.
+  editavel?: boolean;
 }) {
   const labelVendidos =
     colunaVendidos === "total" ? "Vendidos (desde a criação)" : `Vendidos${periodoLabel ? ` (${periodoLabel})` : ""}`;
@@ -59,25 +63,44 @@ export default function AnunciosTabela({
             return (
               <tr key={linha.id} className="hover:bg-gray-50">
                 <td className="px-3 py-2">
-                  <a
-                    href={`/dashboard/anuncios/${linha.id}?conta=${linha.contaId}`}
-                    className="flex items-center gap-3"
-                  >
-                    {linha.thumbnail && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={linha.thumbnail} alt="" className="h-10 w-10 rounded object-cover" />
-                    )}
-                    <div>
-                      <p className="line-clamp-1 max-w-xs font-medium text-gray-800">{linha.titulo}</p>
-                      <p className="flex items-center gap-1 text-xs text-gray-400">
-                        <span
-                          className="inline-block h-2 w-2 rounded-full"
-                          style={{ backgroundColor: linha.contaCor }}
-                        />
-                        {linha.contaNickname} · {linha.id}
-                      </p>
+                  {editavel ? (
+                    <a
+                      href={`/dashboard/anuncios/gestao/${linha.id}?conta=${linha.contaId}`}
+                      className="flex items-center gap-3"
+                    >
+                      {linha.thumbnail && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={linha.thumbnail} alt="" className="h-10 w-10 rounded object-cover" />
+                      )}
+                      <div>
+                        <p className="line-clamp-1 max-w-xs font-medium text-gray-800 hover:underline">{linha.titulo}</p>
+                        <p className="flex items-center gap-1 text-xs text-gray-400">
+                          <span
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: linha.contaCor }}
+                          />
+                          {linha.contaNickname} · {linha.id}
+                        </p>
+                      </div>
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      {linha.thumbnail && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={linha.thumbnail} alt="" className="h-10 w-10 rounded object-cover" />
+                      )}
+                      <div>
+                        <p className="line-clamp-1 max-w-xs font-medium text-gray-800">{linha.titulo}</p>
+                        <p className="flex items-center gap-1 text-xs text-gray-400">
+                          <span
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: linha.contaCor }}
+                          />
+                          {linha.contaNickname} · {linha.id}
+                        </p>
+                      </div>
                     </div>
-                  </a>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-gray-800">{formatarMoeda(linha.preco, linha.moeda)}</td>
                 <td className="px-3 py-2 text-gray-600">{linha.estoqueDisponivel}</td>

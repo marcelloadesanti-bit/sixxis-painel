@@ -1,13 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getSerieDiariaVisitas } from "@/lib/mercadolivre/visits";
 import { listarAnunciosResumo, type OrdenacaoAnuncios } from "@/lib/mercadolivre/items";
 import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
 import { COR_PADRAO } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
-import AnunciosFiltros from "./anuncios-filtros";
-import AnunciosGrafico from "./anuncios-grafico";
-import AnunciosTabela from "./anuncios-tabela";
+import AnunciosFiltros from "../anuncios-filtros";
+import AnunciosTabela from "../anuncios-tabela";
 
 const OPCOES_ORDENACAO: { key: OrdenacaoAnuncios; label: string }[] = [
   { key: "modificados_recente", label: "Modificados recentemente" },
@@ -17,7 +15,7 @@ const OPCOES_ORDENACAO: { key: OrdenacaoAnuncios; label: string }[] = [
   { key: "mais_visualizados", label: "Mais visualizados" },
 ];
 
-export default async function AnunciosPage({
+export default async function GestaoAnunciosPage({
   searchParams,
 }: {
   searchParams: Promise<{
@@ -27,7 +25,7 @@ export default async function AnunciosPage({
     periodo?: string;
   }>;
 }) {
-  await exigirAcessoSecao("anuncios", "resumo_anuncios");
+  const { podeEditar } = await exigirAcessoSecao("anuncios", "gestao");
   const params = await searchParams;
 
   const ordenacao = (OPCOES_ORDENACAO.some((o) => o.key === params.ordenar)
@@ -71,22 +69,8 @@ export default async function AnunciosPage({
     linhas = resultado.linhas;
     total = resultado.total;
   } catch (err) {
-    console.error("Erro ao listar anuncios:", err);
+    console.error("Erro ao listar anuncios (gestao):", err);
     erroLista = "Não foi possível carregar os anúncios agora.";
-  }
-
-  let seriesVisitas: { contaId: string; nickname: string; cor: string; pontos: { data: string; total: number }[] }[] = [];
-  try {
-    seriesVisitas = await Promise.all(
-      contasComToken.map(async ({ conta, accessToken }) => ({
-        contaId: conta.id,
-        nickname: conta.nickname,
-        cor: conta.cor,
-        pontos: await getSerieDiariaVisitas(accessToken, Number(conta.ml_user_id), de, ate),
-      }))
-    );
-  } catch (err) {
-    console.error("Erro ao buscar series de visitas dos anuncios:", err);
   }
 
   const totalPaginas = Math.max(1, Math.ceil(total / 25));
@@ -94,11 +78,19 @@ export default async function AnunciosPage({
   return (
     <div className="mx-auto max-w-7xl p-6">
       <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-[var(--color-sixxis-navy)]">Anúncios · Resumo</h1>
+        <h1 className="text-2xl font-bold text-[var(--color-sixxis-navy)]">Editar anúncios</h1>
+        {podeEditar && (
+          <a
+            href="/dashboard/anuncios/criar"
+            className="rounded bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
+          >
+            + Criar anúncio
+          </a>
+        )}
       </div>
       <p className="mb-6 text-sm text-gray-500">
-        Visão consolidada e somente leitura de {todasContas.length} conta{todasContas.length === 1 ? "" : "s"} conectada
-        {todasContas.length === 1 ? "" : "s"}. Para editar um anúncio, use "Editar anúncios" no menu.
+        Clique em um anúncio para abrir e editar preço, estoque, título e variações.
+        {!podeEditar && " Seu acesso aqui é somente leitura."}
       </p>
 
       <AnunciosFiltros
@@ -108,22 +100,19 @@ export default async function AnunciosPage({
         contasSelecionadas={idsSelecionados}
         presets={PRESETS}
         presetAtual={preset}
+        baseHref="/dashboard/anuncios/gestao"
       />
 
-      <div className="my-6 rounded border border-gray-200 bg-white p-4">
-        <p className="mb-3 text-sm font-semibold text-gray-700">
-          Visitas por conta · últimos {preset === "diario" ? "1 dia" : preset.replace("dias", " dias")}
-        </p>
-        <AnunciosGrafico series={seriesVisitas} />
+      {erroLista && <p className="my-4 rounded bg-red-50 p-3 text-sm text-red-600">{erroLista}</p>}
+
+      <div className="mt-6">
+        <AnunciosTabela
+          linhas={linhas}
+          periodoLabel={PRESETS.find((p) => p.key === preset)?.label}
+          colunaVendidos={ordenacao === "mais_vendidos_total" ? "total" : "periodo"}
+          editavel
+        />
       </div>
-
-      {erroLista && <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{erroLista}</p>}
-
-      <AnunciosTabela
-        linhas={linhas}
-        periodoLabel={PRESETS.find((p) => p.key === preset)?.label}
-        colunaVendidos={ordenacao === "mais_vendidos_total" ? "total" : "periodo"}
-      />
 
       {totalPaginas > 1 && (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-1">
@@ -137,7 +126,7 @@ export default async function AnunciosPage({
             return (
               <a
                 key={p}
-                href={`/dashboard/anuncios?${query.toString()}`}
+                href={`/dashboard/anuncios/gestao?${query.toString()}`}
                 className={`rounded px-3 py-1.5 text-xs font-medium ${
                   p === pagina
                     ? "bg-[var(--color-sixxis-navy)] text-white"

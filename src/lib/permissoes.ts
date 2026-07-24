@@ -39,7 +39,11 @@ export type DefinicaoSecao = {
   label: string;
   href: string;
   icon: string;
-  subsecoes?: { codigo: string; label: string }[];
+  // `href` na subsecao e opcional: quando presente, vira um item navegavel
+  // proprio no submenu do sidebar (ex: Anuncios). Quando ausente, a subsecao
+  // e usada apenas para controle de acesso dentro de uma pagina unica
+  // (ex: Pos-venda, onde as 3 sub-abas convivem na mesma tela).
+  subsecoes?: { codigo: string; label: string; href?: string }[];
 };
 
 // Fonte unica de verdade da lista de secoes do painel.
@@ -54,9 +58,9 @@ export const SECOES: DefinicaoSecao[] = [
     href: "/dashboard/anuncios",
     icon: "🛍️",
     subsecoes: [
-      { codigo: "resumo_anuncios", label: "Resumo" },
-      { codigo: "gestao", label: "Gestão de anúncios" },
-      { codigo: "criar", label: "Criar novo anúncio" },
+      { codigo: "resumo_anuncios", label: "Resumo", href: "/dashboard/anuncios" },
+      { codigo: "gestao", label: "Editar anúncios", href: "/dashboard/anuncios/gestao" },
+      { codigo: "criar", label: "Criar anúncios", href: "/dashboard/anuncios/criar" },
     ],
   },
   { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "📣" },

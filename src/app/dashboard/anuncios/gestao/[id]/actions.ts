@@ -51,12 +51,12 @@ export async function atualizarPrecoAction(formData: FormData) {
   const accessToken = await getValidAccessToken(contaId);
   const resultado = await chamarML(accessToken, itemId, { price: preco });
 
-  revalidatePath(`/dashboard/anuncios/${itemId}`);
+  revalidatePath(`/dashboard/anuncios/gestao/${itemId}`);
 
   if (!resultado.ok) {
-    redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
+    redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
   }
-  redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&ok=preco`);
+  redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&ok=preco`);
 }
 
 export async function atualizarEstoqueAction(formData: FormData) {
@@ -69,12 +69,12 @@ export async function atualizarEstoqueAction(formData: FormData) {
   const accessToken = await getValidAccessToken(contaId);
   const resultado = await chamarML(accessToken, itemId, { available_quantity: estoque });
 
-  revalidatePath(`/dashboard/anuncios/${itemId}`);
+  revalidatePath(`/dashboard/anuncios/gestao/${itemId}`);
 
   if (!resultado.ok) {
-    redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
+    redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
   }
-  redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&ok=estoque`);
+  redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&ok=estoque`);
 }
 
 export async function pausarOuAtivarAction(formData: FormData) {
@@ -87,13 +87,14 @@ export async function pausarOuAtivarAction(formData: FormData) {
   const accessToken = await getValidAccessToken(contaId);
   const resultado = await chamarML(accessToken, itemId, { status: novoStatus });
 
-  revalidatePath(`/dashboard/anuncios/${itemId}`);
+  revalidatePath(`/dashboard/anuncios/gestao/${itemId}`);
+  revalidatePath("/dashboard/anuncios/gestao");
   revalidatePath("/dashboard/anuncios");
 
   if (!resultado.ok) {
-    redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
+    redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
   }
-  redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&ok=status`);
+  redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&ok=status`);
 }
 
 export async function atualizarTituloAction(formData: FormData) {
@@ -106,12 +107,12 @@ export async function atualizarTituloAction(formData: FormData) {
   const accessToken = await getValidAccessToken(contaId);
   const resultado = await chamarML(accessToken, itemId, { title: titulo });
 
-  revalidatePath(`/dashboard/anuncios/${itemId}`);
+  revalidatePath(`/dashboard/anuncios/gestao/${itemId}`);
 
   if (!resultado.ok) {
-    redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
+    redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
   }
-  redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&ok=titulo`);
+  redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&ok=titulo`);
 }
 
 export async function atualizarVariacaoAction(formData: FormData) {
@@ -128,10 +129,10 @@ export async function atualizarVariacaoAction(formData: FormData) {
     variations: [{ id: variacaoId, price: preco, available_quantity: estoque }],
   });
 
-  revalidatePath(`/dashboard/anuncios/${itemId}`);
+  revalidatePath(`/dashboard/anuncios/gestao/${itemId}`);
 
   if (!resultado.ok) {
-    redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
+    redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&erro=${encodeURIComponent(resultado.erro!)}`);
   }
-  redirect(`/dashboard/anuncios/${itemId}?conta=${contaId}&ok=variacao`);
+  redirect(`/dashboard/anuncios/gestao/${itemId}?conta=${contaId}&ok=variacao`);
 }

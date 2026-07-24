@@ -45,7 +45,7 @@ export default async function GestaoAnuncioPage({
     return (
       <div className="mx-auto max-w-3xl p-6">
         <p className="text-sm text-red-500">Link inválido: falta o parâmetro da conta.</p>
-        <Link href="/dashboard/anuncios" className="text-sm text-[var(--color-sixxis-blue)] underline">
+        <Link href="/dashboard/anuncios/gestao" className="text-sm text-[var(--color-sixxis-blue)] underline">
           ← Voltar
         </Link>
       </div>
@@ -67,7 +67,7 @@ export default async function GestaoAnuncioPage({
     return (
       <div className="mx-auto max-w-3xl p-6">
         <p className="text-sm text-red-500">{erroCarregamento ?? "Anúncio não encontrado."}</p>
-        <Link href="/dashboard/anuncios" className="text-sm text-[var(--color-sixxis-blue)] underline">
+        <Link href="/dashboard/anuncios/gestao" className="text-sm text-[var(--color-sixxis-blue)] underline">
           ← Voltar
         </Link>
       </div>
@@ -86,8 +86,8 @@ export default async function GestaoAnuncioPage({
 
   return (
     <div className="mx-auto max-w-4xl p-6">
-      <Link href="/dashboard/anuncios" className="text-sm text-[var(--color-sixxis-blue)] underline">
-        ← Voltar para Anúncios
+      <Link href="/dashboard/anuncios/gestao" className="text-sm text-[var(--color-sixxis-blue)] underline">
+        ← Voltar para Editar anúncios
       </Link>
 
       <div className="mt-2 mb-1 flex items-start justify-between gap-4">

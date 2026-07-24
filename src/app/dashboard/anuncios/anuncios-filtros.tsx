@@ -13,6 +13,7 @@ export default function AnunciosFiltros({
   contasSelecionadas,
   presets,
   presetAtual,
+  baseHref = "/dashboard/anuncios",
 }: {
   opcoesOrdenacao: { key: OrdenacaoAnuncios; label: string }[];
   ordenacaoAtual: OrdenacaoAnuncios;
@@ -20,6 +21,7 @@ export default function AnunciosFiltros({
   contasSelecionadas: string[];
   presets: { key: PresetKey; label: string }[];
   presetAtual: PresetKey;
+  baseHref?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,7 +32,7 @@ export default function AnunciosFiltros({
       params.set(chave, valor);
     }
     params.set("pagina", "1");
-    router.push(`/dashboard/anuncios?${params.toString()}`);
+    router.push(`${baseHref}?${params.toString()}`);
   }
 
   function alternarConta(contaId: string) {
