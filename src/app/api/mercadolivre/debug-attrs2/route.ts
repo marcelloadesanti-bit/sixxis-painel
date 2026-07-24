@@ -25,13 +25,14 @@ export async function GET(req: NextRequest) {
     const visiveis = attrs.filter((a: any) => !a.tags?.hidden && !a.tags?.read_only);
     const ocultos = attrs.filter((a: any) => a.tags?.hidden || a.tags?.read_only);
 
+    const pacote = attrs.filter((a: any) => a.id.startsWith("SELLER_PACKAGE_"));
+
     return NextResponse.json({
       categoria: catId,
       total,
       visiveisCount: visiveis.length,
       ocultosCount: ocultos.length,
-      visiveis: visiveis.map((a: any) => ({ id: a.id, name: a.name, value_type: a.value_type, tags: a.tags })),
-      ocultos: ocultos.map((a: any) => ({ id: a.id, name: a.name, tags: a.tags })),
+      pacote: pacote.map((a: any) => ({ id: a.id, name: a.name, value_type: a.value_type, tags: a.tags, hint: a.hint })),
     });
   } catch (err) {
     return NextResponse.json({ erro: err instanceof Error ? err.message : String(err) });
