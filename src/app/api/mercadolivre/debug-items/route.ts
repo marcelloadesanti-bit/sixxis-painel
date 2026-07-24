@@ -22,9 +22,9 @@ export async function GET() {
 
   const resultados: Record<string, unknown> = {};
 
-  // 1. Lista de itens do vendedor
+  // 1. Lista de itens ativos, mais recentemente atualizados primeiro
   const buscaResp = await fetch(
-    `https://api.mercadolibre.com/users/${conta.ml_user_id}/items/search?limit=5&offset=0`,
+    `https://api.mercadolibre.com/users/${conta.ml_user_id}/items/search?limit=5&offset=0&status=active&sort=last_updated_desc`,
     { headers }
   );
   const busca = await buscaResp.json();
@@ -33,41 +33,33 @@ export async function GET() {
   const primeiroItemId = busca.results?.[0];
 
   if (primeiroItemId) {
-    // 2. Detalhe do item
     const itemResp = await fetch(`https://api.mercadolibre.com/items/${primeiroItemId}`, { headers });
-    resultados.item = await itemResp.json();
+    const item = await itemResp.json();
+    resultados.item = item;
 
-    // 3. Descricao
-    const descResp = await fetch(`https://api.mercadolibre.com/items/${primeiroItemId}/description`, { headers });
-    resultados.descricao = { status: descResp.status, body: await descResp.json().catch(() => null) };
+    const hoje = new Date();
+    const seteDiasAtras = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
-    // 4. Health / qualidade (endpoints candidatos)
-    const candidatos = [
-      `https://api.mercadolibre.com/items/${primeiroItemId}/health`,
-      `https://api.mercadolibre.com/reputation/items/${primeiroItemId}`,
-      `https://api.mercadolibre.com/items/${primeiroItemId}/visits`,
-    ];
-    resultados.candidatosQualidade = {};
-    for (const url of candidatos) {
+    const candidatos: Record<string, string> = {
+      price_to_win: `https://api.mercadolibre.com/items/${primeiroItemId}/price_to_win?version=v2`,
+      visits_window: `https://api.mercadolibre.com/items/${primeiroItemId}/visits/time_window?last=7&unit=day&ending=${fmt(hoje)}`,
+      visits_range: `https://api.mercadolibre.com/items/${primeiroItemId}/visits?date_from=${fmt(seteDiasAtras)}T00:00:00.000-00:00&date_to=${fmt(hoje)}T23:59:59.000-00:00`,
+      item_v2: `https://api.mercadolibre.com/items/${primeiroItemId}?include_attributes=all`,
+    };
+
+    resultados.candidatos = {};
+    for (const [nome, url] of Object.entries(candidatos)) {
       try {
         const r = await fetch(url, { headers });
-        (resultados.candidatosQualidade as Record<string, unknown>)[url] = {
+        (resultados.candidatos as Record<string, unknown>)[nome] = {
           status: r.status,
           body: await r.json().catch(() => null),
         };
       } catch (e) {
-        (resultados.candidatosQualidade as Record<string, unknown>)[url] = { erro: String(e) };
+        (resultados.candidatos as Record<string, unknown>)[nome] = { erro: String(e) };
       }
     }
-
-    // 5. Variacoes / listing_type / sale_terms ja vem no item, sem chamada extra.
-
-    // 6. Visitas do item (time_window)
-    const visitasResp = await fetch(
-      `https://api.mercadolibre.com/items/visits?ids=${primeiroItemId}`,
-      { headers }
-    );
-    resultados.visitas = { status: visitasResp.status, body: await visitasResp.json().catch(() => null) };
   }
 
   return NextResponse.json(resultados);
