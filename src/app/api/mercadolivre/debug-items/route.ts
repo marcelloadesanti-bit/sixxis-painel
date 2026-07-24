@@ -62,5 +62,16 @@ export async function GET() {
     }
   }
 
+  // Teste de escrita: PUT no mesmo preco (no-op) para confirmar escopo de escrita
+  if (primeiroItemId) {
+    const itemAtual = (resultados.item as { price: number }).price;
+    const putResp = await fetch(`https://api.mercadolibre.com/items/${primeiroItemId}`, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ price: itemAtual }),
+    });
+    resultados.testeEscrita = { status: putResp.status, body: await putResp.json().catch(() => null) };
+  }
+
   return NextResponse.json(resultados);
 }
