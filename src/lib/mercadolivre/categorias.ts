@@ -38,9 +38,24 @@ export type AtributoCategoria = {
   // "secundaria" = opcional, faz parte da ficha tecnica/especificacoes.
   grupo: "principal" | "secundaria";
   podeVariar: boolean; // tags.allow_variations -- pode virar dimensao de variacao (cor, voltagem...)
+  embalagem: boolean; // SELLER_PACKAGE_* -- medidas/peso da embalagem, usadas no calculo de frete
   dica: string | null;
   valores: { id: string; nome: string }[] | null; // presente quando tipo = "list" ou "boolean"
 };
+
+// Atributos que ja tem campo dedicado proprio no formulario (SKU, GTIN) ou
+// que sao irrelevantes/redundantes para o vendedor preencher manualmente
+// (id interno, motivo de GTIN vazio, condicao do item que ja e um campo
+// proprio do anuncio, etc). Ficam de fora da lista generica de
+// caracteristicas para nao duplicar/confundir.
+const ATRIBUTOS_EXCLUIDOS = new Set([
+  "GTIN",
+  "SELLER_SKU",
+  "ITEM_CONDITION",
+  "PRODUCT_DATA_SOURCE",
+  "EMPTY_GTIN_REASON",
+  "AGID",
+]);
 
 export type TipoAnuncio = {
   id: string; // listing_type_id, ex: "gold_special", "gold_pro"
@@ -109,8 +124,15 @@ export async function buscarAtributosCategoria(
     `https://api.mercadolibre.com/categories/${categoriaId}/attributes`,
     accessToken
   );
+  // Importante (corrigido apos teste real): `tags.hidden` NAO significa
+  // "o vendedor nao pode preencher" -- a propria plataforma do ML mostra a
+  // maioria dos atributos "hidden" como ficha tecnica opcional na criacao
+  // manual de anuncio (ex: "Com Bluetooth", "Material da estrutura", as
+  // medidas de embalagem SELLER_PACKAGE_*). Quem realmente e preenchido
+  // automaticamente pelo ML (e por isso deve ficar de fora) e o que tem
+  // `tags.read_only`.
   return dados
-    .filter((a) => !a.tags?.hidden && !a.tags?.read_only)
+    .filter((a) => !a.tags?.read_only && !ATRIBUTOS_EXCLUIDOS.has(a.id))
     .map((a) => ({
       id: a.id,
       nome: a.name,
@@ -118,6 +140,7 @@ export async function buscarAtributosCategoria(
       obrigatorio: Boolean(a.tags?.required),
       grupo: a.tags?.required ? "principal" : "secundaria",
       podeVariar: Boolean(a.tags?.allow_variations),
+      embalagem: a.id.startsWith("SELLER_PACKAGE_"),
       dica: a.hint ?? a.tooltip ?? null,
       valores:
         a.value_type === "list" || a.value_type === "boolean"

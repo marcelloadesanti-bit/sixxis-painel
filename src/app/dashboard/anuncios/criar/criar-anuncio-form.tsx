@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import type { AtributoCategoria, SugestaoCategoria, TipoAnuncio } from "@/lib/mercadolivre/categorias";
 import type { TermoTendencia } from "@/lib/mercadolivre/tendencias";
+import SeletorFotos from "./seletor-fotos";
 
 type ContaOpcao = { id: string; nickname: string; cor: string };
 type NoCategoria = { id: string; name: string };
@@ -69,6 +70,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   const [gtin, setGtin] = useState("");
   const [semGtin, setSemGtin] = useState(false);
   const [imagens, setImagens] = useState<File[]>([]);
+  const [embalagem, setEmbalagem] = useState({ largura: "", comprimento: "", altura: "", peso: "" });
 
   const [descricao, setDescricao] = useState("");
   const [contasSelecionadas, setContasSelecionadas] = useState<string[]>(contas.map((c) => c.id));
@@ -79,8 +81,11 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   const [resultados, setResultados] = useState<ResultadoContaCriacao[] | null>(null);
 
   const atributosPrincipais = atributos.filter((a) => a.grupo === "principal");
-  const atributosSecundarios = atributos.filter((a) => a.grupo === "secundaria");
+  const atributosSecundarios = atributos.filter(
+    (a) => a.grupo === "secundaria" && !a.podeVariar && !a.embalagem
+  );
   const atributosVariacao = atributos.filter((a) => a.podeVariar);
+  const atributosEmbalagem = atributos.filter((a) => a.embalagem);
   const atributoVariacaoEscolhido = atributosVariacao.find((a) => a.id === atributoVariacaoId) ?? null;
 
   async function buscarSugestoes() {
@@ -172,6 +177,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
     setCaminho([]);
     setFilhasAtuais([]);
     setTendenciasCategoria([]);
+    setEmbalagem({ largura: "", comprimento: "", altura: "", peso: "" });
     setTemVariacoes(false);
     setAtributoVariacaoId("");
     setLinhasVariacao([]);
@@ -271,7 +277,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       if (imagens.length === 0) return setErroEnvio("Adicione ao menos uma foto.");
     }
 
-    const atributosParaEnviar = [
+    const atributosParaEnviar: { id: string; value_id?: string; value_name?: string }[] = [
       ...atributosPrincipais.map((a) => ({ a, valor: valoresAtributos[a.id] })),
       ...atributosSecundarios
         .filter((a) => !naoSeAplica[a.id] && valoresAtributos[a.id]?.trim())
@@ -279,6 +285,19 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
     ].map(({ a, valor }) =>
       a.valores ? { id: a.id, value_id: valor } : { id: a.id, value_name: valor }
     );
+
+    const mapaEmbalagem: Record<string, { valor: string; unidade: string }> = {
+      SELLER_PACKAGE_WIDTH: { valor: embalagem.largura, unidade: "cm" },
+      SELLER_PACKAGE_LENGTH: { valor: embalagem.comprimento, unidade: "cm" },
+      SELLER_PACKAGE_HEIGHT: { valor: embalagem.altura, unidade: "cm" },
+      SELLER_PACKAGE_WEIGHT: { valor: embalagem.peso, unidade: "kg" },
+    };
+    for (const a of atributosEmbalagem) {
+      const dado = mapaEmbalagem[a.id];
+      if (dado?.valor) {
+        atributosParaEnviar.push({ id: a.id, value_name: `${dado.valor} ${dado.unidade}` });
+      }
+    }
 
     const fd = new FormData();
     fd.set("titulo", titulo.trim());
@@ -678,18 +697,11 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
                             </div>
                             <div>
                               <label className="mb-1 block text-[11px] text-gray-500">Fotos *</label>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={(e) =>
-                                  atualizarLinhaVariacao(i, { imagens: Array.from(e.target.files ?? []) })
-                                }
-                                className="block w-full text-xs"
+                              <SeletorFotos
+                                imagens={l.imagens}
+                                onChange={(arquivos) => atualizarLinhaVariacao(i, { imagens: arquivos })}
+                                compacto
                               />
-                              {l.imagens.length > 0 && (
-                                <p className="mt-0.5 text-[11px] text-gray-400">{l.imagens.length} foto(s)</p>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -741,16 +753,57 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-500">Fotos *</label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => setImagens(Array.from(e.target.files ?? []))}
-              className="block w-full text-sm"
-            />
-            {imagens.length > 0 && (
-              <p className="mt-1 text-xs text-gray-400">{imagens.length} foto(s) selecionada(s)</p>
-            )}
+            <SeletorFotos imagens={imagens} onChange={setImagens} />
+          </div>
+        </div>
+      )}
+
+      {/* Embalagem (para calculo automatico de frete pelo Mercado Envios) */}
+      {categoriaFinal && !carregandoAtributos && atributosEmbalagem.length > 0 && (
+        <div className="rounded border border-gray-200 bg-white p-4">
+          <h2 className="mb-1 text-sm font-semibold text-gray-700">6. Embalagem (para cálculo de frete)</h2>
+          <p className="mb-3 text-xs text-gray-400">
+            Medidas da caixa/embalagem que será enviada ao comprador pelo Mercado Envios. Opcional, mas recomendado —
+            medidas incorretas podem gerar cobrança extra de frete ou penalidade.
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Largura (cm)</label>
+              <input
+                type="number"
+                value={embalagem.largura}
+                onChange={(e) => setEmbalagem((v) => ({ ...v, largura: e.target.value }))}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Comprimento (cm)</label>
+              <input
+                type="number"
+                value={embalagem.comprimento}
+                onChange={(e) => setEmbalagem((v) => ({ ...v, comprimento: e.target.value }))}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Altura (cm)</label>
+              <input
+                type="number"
+                value={embalagem.altura}
+                onChange={(e) => setEmbalagem((v) => ({ ...v, altura: e.target.value }))}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Peso (kg)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={embalagem.peso}
+                onChange={(e) => setEmbalagem((v) => ({ ...v, peso: e.target.value }))}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -758,7 +811,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       {/* Preco + tipo de anuncio */}
       {categoriaFinal && !carregandoAtributos && (
         <div className="rounded border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">6. Preço e tipo de anúncio</h2>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">7. Preço e tipo de anúncio</h2>
           <div className="mb-3 flex items-end gap-2">
             <div className="max-w-[160px]">
               <label className="mb-1 block text-xs text-gray-500">Preço (R$)</label>
@@ -814,7 +867,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       {/* Descricao */}
       {categoriaFinal && !carregandoAtributos && (
         <div className="rounded border border-gray-200 bg-white p-4">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">7. Descrição (opcional)</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">8. Descrição (opcional)</h2>
           <textarea
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
@@ -827,7 +880,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       {/* Contas */}
       {categoriaFinal && !carregandoAtributos && (
         <div className="rounded border border-gray-200 bg-white p-4">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">8. Publicar nas contas</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">9. Publicar nas contas</h2>
           <p className="mb-3 text-xs text-gray-500">
             O mesmo anúncio (título, características, fotos, categoria, preço e estoque) será criado em cada conta
             selecionada.
