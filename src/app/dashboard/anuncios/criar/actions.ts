@@ -8,10 +8,12 @@ import {
   buscarCategoriasRaiz,
   buscarCategoria,
   buscarAtributosCategoria,
+  buscarPredicaoCategoria,
   uploadImagemML,
   criarItemML,
   type CategoriaDetalhe,
   type AtributoCategoria,
+  type SugestaoCategoria,
 } from "@/lib/mercadolivre/categorias";
 
 async function exigirEdicaoAnuncios() {
@@ -47,6 +49,13 @@ export async function buscarCategoriasRaizAction(): Promise<{ id: string; name: 
   await exigirEdicaoAnuncios();
   const accessToken = await tokenDeQualquerConta();
   return buscarCategoriasRaiz(accessToken);
+}
+
+export async function predizerCategoriaAction(titulo: string): Promise<SugestaoCategoria[]> {
+  await exigirEdicaoAnuncios();
+  if (!titulo || titulo.trim().length < 4) return [];
+  const accessToken = await tokenDeQualquerConta();
+  return buscarPredicaoCategoria(accessToken, titulo.trim());
 }
 
 export async function buscarCategoriaAction(categoriaId: string): Promise<CategoriaDetalhe> {

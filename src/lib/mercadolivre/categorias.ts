@@ -101,6 +101,26 @@ export async function buscarAtributosCategoria(
     }));
 }
 
+export type SugestaoCategoria = { categoriaId: string; categoriaNome: string; dominioNome: string };
+
+// Sugere a(s) categoria(s) mais provaveis a partir do titulo do anuncio,
+// usando o mesmo mecanismo de previsao que a propria plataforma do ML usa
+// ao criar um anuncio novo.
+export async function buscarPredicaoCategoria(
+  accessToken: string,
+  titulo: string
+): Promise<SugestaoCategoria[]> {
+  const dados = await chamarML<any[]>(
+    `https://api.mercadolibre.com/sites/MLB/domain_discovery/search?limit=5&q=${encodeURIComponent(titulo)}`,
+    accessToken
+  );
+  return dados.map((d) => ({
+    categoriaId: d.category_id,
+    categoriaNome: d.category_name,
+    dominioNome: d.domain_name,
+  }));
+}
+
 // Envia uma imagem (bytes) para a biblioteca de imagens da conta e retorna o
 // id da imagem, usado depois no campo `pictures` da criacao do item.
 export async function uploadImagemML(accessToken: string, arquivo: File): Promise<string> {

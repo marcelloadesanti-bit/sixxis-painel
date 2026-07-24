@@ -1,34 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   buscarCategoriasRaizAction,
   buscarCategoriaAction,
   buscarAtributosAction,
+  predizerCategoriaAction,
   criarAnuncioAction,
   type ResultadoContaCriacao,
 } from "./actions";
-import type { AtributoCategoria } from "@/lib/mercadolivre/categorias";
+import type { AtributoCategoria, SugestaoCategoria } from "@/lib/mercadolivre/categorias";
 
 type ContaOpcao = { id: string; nickname: string; cor: string };
 type NoCategoria = { id: string; name: string };
 type NivelCaminho = { id: string; nome: string; filhas: NoCategoria[] };
 
 export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
-  // --- navegacao da arvore de categorias ---
+  // --- titulo + predicao automatica de categoria ---
+  const [titulo, setTitulo] = useState("");
+  const [sugestoes, setSugestoes] = useState<SugestaoCategoria[] | null>(null);
+  const [buscandoSugestoes, setBuscandoSugestoes] = useState(false);
+  const [erroSugestoes, setErroSugestoes] = useState<string | null>(null);
+
+  // --- busca manual (fallback) na arvore de categorias ---
+  const [buscaManual, setBuscaManual] = useState(false);
   const [caminho, setCaminho] = useState<NivelCaminho[]>([]);
   const [filhasAtuais, setFilhasAtuais] = useState<NoCategoria[]>([]);
-  const [carregandoCategorias, setCarregandoCategorias] = useState(true);
+  const [carregandoCategorias, setCarregandoCategorias] = useState(false);
   const [erroCategorias, setErroCategorias] = useState<string | null>(null);
 
-  // --- categoria final escolhida (folha) ---
+  // --- categoria final escolhida ---
   const [categoriaFinal, setCategoriaFinal] = useState<{ id: string; nome: string } | null>(null);
   const [atributos, setAtributos] = useState<AtributoCategoria[]>([]);
   const [carregandoAtributos, setCarregandoAtributos] = useState(false);
   const [valoresAtributos, setValoresAtributos] = useState<Record<string, string>>({});
 
   // --- campos do anuncio ---
-  const [titulo, setTitulo] = useState("");
   const [preco, setPreco] = useState("");
   const [estoque, setEstoque] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -41,12 +48,46 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [resultados, setResultados] = useState<ResultadoContaCriacao[] | null>(null);
 
-  useEffect(() => {
+  async function buscarSugestoes() {
+    if (titulo.trim().length < 4) {
+      setErroSugestoes("Digite pelo menos 4 caracteres do título.");
+      return;
+    }
+    setBuscandoSugestoes(true);
+    setErroSugestoes(null);
+    try {
+      const lista = await predizerCategoriaAction(titulo);
+      setSugestoes(lista);
+      if (lista.length === 0) setErroSugestoes("Nenhuma categoria encontrada para esse título. Tente reformular ou busque manualmente abaixo.");
+    } catch (err) {
+      setErroSugestoes(err instanceof Error ? err.message : "Erro ao buscar categoria.");
+    } finally {
+      setBuscandoSugestoes(false);
+    }
+  }
+
+  async function escolherCategoriaFinal(id: string, nome: string) {
+    setCategoriaFinal({ id, nome });
+    setCarregandoAtributos(true);
+    try {
+      const attrs = await buscarAtributosAction(id);
+      setAtributos(attrs);
+    } catch (err) {
+      setErroCategorias(err instanceof Error ? err.message : "Erro ao carregar campos da categoria.");
+    } finally {
+      setCarregandoAtributos(false);
+    }
+  }
+
+  function ativarBuscaManual() {
+    setBuscaManual(true);
+    setErroCategorias(null);
+    setCarregandoCategorias(true);
     buscarCategoriasRaizAction()
       .then((raiz) => setFilhasAtuais(raiz))
       .catch((err) => setErroCategorias(err instanceof Error ? err.message : "Erro ao carregar categorias."))
       .finally(() => setCarregandoCategorias(false));
-  }, []);
+  }
 
   async function entrarNaCategoria(no: NoCategoria) {
     setCarregandoCategorias(true);
@@ -56,11 +97,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       setCaminho((atual) => [...atual, { id: no.id, nome: no.name, filhas: filhasAtuais }]);
       if (detalhe.ehFolha) {
         setFilhasAtuais([]);
-        setCategoriaFinal({ id: detalhe.id, nome: detalhe.nome });
-        setCarregandoAtributos(true);
-        const attrs = await buscarAtributosAction(detalhe.id);
-        setAtributos(attrs);
-        setCarregandoAtributos(false);
+        await escolherCategoriaFinal(detalhe.id, detalhe.nome);
       } else {
         setFilhasAtuais(detalhe.filhas);
       }
@@ -72,23 +109,20 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   }
 
   function voltarNivel(indice: number) {
-    // indice = posicao no array `caminho` para onde queremos voltar (mostra as filhas daquele nivel)
     const nivel = caminho[indice];
     setFilhasAtuais(nivel.filhas);
     setCaminho((atual) => atual.slice(0, indice));
-    setCategoriaFinal(null);
-    setAtributos([]);
   }
 
   function trocarCategoria() {
-    setCaminho([]);
     setCategoriaFinal(null);
     setAtributos([]);
-    setCarregandoCategorias(true);
-    buscarCategoriasRaizAction()
-      .then((raiz) => setFilhasAtuais(raiz))
-      .catch((err) => setErroCategorias(err instanceof Error ? err.message : "Erro ao carregar categorias."))
-      .finally(() => setCarregandoCategorias(false));
+    setValoresAtributos({});
+    setSugestoes(null);
+    setErroSugestoes(null);
+    setBuscaManual(false);
+    setCaminho([]);
+    setFilhasAtuais([]);
   }
 
   function alternarConta(id: string) {
@@ -100,7 +134,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   async function enviar() {
     setErroEnvio(null);
 
-    if (!categoriaFinal) return setErroEnvio("Escolha uma categoria (até chegar numa sem subcategorias).");
+    if (!categoriaFinal) return setErroEnvio("Escolha uma categoria.");
     if (!titulo.trim()) return setErroEnvio("Informe o título do anúncio.");
     if (!preco || Number(preco) <= 0) return setErroEnvio("Informe um preço válido.");
     if (!estoque || Number(estoque) < 0) return setErroEnvio("Informe o estoque.");
@@ -182,14 +216,34 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
 
   return (
     <div className="space-y-6">
-      {/* Categoria */}
+      {/* Titulo + categoria */}
       <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700">1. Categoria</h2>
+        <h2 className="mb-2 text-sm font-semibold text-gray-700">1. Título e categoria</h2>
+        <label className="mb-1 block text-xs text-gray-500">Título do anúncio (máx. 60 caracteres)</label>
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value.slice(0, 60))}
+            maxLength={60}
+            placeholder="Ex: Climatizador de ar portátil 45L residencial 110v"
+            disabled={Boolean(categoriaFinal)}
+            className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
+          />
+          {!categoriaFinal && (
+            <button
+              onClick={buscarSugestoes}
+              disabled={buscandoSugestoes}
+              className="whitespace-nowrap rounded bg-[var(--color-sixxis-navy)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {buscandoSugestoes ? "Buscando..." : "Buscar categoria"}
+            </button>
+          )}
+        </div>
 
         {categoriaFinal ? (
           <div className="flex items-center justify-between rounded bg-green-50 p-3 text-sm">
             <span>
-              Categoria escolhida: <strong>{caminho.map((c) => c.nome).join(" › ")} › {categoriaFinal.nome}</strong>
+              Categoria escolhida: <strong>{categoriaFinal.nome}</strong>
             </span>
             <button onClick={trocarCategoria} className="text-xs text-[var(--color-sixxis-blue)] underline">
               Trocar
@@ -197,33 +251,60 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
           </div>
         ) : (
           <>
-            <div className="mb-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
-              <button onClick={trocarCategoria} className="underline hover:text-[var(--color-sixxis-blue)]">
-                Categorias
+            {erroSugestoes && <p className="mb-2 text-sm text-red-600">{erroSugestoes}</p>}
+
+            {sugestoes && sugestoes.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 text-xs text-gray-500">Categorias sugeridas para esse título:</p>
+                <div className="flex flex-wrap gap-2">
+                  {sugestoes.map((s) => (
+                    <button
+                      key={s.categoriaId}
+                      onClick={() => escolherCategoriaFinal(s.categoriaId, s.categoriaNome)}
+                      className="rounded-full border border-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-[var(--color-sixxis-navy)] hover:bg-[var(--color-sixxis-navy)] hover:text-white"
+                    >
+                      {s.categoriaNome} <span className="opacity-60">· {s.dominioNome}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!buscaManual ? (
+              <button onClick={ativarBuscaManual} className="text-xs text-gray-500 underline hover:text-[var(--color-sixxis-blue)]">
+                Não encontrou a categoria certa? Buscar manualmente na árvore
               </button>
-              {caminho.map((nivel, i) => (
-                <span key={nivel.id} className="flex items-center gap-1">
-                  <span>›</span>
-                  <button onClick={() => voltarNivel(i + 1)} className="underline hover:text-[var(--color-sixxis-blue)]">
-                    {nivel.nome}
-                  </button>
-                </span>
-              ))}
-            </div>
-            {erroCategorias && <p className="mb-2 text-sm text-red-600">{erroCategorias}</p>}
-            {carregandoCategorias ? (
-              <p className="text-sm text-gray-400">Carregando...</p>
             ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {filhasAtuais.map((no) => (
-                  <button
-                    key={no.id}
-                    onClick={() => entrarNaCategoria(no)}
-                    className="rounded border border-gray-300 px-3 py-2 text-left text-sm text-gray-700 hover:border-[var(--color-sixxis-navy)] hover:bg-gray-50"
-                  >
-                    {no.name}
+              <div className="mt-2 border-t border-gray-100 pt-3">
+                <div className="mb-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
+                  <button onClick={ativarBuscaManual} className="underline hover:text-[var(--color-sixxis-blue)]">
+                    Categorias
                   </button>
-                ))}
+                  {caminho.map((nivel, i) => (
+                    <span key={nivel.id} className="flex items-center gap-1">
+                      <span>›</span>
+                      <button onClick={() => voltarNivel(i + 1)} className="underline hover:text-[var(--color-sixxis-blue)]">
+                        {nivel.nome}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                {erroCategorias && <p className="mb-2 text-sm text-red-600">{erroCategorias}</p>}
+                {carregandoCategorias ? (
+                  <p className="text-sm text-gray-400">Carregando...</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {filhasAtuais.map((no) => (
+                      <button
+                        key={no.id}
+                        onClick={() => entrarNaCategoria(no)}
+                        className="rounded border border-gray-300 px-3 py-2 text-left text-sm text-gray-700 hover:border-[var(--color-sixxis-navy)] hover:bg-gray-50"
+                      >
+                        {no.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
@@ -277,15 +358,6 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
       {categoriaFinal && (
         <div className="rounded border border-gray-200 bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">3. Dados do anúncio</h2>
-          <div className="mb-3">
-            <label className="mb-1 block text-xs text-gray-500">Título (máx. 60 caracteres)</label>
-            <input
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value.slice(0, 60))}
-              maxLength={60}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            />
-          </div>
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs text-gray-500">Preço (R$)</label>
