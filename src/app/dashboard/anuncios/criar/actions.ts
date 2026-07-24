@@ -18,6 +18,7 @@ import {
   type TipoAnuncio,
   type VariacaoPayload,
 } from "@/lib/mercadolivre/categorias";
+import { buscarTendenciasCategoria, type TermoTendencia } from "@/lib/mercadolivre/tendencias";
 
 async function exigirEdicaoAnuncios() {
   const supabase = await createClient();
@@ -80,6 +81,15 @@ export async function buscarTiposAnuncioAction(categoriaId: string, preco: numbe
   if (!categoriaId || !preco || preco <= 0) return [];
   const accessToken = await tokenDeQualquerConta();
   return buscarTiposAnuncio(accessToken, categoriaId, preco);
+}
+
+// Termos mais buscados nesta categoria -- ajuda a escrever titulo/marca/modelo
+// com as palavras que o comprador realmente digita na busca (peso na busca
+// organica e na entrega de Ads). Nao bloqueia o formulario se falhar.
+export async function buscarTendenciasCategoriaAction(categoriaId: string): Promise<TermoTendencia[]> {
+  await exigirEdicaoAnuncios();
+  const accessToken = await tokenDeQualquerConta();
+  return buscarTendenciasCategoria(accessToken, categoriaId);
 }
 
 export type ResultadoContaCriacao = {

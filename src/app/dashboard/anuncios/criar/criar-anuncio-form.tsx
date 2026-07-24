@@ -7,10 +7,12 @@ import {
   buscarAtributosAction,
   predizerCategoriaAction,
   buscarTiposAnuncioAction,
+  buscarTendenciasCategoriaAction,
   criarAnuncioAction,
   type ResultadoContaCriacao,
 } from "./actions";
 import type { AtributoCategoria, SugestaoCategoria, TipoAnuncio } from "@/lib/mercadolivre/categorias";
+import type { TermoTendencia } from "@/lib/mercadolivre/tendencias";
 
 type ContaOpcao = { id: string; nickname: string; cor: string };
 type NoCategoria = { id: string; name: string };
@@ -45,6 +47,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
   const [carregandoAtributos, setCarregandoAtributos] = useState(false);
   const [valoresAtributos, setValoresAtributos] = useState<Record<string, string>>({});
   const [naoSeAplica, setNaoSeAplica] = useState<Record<string, boolean>>({});
+  const [tendenciasCategoria, setTendenciasCategoria] = useState<TermoTendencia[]>([]);
 
   // --- variacoes ---
   const [temVariacoes, setTemVariacoes] = useState(false);
@@ -109,6 +112,18 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
     } finally {
       setCarregandoAtributos(false);
     }
+    // termos em alta: nao bloqueia o formulario se essa chamada falhar
+    buscarTendenciasCategoriaAction(id)
+      .then((lista) => setTendenciasCategoria(lista))
+      .catch(() => setTendenciasCategoria([]));
+  }
+
+  function inserirTermoNoTitulo(termo: string) {
+    setTitulo((atual) => {
+      if (atual.toLowerCase().includes(termo.toLowerCase())) return atual;
+      const combinado = atual ? `${atual} ${termo}` : termo;
+      return combinado.slice(0, 60);
+    });
   }
 
   function ativarBuscaManual() {
@@ -156,6 +171,7 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
     setBuscaManual(false);
     setCaminho([]);
     setFilhasAtuais([]);
+    setTendenciasCategoria([]);
     setTemVariacoes(false);
     setAtributoVariacaoId("");
     setLinhasVariacao([]);
@@ -421,14 +437,36 @@ export default function CriarAnuncioForm({ contas }: { contas: ContaOpcao[] }) {
         </div>
 
         {categoriaFinal ? (
-          <div className="flex items-center justify-between rounded bg-green-50 p-3 text-sm">
-            <span>
-              Categoria escolhida: <strong>{categoriaFinal.nome}</strong>
-            </span>
-            <button onClick={trocarCategoria} className="text-xs text-[var(--color-sixxis-blue)] underline">
-              Trocar
-            </button>
-          </div>
+          <>
+            <div className="flex items-center justify-between rounded bg-green-50 p-3 text-sm">
+              <span>
+                Categoria escolhida: <strong>{categoriaFinal.nome}</strong>
+              </span>
+              <button onClick={trocarCategoria} className="text-xs text-[var(--color-sixxis-blue)] underline">
+                Trocar
+              </button>
+            </div>
+            {tendenciasCategoria.length > 0 && (
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <p className="mb-1.5 text-xs text-gray-500">
+                  🔥 Termos em alta nesta categoria (do mais para o menos buscado) — clique para incluir no título:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {tendenciasCategoria.slice(0, 15).map((t) => (
+                    <button
+                      key={t.posicao}
+                      onClick={() => inserirTermoNoTitulo(t.termo)}
+                      title={`${t.posicao}º mais buscado`}
+                      className="rounded-full border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:border-[var(--color-sixxis-navy)] hover:text-[var(--color-sixxis-navy)]"
+                    >
+                      <span className="mr-1 text-[10px] text-gray-400">{t.posicao}º</span>
+                      {t.termo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             {erroSugestoes && <p className="mb-2 text-sm text-red-600">{erroSugestoes}</p>}

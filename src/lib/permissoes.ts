@@ -15,7 +15,7 @@
 export type NivelAcesso = "leitura" | "edicao";
 
 export type SubsecaoPosVenda = "perguntas" | "mensagens" | "reclamacoes";
-export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar";
+export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar" | "tendencias_busca";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -61,6 +61,7 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "resumo_anuncios", label: "Resumo", href: "/dashboard/anuncios" },
       { codigo: "gestao", label: "Editar anúncios", href: "/dashboard/anuncios/gestao" },
       { codigo: "criar", label: "Criar anúncios", href: "/dashboard/anuncios/criar" },
+      { codigo: "tendencias_busca", label: "Tendências de busca", href: "/dashboard/anuncios/tendencias" },
     ],
   },
   { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "📣" },
