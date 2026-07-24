@@ -15,6 +15,7 @@
 export type NivelAcesso = "leitura" | "edicao";
 
 export type SubsecaoPosVenda = "perguntas" | "mensagens" | "reclamacoes";
+export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -25,6 +26,7 @@ export type PermissaoSecao = {
 export type CodigoSecao =
   | "resumo"
   | "vendas"
+  | "anuncios"
   | "publicidade"
   | "promocoes"
   | "pos_venda"
@@ -37,7 +39,7 @@ export type DefinicaoSecao = {
   label: string;
   href: string;
   icon: string;
-  subsecoes?: { codigo: SubsecaoPosVenda; label: string }[];
+  subsecoes?: { codigo: string; label: string }[];
 };
 
 // Fonte unica de verdade da lista de secoes do painel.
@@ -46,6 +48,17 @@ export type DefinicaoSecao = {
 export const SECOES: DefinicaoSecao[] = [
   { codigo: "resumo", label: "Resumo", href: "/dashboard", icon: "🏠" },
   { codigo: "vendas", label: "Vendas", href: "/dashboard/vendas", icon: "🏷️" },
+  {
+    codigo: "anuncios",
+    label: "Anúncios",
+    href: "/dashboard/anuncios",
+    icon: "🛍️",
+    subsecoes: [
+      { codigo: "resumo_anuncios", label: "Resumo" },
+      { codigo: "gestao", label: "Gestão de anúncios" },
+      { codigo: "criar", label: "Criar novo anúncio" },
+    ],
+  },
   { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "📣" },
   { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "🏷" },
   {
