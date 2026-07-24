@@ -19,6 +19,9 @@ import {
   variacaoPercentual,
 } from "@/lib/date-utils";
 import ResumoInterativo from "./resumo-interativo";
+import ResumoFiltros from "./resumo-filtros";
+import MetaWidget from "./meta-widget";
+import { AoVivoProvider } from "./ao-vivo-context";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
@@ -31,9 +34,16 @@ const formatarMoeda = (valor: number, moeda: string | null) =>
 export default async function ResumoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; de?: string; ate?: string; conectado?: string; erro?: string }>;
+  searchParams: Promise<{
+    periodo?: string;
+    de?: string;
+    ate?: string;
+    conectado?: string;
+    erro?: string;
+    contas?: string;
+  }>;
 }) {
-  await exigirAcessoSecao("resumo");
+  const { isAdmin } = await exigirAcessoSecao("resumo");
   const params = await searchParams;
   const supabase = await createClient();
 
@@ -62,8 +72,14 @@ export default async function ResumoPage({
     .select("id, ml_user_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
+  const todasContasIds = (contas ?? []).map((c) => c.id);
+  const idsSelecionados = params.contas
+    ? params.contas.split(",").filter((id) => todasContasIds.includes(id))
+    : todasContasIds;
+  const contasFiltradas = (contas ?? []).filter((c) => idsSelecionados.includes(c.id));
+
   const resultados = await Promise.all(
-    (contas ?? []).map(async (conta) => {
+    contasFiltradas.map(async (conta) => {
       try {
         const accessToken = await getValidAccessToken(conta.id);
         const [
@@ -216,76 +232,91 @@ export default async function ResumoPage({
       )}
 
       <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)] dark:text-white">Resumo</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        Consolidado de todas as {contas?.length ?? 0} contas conectadas
+      <p className="mb-4 text-sm text-gray-500">
+        {idsSelecionados.length === todasContasIds.length
+          ? `Consolidado de todas as ${contas?.length ?? 0} contas conectadas`
+          : `Mostrando: ${contasFiltradas.map((c) => nomeConta(c)).join(", ")}`}
       </p>
 
-      <div className="mb-6 flex flex-wrap items-end gap-4">
-        <div className="flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
-            <Link
-              key={p.key}
-              href={`/dashboard?periodo=${p.key}`}
-              className={`rounded-full border px-3 py-1 text-xs ${
-                presetSelecionado === p.key
-                  ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
-                  : "border-gray-300 text-gray-600 hover:bg-gray-50"
-              }`}
+      <AoVivoProvider contaIds={idsSelecionados}>
+        <MetaWidget isAdmin={isAdmin} />
+
+        <div className="mb-6 flex flex-wrap items-end gap-4">
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map((p) => (
+              <Link
+                key={p.key}
+                href={`/dashboard?periodo=${p.key}`}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  presetSelecionado === p.key
+                    ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
+                    : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
+
+          <form className="flex items-end gap-2">
+            <input type="hidden" name="periodo" value="personalizado" />
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">De</label>
+              <input
+                type="date"
+                name="de"
+                defaultValue={de}
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">Até</label>
+              <input
+                type="date"
+                name="ate"
+                defaultValue={ate}
+                className="rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
             >
-              {p.label}
-            </Link>
-          ))}
+              Período personalizado
+            </button>
+          </form>
         </div>
 
-        <form className="flex items-end gap-2">
-          <input type="hidden" name="periodo" value="personalizado" />
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">De</label>
-            <input
-              type="date"
-              name="de"
-              defaultValue={de}
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-gray-500">Até</label>
-            <input
-              type="date"
-              name="ate"
-              defaultValue={ate}
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Período personalizado
-          </button>
-        </form>
-      </div>
+        <ResumoFiltros
+          todasContas={(contas ?? []).map((c) => ({
+            id: c.id,
+            nickname: nomeConta(c),
+            cor: c.cor ?? COR_PADRAO,
+          }))}
+          contasSelecionadas={idsSelecionados}
+        />
 
-      <p className="mb-4 text-xs text-gray-400">
-        Período: {new Date(de + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
-        {new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")} · comparado com{" "}
-        {new Date(deAnterior + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
-        {new Date(ateAnterior + "T00:00:00").toLocaleDateString("pt-BR")}
-      </p>
+        <p className="mb-4 text-xs text-gray-400">
+          Período: {new Date(de + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
+          {new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")} · comparado com{" "}
+          {new Date(deAnterior + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
+          {new Date(ateAnterior + "T00:00:00").toLocaleDateString("pt-BR")}
+        </p>
 
-      <ResumoInterativo
-        cards={{
-          vendasBrutas: { valor: faturamentoTotal, variacaoPct: variacaoPercentual(faturamentoTotal, faturamentoAnterior) },
-          quantidadeVendas: { valor: vendasTotais, variacaoPct: variacaoPercentual(vendasTotais, vendasAnteriores) },
-          visualizacoes: { valor: visitasTotais, variacaoPct: variacaoPercentual(visitasTotais, visitasAnteriores) },
-          conversao: { valor: conversao, variacaoPct: variacaoPercentual(conversao, conversaoAnterior) },
-        }}
-        moeda={moeda ?? "BRL"}
-        periodo={{ de, ate, deAnterior, ateAnterior }}
-        contas={contasParaGrafico}
-        seriesPorConta={seriesPorConta}
-        pizza={pizza}
-      />
+        <ResumoInterativo
+          cards={{
+            vendasBrutas: { valor: faturamentoTotal, variacaoPct: variacaoPercentual(faturamentoTotal, faturamentoAnterior) },
+            quantidadeVendas: { valor: vendasTotais, variacaoPct: variacaoPercentual(vendasTotais, vendasAnteriores) },
+            visualizacoes: { valor: visitasTotais, variacaoPct: variacaoPercentual(visitasTotais, visitasAnteriores) },
+            conversao: { valor: conversao, variacaoPct: variacaoPercentual(conversao, conversaoAnterior) },
+          }}
+          moeda={moeda ?? "BRL"}
+          periodo={{ de, ate, deAnterior, ateAnterior }}
+          contas={contasParaGrafico}
+          seriesPorConta={seriesPorConta}
+          pizza={pizza}
+        />
+      </AoVivoProvider>
 
       {canceladosTotal > 0 && (
         <p className="mb-8 text-xs text-gray-500">

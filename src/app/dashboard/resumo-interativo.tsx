@@ -14,6 +14,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import VendasAoVivo from "./vendas-ao-vivo";
 
 type PontoVendas = { data: string; quantidade: number; valor: number };
 type PontoVisitas = { data: string; total: number };
@@ -293,6 +294,8 @@ export default function ResumoInterativo({
           </ResponsiveContainer>
         )}
       </div>
+
+      <VendasAoVivo />
 
       {pizza.length > 0 && (
         <div className="mb-8 rounded border border-gray-200 bg-white p-4">
