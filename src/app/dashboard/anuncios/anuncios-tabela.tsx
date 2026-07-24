@@ -37,6 +37,7 @@ export default function AnunciosTabela({ linhas }: { linhas: LinhaAnuncio[] }) {
             <th className="px-3 py-2">Estoque</th>
             <th className="px-3 py-2">Vendidos</th>
             <th className="px-3 py-2">Visitas 7d</th>
+            <th className="px-3 py-2">Conversão</th>
             <th className="px-3 py-2">Qualidade</th>
             <th className="px-3 py-2">Catálogo</th>
           </tr>
@@ -72,6 +73,9 @@ export default function AnunciosTabela({ linhas }: { linhas: LinhaAnuncio[] }) {
                 <td className="px-3 py-2 text-gray-600">{linha.estoqueDisponivel}</td>
                 <td className="px-3 py-2 text-gray-600">{linha.vendidos}</td>
                 <td className="px-3 py-2 text-gray-600">{linha.visitas7dias ?? "—"}</td>
+                <td className="px-3 py-2 text-gray-600">
+                  {linha.conversao !== null ? `${linha.conversao}%` : "—"}
+                </td>
                 <td className="px-3 py-2">
                   <span className={`rounded-full px-2 py-1 text-xs font-medium ${saude.cor}`}>{saude.label}</span>
                 </td>

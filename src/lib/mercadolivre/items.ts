@@ -1,5 +1,7 @@
 // Funcoes de acesso a API de Itens (Anuncios) do Mercado Livre.
 
+import { getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
+
 export type AnuncioResumo = {
   id: string;
   titulo: string;
@@ -16,6 +18,7 @@ export type AnuncioResumo = {
   dataAtualizacao: string;
   catalogoAtivo: boolean;
   visitas7dias: number | null;
+  conversao: number | null; // % vendas/visitas nos ultimos 7 dias
   precoParaGanhar: StatusCatalogo | null;
 };
 
@@ -112,6 +115,7 @@ function mapearAnuncio(item: any): AnuncioResumo {
     dataAtualizacao: item.last_updated,
     catalogoAtivo: Boolean(item.catalog_listing),
     visitas7dias: null,
+    conversao: null,
     precoParaGanhar: null,
   };
 }
@@ -258,16 +262,29 @@ export async function listarAnunciosResumo(
     idsPorContaPagina.get(linha.contaId)!.push(linha.id);
   }
 
+  const hoje = new Date();
+  const seteDiasAtras = new Date(hoje.getTime() - 6 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const periodoVendas = periodoDeDatas(fmt(seteDiasAtras), fmt(hoje));
+
   for (const [contaId, ids] of idsPorContaPagina) {
     const accessToken = porConta.get(contaId)!;
-    const [visitas, precoParaGanhar] = await Promise.all([
+    const contaInfo = contas.find((c) => c.conta.id === contaId)!.conta;
+    const [visitas, precoParaGanhar, vendidosPeriodo] = await Promise.all([
       ordenacao === "mais_visualizados" ? Promise.resolve(new Map<string, number>()) : buscarVisitas(accessToken, ids),
       buscarPrecoParaGanhar(accessToken, ids),
+      getProdutosMaisVendidos(accessToken, Number(contaInfo.ml_user_id), periodoVendas).catch(() => []),
     ]);
+    const vendidosPorItem = new Map(vendidosPeriodo.map((p) => [p.itemId, p.quantidade]));
+
     for (const linha of linhasPagina) {
       if (linha.contaId !== contaId) continue;
       if (visitas.has(linha.id)) linha.visitas7dias = visitas.get(linha.id) ?? 0;
       if (precoParaGanhar.has(linha.id)) linha.precoParaGanhar = precoParaGanhar.get(linha.id)!;
+      if (linha.visitas7dias && linha.visitas7dias > 0) {
+        const vendidos = vendidosPorItem.get(linha.id) ?? 0;
+        linha.conversao = Math.round((vendidos / linha.visitas7dias) * 1000) / 10;
+      }
     }
   }
 
