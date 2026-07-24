@@ -4,6 +4,16 @@
 // referencia, sao bloqueados pela politica da API do ML quando chamados sem
 // um Authorization Bearer valido (retornam 403 PA_UNAUTHORIZED_RESULT_FROM_POLICIES).
 // Por isso, todas as funcoes abaixo exigem um accessToken, mesmo as de leitura.
+//
+// v2 (reconstrucao apos teste ao vivo do usuario): o formulario v1 so
+// enviava os atributos OBRIGATORIOS da categoria, o que gerava anuncios
+// incompletos perto do que a propria plataforma do ML cria (faltava ficha
+// tecnica/especificacoes opcionais, variacoes, SKU/GTIN, tipo de anuncio
+// classico/premium). Este arquivo passou a expor tambem os atributos
+// opcionais (agrupados como "ficha tecnica"), os atributos que aceitam
+// variacao, e os tipos de anuncio disponiveis com a tarifa estimada de cada
+// um -- replicando o fluxo real de criacao (mercadolivre.com.br > Vender >
+// Anunciar), mapeado em pesquisa ao vivo antes desta reconstrucao.
 
 export type CategoriaResumo = { id: string; name: string; totalItens?: number };
 
@@ -24,8 +34,19 @@ export type AtributoCategoria = {
   nome: string;
   tipo: string; // value_type do ML: string | number | number_unit | list | boolean...
   obrigatorio: boolean;
+  // "principal" = obrigatorio (equivalente a Marca/Modelo/etc no fluxo real);
+  // "secundaria" = opcional, faz parte da ficha tecnica/especificacoes.
+  grupo: "principal" | "secundaria";
+  podeVariar: boolean; // tags.allow_variations -- pode virar dimensao de variacao (cor, voltagem...)
   dica: string | null;
-  valores: { id: string; nome: string }[] | null; // presente quando tipo = "list"
+  valores: { id: string; nome: string }[] | null; // presente quando tipo = "list" ou "boolean"
+};
+
+export type TipoAnuncio = {
+  id: string; // listing_type_id, ex: "gold_special", "gold_pro"
+  nome: string; // "Clássica", "Premium"...
+  tarifaVenda: number; // sale_fee_amount estimado para o preco consultado
+  tarifaListagem: number; // listing_fee_amount
 };
 
 async function chamarML<T>(url: string, accessToken: string): Promise<T> {
@@ -75,9 +96,11 @@ export async function buscarCategoria(accessToken: string, categoriaId: string):
   };
 }
 
-// Atributos preenchiveis de uma categoria folha, filtrando os que sao
-// ocultos/somente-leitura (esses o ML preenche sozinho ou nao se aplicam a
-// um cadastro manual) e mantendo apenas os obrigatorios + relevantes.
+// Atributos de uma categoria folha, ja separados em "principal" (obrigatorio)
+// e "secundaria" (ficha tecnica/especificacoes opcionais) -- espelhando as
+// duas secoes que a propria plataforma do ML mostra na criacao de anuncio.
+// So exclui os que sao ocultos/somente-leitura (o ML preenche sozinho ou nao
+// se aplicam a um cadastro manual).
 export async function buscarAtributosCategoria(
   accessToken: string,
   categoriaId: string
@@ -87,12 +110,14 @@ export async function buscarAtributosCategoria(
     accessToken
   );
   return dados
-    .filter((a) => a.tags?.required && !a.tags?.hidden && !a.tags?.read_only)
+    .filter((a) => !a.tags?.hidden && !a.tags?.read_only)
     .map((a) => ({
       id: a.id,
       nome: a.name,
       tipo: a.value_type,
       obrigatorio: Boolean(a.tags?.required),
+      grupo: a.tags?.required ? "principal" : "secundaria",
+      podeVariar: Boolean(a.tags?.allow_variations),
       dica: a.hint ?? a.tooltip ?? null,
       valores:
         a.value_type === "list" || a.value_type === "boolean"
@@ -121,8 +146,33 @@ export async function buscarPredicaoCategoria(
   }));
 }
 
+// Tipos de anuncio disponiveis (Classico/Premium/etc) com a tarifa de venda
+// estimada para o preco informado -- o mesmo comparativo que a plataforma
+// mostra na etapa final antes de publicar. A tarifa real pode variar
+// ligeiramente por conta (nivel de reputacao/MercadoLider), por isso e
+// consultada com a conta de referencia e tratada como estimativa.
+export async function buscarTiposAnuncio(
+  accessToken: string,
+  categoriaId: string,
+  preco: number
+): Promise<TipoAnuncio[]> {
+  const dados = await chamarML<any[]>(
+    `https://api.mercadolibre.com/sites/MLB/listing_prices?price=${preco}&category_id=${categoriaId}`,
+    accessToken
+  );
+  return dados
+    .filter((d) => d && d.listing_type_id && !d.error)
+    .map((d) => ({
+      id: d.listing_type_id,
+      nome: d.listing_type_name ?? d.listing_type_id,
+      tarifaVenda: d.sale_fee_amount ?? 0,
+      tarifaListagem: d.listing_fee_amount ?? 0,
+    }));
+}
+
 // Envia uma imagem (bytes) para a biblioteca de imagens da conta e retorna o
-// id da imagem, usado depois no campo `pictures` da criacao do item.
+// id da imagem, usado depois no campo `pictures` da criacao do item. O id
+// nao e compartilhavel entre contas -- precisa reenviar por conta.
 export async function uploadImagemML(accessToken: string, arquivo: File): Promise<string> {
   const form = new FormData();
   form.append("file", arquivo, arquivo.name || "foto.jpg");
@@ -145,37 +195,80 @@ export async function uploadImagemML(accessToken: string, arquivo: File): Promis
   return corpo.id as string;
 }
 
+// Uma linha da matriz de variacoes (ex.: Cor = "Preto"): estoque, SKU e
+// fotos sao especificos dessa combinacao, mas o preco e replicado do valor
+// unico definido no formulario (decisao de produto: mesmo preco em todas as
+// variacoes e contas, para manter o cadastro simples e consistente).
+export type VariacaoPayload = {
+  combinacao: { id: string; valorId?: string; valorNome?: string }[];
+  estoque: number;
+  sku?: string;
+  gtin?: string;
+  fotosIds: string[];
+};
+
 export type NovoItemPayload = {
   titulo: string;
   categoriaId: string;
   preco: number;
-  estoque: number;
   moeda: string;
   descricao: string;
-  fotosIds: string[];
   atributos: { id: string; value_name?: string; value_id?: string }[];
   freteGratis: boolean;
+  tipoAnuncio: string; // listing_type_id escolhido (classico/premium)
+  // usado quando o anuncio NAO tem variacoes:
+  estoque?: number;
+  sku?: string;
+  gtin?: string;
+  fotosIds?: string[];
+  // usado quando o anuncio TEM variacoes (substitui estoque/sku/gtin/fotosIds acima):
+  variacoes?: VariacaoPayload[];
 };
 
 // Cria o anuncio em si (sem a descricao, que e um endpoint separado) e, em
 // seguida, define a descricao. Retorna o id do item criado no Mercado Livre.
 export async function criarItemML(accessToken: string, payload: NovoItemPayload): Promise<string> {
-  const corpoItem = {
+  const temVariacoes = Boolean(payload.variacoes && payload.variacoes.length > 0);
+
+  const atributosItem = [...payload.atributos];
+  if (!temVariacoes && payload.gtin) {
+    atributosItem.push({ id: "GTIN", value_name: payload.gtin });
+  }
+
+  const corpoItem: Record<string, unknown> = {
     title: payload.titulo,
     category_id: payload.categoriaId,
-    price: payload.preco,
     currency_id: payload.moeda,
-    available_quantity: payload.estoque,
     buying_mode: "buy_it_now",
-    listing_type_id: "gold_special",
+    listing_type_id: payload.tipoAnuncio || "gold_special",
     condition: "new",
-    pictures: payload.fotosIds.map((id) => ({ id })),
-    attributes: payload.atributos,
+    attributes: atributosItem,
     shipping: {
       mode: "me2",
       free_shipping: payload.freteGratis,
     },
   };
+
+  if (temVariacoes) {
+    const fotosUnicas = Array.from(new Set(payload.variacoes!.flatMap((v) => v.fotosIds)));
+    corpoItem.pictures = fotosUnicas.map((id) => ({ id }));
+    corpoItem.variations = payload.variacoes!.map((v) => ({
+      attribute_combinations: v.combinacao.map((c) => ({
+        id: c.id,
+        ...(c.valorId ? { value_id: c.valorId } : { value_name: c.valorNome }),
+      })),
+      attributes: v.gtin ? [{ id: "GTIN", value_name: v.gtin }] : [],
+      available_quantity: v.estoque,
+      price: payload.preco,
+      seller_custom_field: v.sku || undefined,
+      picture_ids: v.fotosIds,
+    }));
+  } else {
+    corpoItem.price = payload.preco;
+    corpoItem.available_quantity = payload.estoque ?? 0;
+    corpoItem.pictures = (payload.fotosIds ?? []).map((id) => ({ id }));
+    if (payload.sku) corpoItem.seller_custom_field = payload.sku;
+  }
 
   const resp = await fetch("https://api.mercadolibre.com/items", {
     method: "POST",
