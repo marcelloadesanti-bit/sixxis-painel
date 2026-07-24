@@ -92,9 +92,13 @@ export async function getVendas(
         id: p.id,
         dataCriacao: p.date_created,
         status: p.status,
-        // paid_amount = total_amount + frete pago pelo comprador; e o que a
-        // plataforma do Mercado Livre chama de "Vendas brutas".
-        valor: p.paid_amount ?? p.total_amount ?? 0,
+        // Faturamento do dashboard = total_amount (valor dos produtos vendidos),
+        // sem somar o frete pago pelo comprador. paid_amount inclui esse frete
+        // quando o comprador paga algo adicional por ele, por isso NAO usamos
+        // paid_amount aqui -- mesmo que isso gere um valor diferente do que a
+        // propria plataforma do Mercado Livre chama de "Vendas brutas" (que
+        // conta o frete pago pelo comprador). Decisao explicita do usuario.
+        valor: p.total_amount ?? 0,
         moeda: p.currency_id,
         comprador: p.buyer?.nickname ?? "—",
         produto: p.order_items?.[0]?.item?.title
@@ -185,12 +189,12 @@ export async function getTotaisPorStatus(
     totalNaApi = data.paging.total;
 
     for (const p of data.results) {
-      // Para pedidos pagos, "paid_amount" e o valor real recebido (produto + frete),
-      // que e o que a plataforma chama de "Vendas brutas". Ja para pedidos cancelados
-      // o paid_amount vem zerado (nada foi efetivamente recebido), entao usamos o
-      // total_amount (valor da venda que foi cancelada) para bater com o "Valor de
-      // vendas canceladas" do painel do Mercado Livre.
-      valor += status === "paid" ? p.paid_amount ?? p.total_amount ?? 0 : p.total_amount ?? 0;
+      // Faturamento do dashboard = total_amount (valor dos produtos), tanto para
+      // pedidos pagos quanto cancelados -- nao soma o frete pago pelo comprador
+      // (paid_amount incluiria esse frete). Decisao explicita do usuario: o valor
+      // aqui pode divergir do "Vendas brutas" que a propria plataforma do Mercado
+      // Livre exibe (que conta o frete pago pelo comprador).
+      valor += p.total_amount ?? 0;
       if (!moeda) moeda = p.currency_id;
       quantidadeContada++;
     }
@@ -442,7 +446,9 @@ export async function getSerieDiariaVendas(
     const dia = diaBrasilia(p.date_created);
     const atual = porDia.get(dia) ?? { quantidade: 0, valor: 0 };
     atual.quantidade += 1;
-    atual.valor += p.paid_amount ?? p.total_amount ?? 0;
+    // total_amount (sem frete pago pelo comprador) -- mesma definicao usada
+    // em getVendas/getTotaisPorStatus.
+    atual.valor += p.total_amount ?? 0;
     porDia.set(dia, atual);
   }
   for (const p of cancelados) {

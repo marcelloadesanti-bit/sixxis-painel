@@ -135,10 +135,15 @@ export default async function ResumoPage({
     })
   );
 
-  // "Vendas brutas" no painel real do Mercado Livre soma pedidos pagos +
-  // pedidos cancelados no período (o cancelamento é informativo, não é
-  // descontado do total bruto). Validado batendo com o painel real: usar só
-  // pedidos pagos ficava ~4% abaixo do valor mostrado pela Meli.
+  // "Vendas brutas" soma pedidos pagos + pedidos cancelados no período (o
+  // cancelamento e informativo, nao e descontado do total bruto) -- essa
+  // parte bate com o painel real do Mercado Livre. POREM o valor de cada
+  // pedido aqui usa total_amount (produto), sem somar o frete pago pelo
+  // comprador -- decisao explicita do usuario: o faturamento do dashboard
+  // deve refletir so o que a empresa recebe pelo produto, nao o frete
+  // adicional pago pelo cliente. Por isso este numero pode ficar menor que
+  // o "Vendas brutas" mostrado na propria plataforma do ML quando ha
+  // pedidos com frete pago pelo comprador -- isso e esperado.
   const faturamentoTotal =
     resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0) +
     resultados.reduce((s, r) => s + (r.canceladas?.valor ?? 0), 0);
