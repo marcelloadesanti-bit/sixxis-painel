@@ -98,6 +98,58 @@ export async function getConversaPack(
   return { mensagens, statusConversa: data.conversation_status?.status ?? null };
 }
 
+// --- Tempo medio de atendimento (SLA de mensagens) ---
+//
+// Nao existe um endpoint em lote com o horario das mensagens de todas as
+// conversas de um vendedor - so o de conversa individual (por pack), usado
+// acima em getConversaPack. Por isso o calculo do "tempo medio de
+// atendimento" varre as conversas dos pedidos feitos dentro do periodo
+// selecionado (a mesma lista ja usada na aba Vendas), limitada a um teto
+// pratico por conta para nao gerar uma quantidade excessiva de chamadas a
+// cada carregamento da pagina.
+const TETO_PACKS_SLA = 40;
+
+export async function getTempoMedioAtendimento(
+  accessToken: string,
+  mlUserId: number,
+  packIds: string[]
+): Promise<{ tempoMedioMin: number | null; conversasAnalisadas: number }> {
+  const amostra = Array.from(new Set(packIds)).slice(0, TETO_PACKS_SLA);
+  if (amostra.length === 0) return { tempoMedioMin: null, conversasAnalisadas: 0 };
+
+  const conversas = await Promise.all(
+    amostra.map(async (packId) => {
+      try {
+        return await getConversaPack(accessToken, packId, mlUserId);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const temposMin: number[] = [];
+  for (const conversa of conversas) {
+    if (!conversa) continue;
+    const msgs = conversa.mensagens.filter((m) => m.dataRecebida);
+    for (let i = 0; i < msgs.length - 1; i++) {
+      const atual = msgs[i];
+      // Mensagem do comprador (remetente != vendedor) seguida de uma
+      // resposta do vendedor: mede o tempo entre elas.
+      if (atual.remetenteId === mlUserId) continue;
+      const proximaDoVendedor = msgs.slice(i + 1).find((m) => m.remetenteId === mlUserId);
+      if (!proximaDoVendedor?.dataRecebida) continue;
+      const delta =
+        (new Date(proximaDoVendedor.dataRecebida).getTime() - new Date(atual.dataRecebida!).getTime()) / 60000;
+      if (delta >= 0) temposMin.push(delta);
+    }
+  }
+
+  return {
+    tempoMedioMin: temposMin.length > 0 ? temposMin.reduce((s, v) => s + v, 0) / temposMin.length : null,
+    conversasAnalisadas: conversas.filter((c) => c !== null).length,
+  };
+}
+
 export async function enviarMensagemPack(
   accessToken: string,
   packId: string,

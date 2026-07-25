@@ -23,6 +23,7 @@ type PerguntaApi = {
   date_created: string;
   status: string;
   from?: { id?: number };
+  answer?: { text: string; status: string; date_created: string } | null;
 };
 
 // Busca perguntas nao respondidas de uma conta, paginando ate cobrir o total
@@ -127,6 +128,96 @@ export async function responderPergunta(
     const corpo = await res.text();
     throw new Error(`Falha ao responder pergunta ${questionId}: ${res.status} ${corpo}`);
   }
+}
+
+// --- Metricas de SLA (tempo real, por periodo selecionado) ---
+
+export type MetricasPerguntas = {
+  totalRecebidas: number;
+  totalRespondidas: number;
+  taxaRespostaPct: number | null; // null quando nao ha perguntas no periodo
+  tempoMedioRespostaMin: number | null; // null quando nao ha nenhuma respondida no periodo
+};
+
+// Busca ANSWERED e UNANSWERED e filtra pelo periodo (de/ate, formato
+// YYYY-MM-DD) usando date_created, paginando ate ultrapassar o inicio do
+// periodo (a API ja devolve ordenado DESC por data). Usado pela secao "SLA
+// de atendimento" do Pos-venda - roda a cada carregamento da pagina, entao
+// fica limitado a um teto pratico de paginas por status.
+async function buscarPerguntasPorStatusNoPeriodo(
+  accessToken: string,
+  mlUserId: number,
+  status: "ANSWERED" | "UNANSWERED",
+  periodo: { de: string; ate: string }
+): Promise<PerguntaApi[]> {
+  const desde = new Date(`${periodo.de}T00:00:00-03:00`).getTime();
+  const ate = new Date(`${periodo.ate}T23:59:59-03:00`).getTime();
+  const encontradas: PerguntaApi[] = [];
+  let offset = 0;
+
+  while (offset < TETO_PERGUNTAS) {
+    const params = new URLSearchParams({
+      seller_id: String(mlUserId),
+      status,
+      api_version: "4",
+      sort_fields: "date_created",
+      sort_types: "DESC",
+      limit: String(LIMITE_POR_PAGINA),
+      offset: String(offset),
+    });
+
+    const res = await fetch(`${ML_API}/questions/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Falha ao buscar perguntas (${status}): ${res.status}`);
+
+    const data = (await res.json()) as { total: number; questions: PerguntaApi[] };
+    if (data.questions.length === 0) break;
+
+    let passouDoPeriodo = false;
+    for (const q of data.questions) {
+      const criada = new Date(q.date_created).getTime();
+      if (criada < desde) {
+        passouDoPeriodo = true;
+        break;
+      }
+      if (criada <= ate) encontradas.push(q);
+    }
+
+    offset += LIMITE_POR_PAGINA;
+    if (passouDoPeriodo || offset >= data.total) break;
+  }
+
+  return encontradas;
+}
+
+export async function getMetricasPerguntas(
+  accessToken: string,
+  mlUserId: number,
+  periodo: { de: string; ate: string }
+): Promise<MetricasPerguntas> {
+  const [respondidas, naoRespondidas] = await Promise.all([
+    buscarPerguntasPorStatusNoPeriodo(accessToken, mlUserId, "ANSWERED", periodo),
+    buscarPerguntasPorStatusNoPeriodo(accessToken, mlUserId, "UNANSWERED", periodo),
+  ]);
+
+  const totalRespondidas = respondidas.length;
+  const totalRecebidas = totalRespondidas + naoRespondidas.length;
+
+  const temposMin = respondidas
+    .filter((q) => q.answer?.date_created)
+    .map((q) => (new Date(q.answer!.date_created).getTime() - new Date(q.date_created).getTime()) / 60000)
+    .filter((min) => min >= 0);
+
+  const tempoMedioRespostaMin =
+    temposMin.length > 0 ? temposMin.reduce((s, v) => s + v, 0) / temposMin.length : null;
+
+  return {
+    totalRecebidas,
+    totalRespondidas,
+    taxaRespostaPct: totalRecebidas > 0 ? (totalRespondidas / totalRecebidas) * 100 : null,
+    tempoMedioRespostaMin,
+  };
 }
 
 // Versao leve: so o total de perguntas nao respondidas (uma unica chamada,

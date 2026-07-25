@@ -13,6 +13,7 @@ export type Pedido = {
   moeda: string;
   comprador: string;
   produto: string;
+  packId: string;
   contaId: string;
   contaNickname: string;
 };
@@ -47,6 +48,7 @@ type PedidoApi = {
   total_amount: number;
   paid_amount?: number;
   currency_id: string;
+  pack_id?: number | null;
   buyer?: { nickname?: string };
   order_items?: { item?: { title?: string }; quantity?: number }[];
 };
@@ -106,6 +108,7 @@ export async function getVendas(
             ? `${p.order_items[0].item?.title} +${p.order_items.length - 1}`
             : p.order_items[0].item?.title ?? "—"
           : "—",
+        packId: p.pack_id ? String(p.pack_id) : String(p.id),
         contaId,
         contaNickname,
       });

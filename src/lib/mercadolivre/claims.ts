@@ -82,6 +82,118 @@ export async function getReclamacoesAbertas(
   return { total, reclamacoes };
 }
 
+// Busca reclamacoes de um status especifico criadas dentro de um periodo
+// (de/ate, formato YYYY-MM-DD), paginando ate ultrapassar o inicio do
+// periodo. Usado pela secao "SLA de atendimento" (tempo medio de resolucao)
+// e pela secao de Devolucoes - ambas recalculadas a cada carregamento da
+// pagina, dentro do periodo selecionado pelo usuario.
+async function buscarReclamacoesPorStatusNoPeriodo(
+  accessToken: string,
+  mlUserId: number,
+  status: "opened" | "closed",
+  periodo: { de: string; ate: string },
+  contaId: string,
+  contaNickname: string
+): Promise<Reclamacao[]> {
+  const desde = new Date(`${periodo.de}T00:00:00-03:00`).getTime();
+  const ate = new Date(`${periodo.ate}T23:59:59-03:00`).getTime();
+  const encontradas: Reclamacao[] = [];
+  let offset = 0;
+
+  while (offset < TETO_RECLAMACOES) {
+    const params = new URLSearchParams({
+      "players.user_id": String(mlUserId),
+      "players.role": "respondent",
+      status,
+      limit: String(LIMITE_POR_PAGINA),
+      offset: String(offset),
+    });
+
+    const res = await fetch(`${ML_API}/post-purchase/v1/claims/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Falha ao buscar reclamacoes (${status}): ${res.status}`);
+
+    const data = (await res.json()) as { paging: { total: number }; data: ClaimApi[] };
+    if (data.data.length === 0) break;
+
+    let passouDoPeriodo = false;
+    for (const c of data.data) {
+      const criada = new Date(c.date_created).getTime();
+      if (criada < desde) {
+        passouDoPeriodo = true;
+        break;
+      }
+      if (criada <= ate) {
+        encontradas.push({
+          id: c.id,
+          resourceId: c.resource_id,
+          tipo: c.type,
+          etapa: c.stage,
+          reasonId: c.reason_id,
+          dataCriacao: c.date_created,
+          ultimaAtualizacao: c.last_updated,
+          contaId,
+          contaNickname,
+        });
+      }
+    }
+
+    offset += LIMITE_POR_PAGINA;
+    if (passouDoPeriodo || offset >= data.paging.total) break;
+  }
+
+  return encontradas;
+}
+
+export type MetricasReclamacoes = {
+  totalAbertasNoPeriodo: number;
+  totalFechadasNoPeriodo: number;
+  tempoMedioResolucaoMin: number | null; // media de (last_updated - date_created) das fechadas no periodo
+};
+
+// Metricas de SLA das reclamacoes dentro do periodo selecionado. O tempo de
+// resolucao usa last_updated como aproximacao da data de fechamento (a busca
+// em lista nao traz "date_closed" - so o detalhe por reclamacao, que seria
+// caro de buscar 1 a 1 para todas). E uma aproximacao deliberada, documentada
+// aqui para quem for revisar o calculo no futuro.
+export async function getMetricasReclamacoes(
+  accessToken: string,
+  mlUserId: number,
+  periodo: { de: string; ate: string }
+): Promise<MetricasReclamacoes> {
+  const [abertas, fechadas] = await Promise.all([
+    buscarReclamacoesPorStatusNoPeriodo(accessToken, mlUserId, "opened", periodo, "", ""),
+    buscarReclamacoesPorStatusNoPeriodo(accessToken, mlUserId, "closed", periodo, "", ""),
+  ]);
+
+  const temposMin = fechadas
+    .map((r) => (new Date(r.ultimaAtualizacao).getTime() - new Date(r.dataCriacao).getTime()) / 60000)
+    .filter((min) => min >= 0);
+
+  return {
+    totalAbertasNoPeriodo: abertas.length,
+    totalFechadasNoPeriodo: fechadas.length,
+    tempoMedioResolucaoMin: temposMin.length > 0 ? temposMin.reduce((s, v) => s + v, 0) / temposMin.length : null,
+  };
+}
+
+// Todas as reclamacoes (abertas + fechadas) criadas no periodo, com dados de
+// conta - usado pela secao de Devolucoes para saber quais claims checar.
+export async function getReclamacoesNoPeriodo(
+  accessToken: string,
+  mlUserId: number,
+  periodo: { de: string; ate: string },
+  contaId: string,
+  contaNickname: string
+): Promise<Reclamacao[]> {
+  const [abertas, fechadas] = await Promise.all([
+    buscarReclamacoesPorStatusNoPeriodo(accessToken, mlUserId, "opened", periodo, contaId, contaNickname),
+    buscarReclamacoesPorStatusNoPeriodo(accessToken, mlUserId, "closed", periodo, contaId, contaNickname),
+  ]);
+  return [...abertas, ...fechadas];
+}
+
 // --- Detalhe, mensagens e acoes de uma reclamacao especifica ---
 // Docs: gerenciar-mensagem-de-uma-eclamacao / gerenciar-resolucao-de-reclamacoes
 
