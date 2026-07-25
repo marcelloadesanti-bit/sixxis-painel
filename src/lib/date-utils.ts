@@ -56,3 +56,14 @@ export function variacaoPercentual(atual: number, anterior: number): number | nu
   if (anterior === 0) return atual === 0 ? 0 : null;
   return ((atual - anterior) / anterior) * 100;
 }
+
+// Formata um total de minutos como "Xh Ymin" (ou so "Ymin" quando < 1h).
+// Usado nos indicadores de SLA de atendimento (Pos-venda e Metas).
+export function formatarDuracaoMin(min: number | null): string {
+  if (min === null || Number.isNaN(min)) return "—";
+  const totalMin = Math.round(min);
+  const horas = Math.floor(totalMin / 60);
+  const minutos = totalMin % 60;
+  if (horas === 0) return `${minutos}min`;
+  return `${horas}h ${minutos}min`;
+}
