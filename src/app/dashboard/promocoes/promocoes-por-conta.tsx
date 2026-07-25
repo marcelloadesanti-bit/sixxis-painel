@@ -1,20 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { labelTipoPromocao, type Promocao } from "@/lib/mercadolivre/promotions";
+import { labelTipoPromocao } from "@/lib/mercadolivre/promotions";
+
+// Datas ja chegam formatadas em texto pronto (calculadas no servidor, em
+// page.tsx) para evitar mismatch de hidratacao entre o fuso do servidor e o
+// do navegador -- ver comentario em page.tsx.
+export type PromocaoFormatada = {
+  id: string;
+  tipo: string;
+  status: string;
+  nome: string | null;
+  periodoLabel: string;
+};
 
 export type ContaComPromocoes = {
   id: string;
   nome: string;
   cor: string;
   erro: string | null;
-  ativas: Promocao[];
-  pendentes: Promocao[];
-  outras: Promocao[];
+  ativas: PromocaoFormatada[];
+  pendentes: PromocaoFormatada[];
+  outras: PromocaoFormatada[];
 };
-
-const formatarData = (iso: string | null) =>
-  iso ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso)) : "—";
 
 const STATUS_LABELS: Record<string, { label: string; cor: string }> = {
   started: { label: "Ativa", cor: "bg-green-50 text-green-700" },
@@ -23,7 +31,7 @@ const STATUS_LABELS: Record<string, { label: string; cor: string }> = {
   finished: { label: "Encerrada", cor: "bg-gray-100 text-gray-500" },
 };
 
-function TagPromocao({ p }: { p: Promocao }) {
+function TagPromocao({ p }: { p: PromocaoFormatada }) {
   const status = STATUS_LABELS[p.status] ?? { label: p.status, cor: "bg-gray-100 text-gray-600" };
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
@@ -34,9 +42,7 @@ function TagPromocao({ p }: { p: Promocao }) {
         </span>
       </div>
       <p className="mt-1 text-xs text-gray-400">{labelTipoPromocao(p.tipo)}</p>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        {formatarData(p.dataInicio)} – {formatarData(p.dataFim)}
-      </p>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{p.periodoLabel}</p>
     </div>
   );
 }

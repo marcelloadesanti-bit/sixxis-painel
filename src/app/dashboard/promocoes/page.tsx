@@ -4,7 +4,26 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getPromocoesVendedor, type Promocao } from "@/lib/mercadolivre/promotions";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
-import PromocoesPorConta, { type ContaComPromocoes } from "./promocoes-por-conta";
+import PromocoesPorConta, { type ContaComPromocoes, type PromocaoFormatada } from "./promocoes-por-conta";
+
+// Formata a data no servidor (nao no client component) para evitar mismatch de
+// hidratacao: o fuso do servidor de build/SSR (UTC na Vercel) pode diferir do
+// fuso do navegador de quem acessa, o que faz "Intl.DateTimeFormat" produzir
+// texto diferente em cada lado para o mesmo instante -- erro React #418.
+// Formatando aqui e passando string pronta pro client, o texto e identico
+// nos dois lados porque nao ha formatacao nenhuma rodando no client.
+const formatarData = (iso: string | null) =>
+  iso ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" }).format(new Date(iso)) : "—";
+
+function formatarPromocao(p: Promocao): PromocaoFormatada {
+  return {
+    id: p.id,
+    tipo: p.tipo,
+    status: p.status,
+    nome: p.nome,
+    periodoLabel: `${formatarData(p.dataInicio)} – ${formatarData(p.dataFim)}`,
+  };
+}
 
 export default async function PromocoesPage() {
   await exigirAcessoSecao("promocoes");
@@ -46,9 +65,13 @@ export default async function PromocoesPage() {
     nome: r.nome,
     cor: (r.conta.cor as string) ?? COR_PADRAO,
     erro: r.erro,
-    ativas: r.promocoes.filter((p) => p.status === "started"),
-    pendentes: r.promocoes.filter((p) => p.status === "pending" || p.status === "candidate"),
-    outras: r.promocoes.filter((p) => !["started", "pending", "candidate"].includes(p.status)),
+    ativas: r.promocoes.filter((p) => p.status === "started").map(formatarPromocao),
+    pendentes: r.promocoes
+      .filter((p) => p.status === "pending" || p.status === "candidate")
+      .map(formatarPromocao),
+    outras: r.promocoes
+      .filter((p) => !["started", "pending", "candidate"].includes(p.status))
+      .map(formatarPromocao),
   }));
 
   const totalPendentes = contasComPromocoes.reduce((acc, c) => acc + c.pendentes.length, 0);
