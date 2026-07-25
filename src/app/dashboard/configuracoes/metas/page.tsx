@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
-import { definirMetaMesAction } from "./actions";
+import { formatarDuracaoMin } from "@/lib/date-utils";
+import { definirMetaMesAction, definirMetaAtendimentoAction } from "./actions";
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -10,6 +11,13 @@ const MESES = [
 
 const formatarMoeda = (valor: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
+
+const METAS_ATENDIMENTO_LABELS: Record<string, string> = {
+  sla_mensagens: "SLA de mensagens (tempo máximo de atendimento)",
+  sla_perguntas: "SLA de perguntas (tempo máximo de resposta)",
+  tempo_reclamacoes: "Tempo de resolução de reclamações (máximo)",
+};
+const ORDEM_METAS_ATENDIMENTO = ["sla_mensagens", "sla_perguntas", "tempo_reclamacoes"];
 
 export default async function MetasPage({
   searchParams,
@@ -36,6 +44,16 @@ export default async function MetasPage({
   const anoAtual = hoje.getFullYear();
   const mesAtual = hoje.getMonth() + 1;
   const metaAtual = metas.find((m) => m.ano === anoAtual && m.mes === mesAtual);
+
+  const { data: metasAtendimentoRaw } = await supabase
+    .from("metas_atendimento")
+    .select("ano, mes, tipo_meta, valor_minutos")
+    .eq("ano", anoAtual)
+    .eq("mes", mesAtual);
+
+  const metasAtendimentoAtual = new Map(
+    (metasAtendimentoRaw ?? []).map((m) => [m.tipo_meta as string, Number(m.valor_minutos)])
+  );
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -125,6 +143,81 @@ export default async function MetasPage({
           ))}
         </ul>
       )}
+
+      <hr className="my-8 border-gray-200" />
+
+      <h2 className="mb-1 text-xl font-bold text-[var(--color-sixxis-navy)] dark:text-white">
+        Meta de atendimento
+      </h2>
+      <p className="mb-6 text-sm text-gray-500">
+        Defina o tempo máximo aceitável para cada indicador de SLA do mês atual ({MESES[mesAtual - 1]} de{" "}
+        {anoAtual}). O progresso aparece na aba Pós-venda, comparado com a média calculada em tempo real no
+        período selecionado ali.
+      </p>
+
+      {salvo === "2" && (
+        <p className="mb-4 rounded bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+          Meta de atendimento salva com sucesso.
+        </p>
+      )}
+
+      {podeEditar && (
+        <form
+          action={definirMetaAtendimentoAction}
+          className="mb-8 flex flex-col gap-4 rounded border border-gray-200 bg-white p-4"
+        >
+          <input type="hidden" name="ano" value={anoAtual} />
+          <input type="hidden" name="mes" value={mesAtual} />
+          {ORDEM_METAS_ATENDIMENTO.map((tipo) => {
+            const atual = metasAtendimentoAtual.get(tipo) ?? 0;
+            return (
+              <div key={tipo} className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[220px] flex-1">
+                  <label className="mb-1 block text-xs text-gray-500">{METAS_ATENDIMENTO_LABELS[tipo]}</label>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Horas</label>
+                  <input
+                    type="number"
+                    name={`${tipo}_horas`}
+                    min="0"
+                    defaultValue={Math.floor(atual / 60)}
+                    className="w-20 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Minutos</label>
+                  <input
+                    type="number"
+                    name={`${tipo}_minutos`}
+                    min="0"
+                    max="59"
+                    defaultValue={atual % 60}
+                    className="w-20 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+            );
+          })}
+          <button
+            type="submit"
+            className="self-start rounded bg-[var(--color-sixxis-navy)] px-4 py-2 text-sm font-medium text-white"
+          >
+            Salvar metas de atendimento
+          </button>
+        </form>
+      )}
+
+      <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white">
+        {ORDEM_METAS_ATENDIMENTO.map((tipo) => (
+          <li key={tipo} className="flex items-center justify-between p-3 text-sm">
+            <span className="text-gray-700">{METAS_ATENDIMENTO_LABELS[tipo]}</span>
+            <span className="font-medium text-gray-900">
+              {metasAtendimentoAtual.has(tipo) ? formatarDuracaoMin(metasAtendimentoAtual.get(tipo)!) : "Não definida"}
+            </span>
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }
