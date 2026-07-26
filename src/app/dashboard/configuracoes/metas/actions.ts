@@ -41,7 +41,7 @@ export async function definirMetaMesAction(formData: FormData) {
 
   revalidatePath("/dashboard/configuracoes/metas");
   revalidatePath("/dashboard");
-  redirect("/dashboard/configuracoes/metas?salvo=1");
+  redirect("/dashboard/configuracoes/metas?aba=faturamento&salvo=1");
 }
 
 // Metas de atendimento: tempo maximo (em minutos) para cada um dos 3
@@ -99,5 +99,61 @@ export async function definirMetaAtendimentoAction(formData: FormData) {
 
   revalidatePath("/dashboard/configuracoes/metas");
   revalidatePath("/dashboard/pos-venda");
-  redirect("/dashboard/configuracoes/metas?salvo=2");
+  redirect("/dashboard/configuracoes/metas?aba=atendimento&salvo=2");
+}
+
+// Metas de Ads: 3 indicadores de performance (comparados com os valores reais
+// calculados a partir das campanhas de Mercado Ads, ver
+// src/app/dashboard/publicidade/page.tsx) + orcamento mensal, que e apenas
+// uma referencia de controle e NAO entra em nenhum calculo de meta.
+const TIPOS_META_ADS = ["proporcao_organico_min", "roas_minimo", "tacos_maximo", "orcamento_mensal"] as const;
+
+export async function definirMetaAdsAction(formData: FormData) {
+  const ano = Number(formData.get("ano"));
+  const mes = Number(formData.get("mes"));
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, permissoes")
+    .eq("id", user.id)
+    .maybeSingle();
+  const isAdmin = profile?.role === "admin";
+  const permissoes = (profile?.permissoes as PermissoesUsuario) ?? {};
+  if (!podeEditar(isAdmin, permissoes, "metas")) {
+    throw new Error("Você não tem permissão para definir metas.");
+  }
+
+  if (!ano || !mes || mes < 1 || mes > 12) {
+    throw new Error("Informe ano e mês válidos.");
+  }
+
+  const linhas: { ano: number; mes: number; tipo_meta: string; valor: number; atualizado_em: string }[] = [];
+  for (const tipo of TIPOS_META_ADS) {
+    const valor = Number(formData.get(tipo));
+    if (valor > 0) {
+      linhas.push({ ano, mes, tipo_meta: tipo, valor, atualizado_em: new Date().toISOString() });
+    }
+  }
+
+  if (linhas.length === 0) {
+    throw new Error("Informe pelo menos uma meta de ads válida.");
+  }
+
+  const { error } = await supabase
+    .from("metas_ads")
+    .upsert(linhas, { onConflict: "ano,mes,tipo_meta" });
+
+  if (error) {
+    throw new Error(`Falha ao salvar meta de ads: ${error.message}`);
+  }
+
+  revalidatePath("/dashboard/configuracoes/metas");
+  revalidatePath("/dashboard/publicidade");
+  redirect("/dashboard/configuracoes/metas?aba=ads&salvo=3");
 }
