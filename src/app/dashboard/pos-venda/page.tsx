@@ -52,6 +52,15 @@ const REASON_LABELS: Record<string, string> = {
   service: "Cancelamento de serviço",
 };
 
+// Mensagens amigaveis para erros vindos de Server Actions desta pagina (ver
+// ./actions.ts, responderPerguntaAction) -- evita estourar 500 pro usuario
+// quando a API do Mercado Livre recusa a acao por um motivo esperado.
+const ERRO_LABELS: Record<string, string> = {
+  pergunta_item_inativo:
+    "Não foi possível enviar a resposta: o anúncio desta pergunta não está mais ativo no Mercado Livre.",
+  pergunta_falhou: "Não foi possível enviar a resposta agora. Tente novamente em instantes.",
+};
+
 const PRESETS_SLA: { key: PresetKey; label: string }[] = [
   { key: "7dias", label: "Últimos 7 dias" },
   { key: "15dias", label: "Últimos 15 dias" },
@@ -109,7 +118,7 @@ function BadgeMeta({ atualMin, metaMin }: { atualMin: number | null; metaMin: nu
 export default async function PosVendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preset?: string; de?: string; ate?: string }>;
+  searchParams: Promise<{ preset?: string; de?: string; ate?: string; erro?: string }>;
 }) {
   const { isAdmin, permissoes, podeEditar } = await exigirAcessoSecao("pos_venda");
   const params = await searchParams;
@@ -281,6 +290,10 @@ export default async function PosVendaPage({
         Perguntas, mensagens e reclamações em aberto — consolidado de todas as{" "}
         {contas?.length ?? 0} contas conectadas
       </p>
+
+      {params.erro && ERRO_LABELS[params.erro] && (
+        <p className="mb-6 rounded bg-red-50 p-3 text-sm text-red-700">{ERRO_LABELS[params.erro]}</p>
+      )}
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {verPerguntas && (
