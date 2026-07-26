@@ -5,6 +5,21 @@ const ML_API = "https://api.mercadolibre.com";
 const LIMITE_POR_PAGINA = 50;
 const TETO_PEDIDOS = 1000; // limite pratico de offset da API de busca do ML
 
+// Busca de pedidos (orders/search) e a chamada mais repetida do app -- roda
+// em paralelo para cada conta conectada tanto no polling do sino de
+// notificacoes (a cada 45s) quanto ao abrir o Resumo/Pos-venda, e pode
+// esbarrar no rate limit da API do ML (429) quando varias contas/abas
+// disparam ao mesmo tempo. Uma unica tentativa extra, com pequeno atraso,
+// resolve a maioria dos casos sem mascarar erros reais (4xx/5xx que nao
+// sejam 429 continuam falhando na primeira tentativa).
+async function fetchOrdersComRetry(url: string, accessToken: string): Promise<Response> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (res.status !== 429) return res;
+
+  await new Promise((resolve) => setTimeout(resolve, 1200 + Math.random() * 800));
+  return fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+}
+
 export type Pedido = {
   id: number;
   dataCriacao: string;
@@ -78,9 +93,7 @@ export async function getVendas(
       offset: String(offset),
     });
 
-    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchOrdersComRetry(`${ML_API}/orders/search?${params.toString()}`, accessToken);
 
     if (!res.ok) {
       throw new Error(`Falha ao buscar pedidos: ${res.status}`);
@@ -180,9 +193,7 @@ export async function getTotaisPorStatus(
       offset: String(offset),
     });
 
-    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchOrdersComRetry(`${ML_API}/orders/search?${params.toString()}`, accessToken);
 
     if (!res.ok) {
       throw new Error(`Falha ao buscar pedidos (${status}): ${res.status}`);
@@ -247,9 +258,7 @@ export async function getProdutosMaisVendidos(
       offset: String(offset),
     });
 
-    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchOrdersComRetry(`${ML_API}/orders/search?${params.toString()}`, accessToken);
 
     if (!res.ok) {
       throw new Error(`Falha ao buscar produtos vendidos: ${res.status}`);
@@ -396,7 +405,6 @@ export async function notificarStatusEnvioME1(
   }
 }
 
-
 export type PontoSerieDiaria = { data: string; quantidade: number; valor: number };
 
 // Serie diaria de "vendas brutas" (pagos + cancelados, mesma definicao usada
@@ -421,9 +429,7 @@ export async function getSerieDiariaVendas(
         limit: String(LIMITE_POR_PAGINA),
         offset: String(offset),
       });
-      const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const res = await fetchOrdersComRetry(`${ML_API}/orders/search?${params.toString()}`, accessToken);
       if (!res.ok) throw new Error(`Falha ao buscar serie diaria (${status}): ${res.status}`);
       const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
       total = data.paging.total;
