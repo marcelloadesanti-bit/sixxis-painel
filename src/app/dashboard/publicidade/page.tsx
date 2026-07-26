@@ -2,18 +2,34 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getAnunciantes, getCampanhas, type Campanha, type Anunciante } from "@/lib/mercadolivre/ads";
+import {
+  getAnunciantes,
+  getCampanhas,
+  getAnuncios,
+  getMetricasAvancadasCampanha,
+  type Campanha,
+  type Anunciante,
+  type Anuncio,
+  type MetricasAvancadasCampanha,
+} from "@/lib/mercadolivre/ads";
 import { getTotaisPorStatus, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
-import PublicidadePorConta, { type ContaComCampanhas, type CampanhaFormatada } from "./publicidade-por-conta";
+import PublicidadePorConta, {
+  type ContaComCampanhas,
+  type CampanhaFormatada,
+  type AnuncioFormatado,
+} from "./publicidade-por-conta";
 
 const formatarMoeda = (valor: number, moeda: string = "BRL") =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
 
 const formatarPct = (valor: number | null, casas = 1) => (valor !== null ? `${valor.toFixed(casas)}%` : "—");
 const formatarRoas = (valor: number | null) => (valor !== null ? `${valor.toFixed(2)}x` : "—");
+// impression_share e lost_impression_share_* podem vir como fracao (0-1) ou
+// ja em pontos percentuais, dependendo do endpoint -- normalizamos aqui.
+const formatarPctFracao = (valor: number, casas = 1) => `${(valor <= 1 ? valor * 100 : valor).toFixed(casas)}%`;
 
 // Ordem fixa (nao alfabetica) pedida especificamente para a tela de Ads --
 // as demais telas (Pos-venda, Promocoes) continuam ordenadas por nickname.
@@ -22,6 +38,11 @@ const posicaoConta = (nickname: string) => {
   const i = ORDEM_CONTAS_ADS.indexOf(nickname);
   return i === -1 ? 999 : i;
 };
+
+// Metricas avancadas de campanha (impression share etc.) so existem no
+// endpoint de detalhe -- 1 chamada extra por campanha. Limitamos por conta
+// para nao arriscar rate limit somando com as demais chamadas da pagina.
+const TETO_METRICAS_AVANCADAS = 6;
 
 // --- "Metas em andamento": indicadores calculados a partir dos dados reais
 // do mes corrente (nao respeita o filtro de periodo da pagina, igual a meta
@@ -66,54 +87,6 @@ function CardMetaAndamento({ card }: { card: CardMeta }) {
   );
 }
 
-// Anuncio individual (nivel "product ad", nao campanha) com melhor
-// desempenho no periodo, cross-conta. A API do Mercado Ads hoje so nos da
-// metricas por CAMPANHA (ver src/lib/mercadolivre/ads.ts) -- o endpoint de
-// metricas por anuncio/item ainda precisa ser integrado. Os dados abaixo sao
-// ilustrativos, so para validar o layout; ficam claramente marcados como tal
-// na tela (ver aviso "Dados de exemplo" no render).
-type AnuncioTop = {
-  codigo: string;
-  titulo: string;
-  contaNome: string;
-  contaCor: string;
-  cliques: number;
-  investimentoLabel: string;
-  vendasLabel: string;
-  roasLabel: string;
-};
-
-function gerarTopAnunciosMock(contas: { nome: string; cor: string }[]): AnuncioTop[] {
-  if (contas.length === 0) return [];
-  const produtos = [
-    "Kit 3 Fones Bluetooth TWS",
-    "Carregador Turbo 33W USB-C",
-    "Capinha Anti-Impacto iPhone",
-    "Suporte Veicular Magnético",
-    "Cabo USB-C 2m Reforçado",
-    "Power Bank 20000mAh",
-    "Smartwatch Esportivo",
-    "Caixa de Som Portátil",
-    "Mouse Sem Fio Silencioso",
-    "Organizador de Cabos",
-  ];
-  return produtos.map((titulo, i) => {
-    const conta = contas[i % contas.length];
-    const investimento = 320 - i * 22;
-    const roas = 12 - i * 0.8;
-    return {
-      codigo: `MLB${(4200000000 + i * 137).toString()}`,
-      titulo,
-      contaNome: conta.nome,
-      contaCor: conta.cor,
-      cliques: 480 - i * 31,
-      investimentoLabel: formatarMoeda(investimento),
-      vendasLabel: formatarMoeda(Math.round(investimento * roas)),
-      roasLabel: formatarRoas(roas),
-    };
-  });
-}
-
 export default async function PublicidadePage({
   searchParams,
 }: {
@@ -156,9 +129,9 @@ export default async function PublicidadePage({
     .eq("mes", mesAtual);
   const metasAdsAtual = new Map((metasAdsRaw ?? []).map((m) => [m.tipo_meta as string, Number(m.valor)]));
 
-  // Busca anunciantes uma unica vez por conta e reaproveita para as duas
-  // janelas de tempo (mes corrente, para "Metas em andamento", e periodo
-  // filtrado na tela, para os cards consolidados + campanhas por conta).
+  // Busca anunciantes uma unica vez por conta e reaproveita para as janelas
+  // de tempo (mes corrente, para "Metas em andamento", e periodo filtrado na
+  // tela, para os cards consolidados + campanhas/anuncios por conta).
   const resultados = await Promise.all(
     (contas ?? []).map(async (conta) => {
       try {
@@ -170,6 +143,8 @@ export default async function PublicidadePage({
             conta,
             semAnuncios: true,
             campanhasPeriodo: [] as Campanha[],
+            anuncios: [] as Anuncio[],
+            advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
             investimentoMes: 0,
             vendasAdsMes: 0,
             faturamentoMes: 0,
@@ -177,17 +152,38 @@ export default async function PublicidadePage({
           };
         }
 
-        const [listasPeriodo, listasMes, pagasMes, canceladasMes] = await Promise.all([
+        const [listasPeriodo, listasMes, pagasMes, canceladasMes, listasAnuncios] = await Promise.all([
           Promise.all(anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, de, ate))),
           Promise.all(
             anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, primeiroDiaMes, hojeStr))
           ),
           getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "paid"),
           getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "cancelled"),
+          Promise.all(anunciantes.map((a) => getAnuncios(accessToken, a.siteId, a.advertiserId, de, ate, 10))),
         ]);
 
-        const campanhasPeriodo = listasPeriodo.flatMap((r) => r.campanhas);
+        // Tag de siteId por campanha (necessario para a chamada de detalhe
+        // das metricas avancadas, que exige o site do anunciante dono dela).
+        const campanhasPeriodo = listasPeriodo.flatMap((r, i) =>
+          r.campanhas.map((c) => ({ ...c, siteId: anunciantes[i].siteId }))
+        );
         const campanhasMes = listasMes.flatMap((r) => r.campanhas);
+        const anuncios = listasAnuncios
+          .flat()
+          .sort((a, b) => b.totalAmount - a.totalAmount)
+          .slice(0, 10);
+
+        // Metricas avancadas so para campanhas ativas, ate o teto -- 1
+        // chamada por campanha, em paralelo mas com numero limitado.
+        const campanhasAtivas = campanhasPeriodo.filter((c) => c.status === "active").slice(0, TETO_METRICAS_AVANCADAS);
+        const advancedPorCampanha = new Map<number, MetricasAvancadasCampanha | null>();
+        if (campanhasAtivas.length > 0) {
+          const detalhes = await Promise.all(
+            campanhasAtivas.map((c) => getMetricasAvancadasCampanha(accessToken, c.siteId, c.id, de, ate))
+          );
+          campanhasAtivas.forEach((c, i) => advancedPorCampanha.set(c.id, detalhes[i]));
+        }
+
         const investimentoMes = campanhasMes.reduce((s, c) => s + c.metricas.cost, 0);
         const vendasAdsMes = campanhasMes.reduce((s, c) => s + c.metricas.total_amount, 0);
         const faturamentoMes = pagasMes.valor + canceladasMes.valor;
@@ -196,6 +192,8 @@ export default async function PublicidadePage({
           conta,
           semAnuncios: false,
           campanhasPeriodo,
+          anuncios,
+          advancedPorCampanha,
           investimentoMes,
           vendasAdsMes,
           faturamentoMes,
@@ -207,6 +205,8 @@ export default async function PublicidadePage({
           conta,
           semAnuncios: false,
           campanhasPeriodo: [] as Campanha[],
+          anuncios: [] as Anuncio[],
+          advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
           investimentoMes: 0,
           vendasAdsMes: 0,
           faturamentoMes: 0,
@@ -269,26 +269,40 @@ export default async function PublicidadePage({
 
   const pctOrcamento = orcamentoMensal && orcamentoMensal > 0 ? (investimentoAdsMesTotal / orcamentoMensal) * 100 : null;
 
-  // --- Top 10 anuncios (mock -- ver comentario acima de gerarTopAnunciosMock) ---
-  const contasParaMock = (contas ?? []).map((c) => ({ nome: nomeConta(c), cor: (c.cor as string) ?? COR_PADRAO }));
-  const topAnuncios = gerarTopAnunciosMock(contasParaMock);
-
-  // --- Campanhas por conta, ordem fixa (so nesta tela) ---
+  // --- Campanhas + anuncios reais por conta, ordem fixa (so nesta tela) ---
   const contasComCampanhas: ContaComCampanhas[] = resultados
     .slice()
     .sort((a, b) => posicaoConta(a.conta.nickname as string) - posicaoConta(b.conta.nickname as string))
     .map((r) => {
-      const campanhas: CampanhaFormatada[] = r.campanhasPeriodo.map((c) => ({
-        id: c.id,
-        nome: c.nome,
-        status: c.status,
-        investimentoLabel: formatarMoeda(c.metricas.cost, c.moeda),
-        cliques: c.metricas.clicks,
-        ctrLabel: `${(c.metricas.ctr * 100).toFixed(2)}%`,
-        acosLabel: `${c.metricas.acos.toFixed(1)}%`,
-        roasLabel: formatarRoas(c.metricas.roas),
-        vendasLabel: formatarMoeda(c.metricas.total_amount, c.moeda),
+      const campanhas: CampanhaFormatada[] = r.campanhasPeriodo.map((c) => {
+        const adv = r.advancedPorCampanha.get(c.id) ?? null;
+        return {
+          id: c.id,
+          nome: c.nome,
+          status: c.status,
+          investimentoLabel: formatarMoeda(c.metricas.cost, c.moeda),
+          cliques: c.metricas.clicks,
+          ctrLabel: `${(c.metricas.ctr * 100).toFixed(2)}%`,
+          acosLabel: `${c.metricas.acos.toFixed(1)}%`,
+          roasLabel: formatarRoas(c.metricas.roas),
+          vendasLabel: formatarMoeda(c.metricas.total_amount, c.moeda),
+          roasObjetivoLabel: c.roasObjetivo !== null ? formatarRoas(c.roasObjetivo) : null,
+          impressionShareLabel: adv?.impressionShare != null ? formatarPctFracao(adv.impressionShare) : null,
+          lostShareOrcamentoLabel: adv?.lostShareOrcamento != null ? formatarPctFracao(adv.lostShareOrcamento) : null,
+          lostShareRankingLabel: adv?.lostShareRanking != null ? formatarPctFracao(adv.lostShareRanking) : null,
+        };
+      });
+
+      const anuncios: AnuncioFormatado[] = r.anuncios.map((a) => ({
+        itemId: a.itemId,
+        titulo: a.titulo,
+        status: a.status,
+        cliques: a.clicks,
+        investimentoLabel: formatarMoeda(a.cost),
+        roasLabel: a.roas !== null ? formatarRoas(a.roas) : "—",
+        vendasLabel: formatarMoeda(a.totalAmount),
       }));
+
       return {
         id: r.conta.id as string,
         nome: nomeConta(r.conta),
@@ -296,6 +310,7 @@ export default async function PublicidadePage({
         erro: r.erro,
         semAnuncios: r.semAnuncios,
         campanhas,
+        anuncios,
       };
     });
 
@@ -384,55 +399,8 @@ export default async function PublicidadePage({
         </div>
       </div>
 
-      {/* Top 10 anuncios patrocinados -- metrica de desempenho, cross-conta */}
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">Top 10 anúncios patrocinados</h2>
-      <p className="mb-2 text-xs text-amber-600">
-        Dados de exemplo — a integração por anúncio individual da API do Mercado Ads ainda não está vinculada.
-        Layout pronto para os dados reais assim que estiver disponível.
-      </p>
-      <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-400">
-              <th className="p-3">#</th>
-              <th className="p-3">Anúncio</th>
-              <th className="p-3 text-right">Cliques</th>
-              <th className="p-3 text-right">Investimento</th>
-              <th className="p-3 text-right">ROAS</th>
-              <th className="p-3 text-right">Vendas</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {topAnuncios.map((a, i) => (
-              <tr key={a.codigo}>
-                <td className="p-3 text-gray-400">{i + 1}</td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
-                      style={{ backgroundColor: a.contaCor }}
-                      title={a.contaNome}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-gray-800">{a.titulo}</p>
-                      <p className="text-xs text-gray-400">
-                        {a.codigo} · {a.contaNome}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-                <td className="p-3 text-right">{a.cliques}</td>
-                <td className="p-3 text-right">{a.investimentoLabel}</td>
-                <td className="p-3 text-right">{a.roasLabel}</td>
-                <td className="p-3 text-right">{a.vendasLabel}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Campanhas reais por conta, ordem fixa */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas por conta</h2>
+      {/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
+      <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas e anúncios por conta</h2>
       {contasComCampanhas.length === 0 ? (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
           Nenhuma conta Mercado Livre conectada ainda.
