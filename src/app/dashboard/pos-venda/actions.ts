@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { responderPergunta } from "@/lib/mercadolivre/questions";
 
@@ -14,7 +15,21 @@ export async function responderPerguntaAction(formData: FormData) {
   }
 
   const accessToken = await getValidAccessToken(contaId);
-  await responderPergunta(accessToken, questionId, texto);
+
+  try {
+    await responderPergunta(accessToken, questionId, texto);
+  } catch (err) {
+    console.error(`Falha ao responder pergunta ${questionId}:`, err);
+    const mensagem = err instanceof Error ? err.message : String(err);
+    // "not_active_item": o anuncio da pergunta foi pausado/encerrado no
+    // Mercado Livre entre o carregamento da pagina e o envio da resposta --
+    // erro esperado do lado do usuario, nao uma falha do app. Mostra aviso
+    // amigavel em vez de estourar 500 (ver page.tsx, banner por ?erro=).
+    if (mensagem.includes("not_active_item")) {
+      redirect("/dashboard/pos-venda?erro=pergunta_item_inativo");
+    }
+    redirect("/dashboard/pos-venda?erro=pergunta_falhou");
+  }
 
   revalidatePath("/dashboard/pos-venda");
   revalidatePath("/dashboard");
