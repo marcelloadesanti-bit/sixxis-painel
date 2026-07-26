@@ -3,6 +3,9 @@
 // IMPORTANTE: os endpoints legados (/advertising/advertisers/$ID/product_ads/campaigns)
 // foram desativados em 26/02/2026. Usamos o endpoint atual
 // /advertising/$SITE_ID/advertisers/$ADVERTISER_ID/product_ads/campaigns/search.
+// IMPORTANTE 2: a API do Product Ads hoje e SOMENTE LEITURA (monitoramento).
+// Nao existe endpoint publico para criar/editar/pausar campanha -- isso so
+// pode ser feito manualmente em ads.mercadolivre.com.br/productAds.
 
 const ML_API = "https://api.mercadolibre.com";
 
@@ -45,6 +48,9 @@ export type Campanha = {
   orcamento: number;
   moeda: string;
   estrategia: string | null;
+  // ROAS objetivo definido na campanha (substituiu o ACOS objetivo em
+  // Jan/2026). Vem de graca no mesmo payload de busca, sem custo extra.
+  roasObjetivo: number | null;
   metricas: MetricasCampanha;
 };
 
@@ -114,6 +120,7 @@ export async function getCampanhas(
       budget: number;
       currency_id?: string;
       strategy?: string;
+      roas_target?: number;
       metrics?: MetricasCampanha;
     }[];
   };
@@ -129,6 +136,7 @@ export async function getCampanhas(
     orcamento: c.budget,
     moeda: c.currency_id ?? moedaPorSite[advertiserSiteId] ?? "BRL",
     estrategia: c.strategy ?? null,
+    roasObjetivo: c.roas_target ?? null,
     metricas: c.metrics ?? {
       clicks: 0,
       prints: 0,
@@ -144,4 +152,162 @@ export async function getCampanhas(
   }));
 
   return { total: data.paging.total, campanhas };
+}
+
+// --- Metricas por anuncio individual (nivel "product ad", nao campanha) ---
+// Endpoint /product_ads/ads/search. Usado no ranking real de "melhores
+// anuncios" de cada conta (substitui o antigo mock de Top 10). A API NAO
+// retorna roas/ctr neste endpoint (so no de campanhas) -- calculamos os
+// equivalentes localmente a partir de cost/total_amount/clicks/prints.
+const METRICAS_ANUNCIO = ["clicks", "prints", "cost", "cpc", "acos", "units_quantity", "total_amount"].join(",");
+
+export type Anuncio = {
+  itemId: string;
+  titulo: string;
+  status: string;
+  campanhaId: number;
+  clicks: number;
+  prints: number;
+  cost: number;
+  totalAmount: number;
+  unitsQuantity: number;
+  ctr: number | null;
+  roas: number | null;
+};
+
+// Ranking real de anuncios de um anunciante no periodo, ordenado por vendas
+// (total_amount) desc -- ja usa o parametro sort_by da propria API.
+export async function getAnuncios(
+  accessToken: string,
+  advertiserSiteId: string,
+  advertiserId: number,
+  de: string,
+  ate: string,
+  limite = 10
+): Promise<Anuncio[]> {
+  const params = new URLSearchParams({
+    limit: String(limite),
+    offset: "0",
+    date_from: de,
+    date_to: ate,
+    metrics: METRICAS_ANUNCIO,
+    sort_by: "total_amount",
+    sort: "desc",
+  });
+
+  const res = await fetch(
+    `${ML_API}/advertising/${advertiserSiteId}/advertisers/${advertiserId}/product_ads/ads/search?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "api-version": "2",
+      },
+    }
+  );
+
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    throw new Error(`Falha ao buscar anuncios: ${res.status}`);
+  }
+
+  const data = (await res.json()) as {
+    results: {
+      item_id: string;
+      title: string;
+      status: string;
+      campaign_id: number;
+      metrics?: {
+        clicks: number;
+        prints: number;
+        cost: number;
+        total_amount: number;
+        units_quantity: number;
+      };
+    }[];
+  };
+
+  return (data.results ?? []).map((a) => {
+    const m = a.metrics ?? { clicks: 0, prints: 0, cost: 0, total_amount: 0, units_quantity: 0 };
+    return {
+      itemId: a.item_id,
+      titulo: a.title,
+      status: a.status,
+      campanhaId: a.campaign_id,
+      clicks: m.clicks,
+      prints: m.prints,
+      cost: m.cost,
+      totalAmount: m.total_amount,
+      unitsQuantity: m.units_quantity,
+      ctr: m.prints > 0 ? m.clicks / m.prints : null,
+      roas: m.cost > 0 ? m.total_amount / m.cost : null,
+    };
+  });
+}
+
+// --- Metricas avancadas de campanha (impression share, etc.) ---
+// So existem no endpoint de DETALHE de uma campanha (nao no /search), ou
+// seja, precisam de 1 chamada por campanha. Por isso so devem ser buscadas
+// para um numero limitado de campanhas (ver TETO_METRICAS_AVANCADAS em
+// publicidade/page.tsx), para nao arriscar rate limit (429) somando essas
+// chamadas as demais que a pagina de Publicidade ja faz.
+export type MetricasAvancadasCampanha = {
+  impressionShare: number | null;
+  topImpressionShare: number | null;
+  lostShareOrcamento: number | null;
+  lostShareRanking: number | null;
+  acosBenchmark: number | null;
+};
+
+const METRICAS_AVANCADAS = [
+  "impression_share",
+  "top_impression_share",
+  "lost_impression_share_by_budget",
+  "lost_impression_share_by_ad_rank",
+  "acos_benchmark",
+].join(",");
+
+// Retorna null em qualquer falha (nunca lanca erro) -- essas metricas sao um
+// complemento opcional do card de campanha, nao podem derrubar a pagina.
+export async function getMetricasAvancadasCampanha(
+  accessToken: string,
+  advertiserSiteId: string,
+  campanhaId: number,
+  de: string,
+  ate: string
+): Promise<MetricasAvancadasCampanha | null> {
+  try {
+    const params = new URLSearchParams({ date_from: de, date_to: ate, metrics: METRICAS_AVANCADAS });
+    const res = await fetch(
+      `${ML_API}/advertising/${advertiserSiteId}/product_ads/campaigns/${campanhaId}?${params.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "api-version": "2",
+        },
+      }
+    );
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      metrics?: {
+        impression_share?: number;
+        top_impression_share?: number;
+        lost_impression_share_by_budget?: number;
+        lost_impression_share_by_ad_rank?: number;
+        acos_benchmark?: number;
+      };
+    };
+    const m = data.metrics;
+    if (!m) return null;
+
+    return {
+      impressionShare: m.impression_share ?? null,
+      topImpressionShare: m.top_impression_share ?? null,
+      lostShareOrcamento: m.lost_impression_share_by_budget ?? null,
+      lostShareRanking: m.lost_impression_share_by_ad_rank ?? null,
+      acosBenchmark: m.acos_benchmark ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
