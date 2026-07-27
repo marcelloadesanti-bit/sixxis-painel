@@ -123,6 +123,22 @@ export async function GET(request: Request) {
       })
     );
 
+    // Probe extra 2: status/substatus do ENVIO de cada pedido cancelado --
+    // testa a hipotese de que "devolvido" no painel do ML pode ser um estado
+    // de LOGISTICA (pacote recusado / devolvido ao remetente) que nunca virou
+    // uma reclamacao formal, e por isso nao aparece na busca por claims acima.
+    const enviosPorPedidoCancelado = await Promise.all(
+      cancelDesc50.pedidos.map(async (p) => {
+        const res = await fetch(`${ML_API}/orders/${p.id}/shipments`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.status === 404) return { pedidoId: p.id, semEnvio: true };
+        if (!res.ok) return { pedidoId: p.id, erro: `${res.status} ${await res.text()}` };
+        const s = (await res.json()) as { status?: string; substatus?: string | null };
+        return { pedidoId: p.id, status: s.status ?? null, substatus: s.substatus ?? null };
+      })
+    );
+
     const idsDesc50 = new Set(pagoDesc50.pedidos.map((p) => p.id));
     const idsAsc50 = new Set(pagoAsc50.pedidos.map((p) => p.id));
     const soDesc50 = [...idsDesc50].filter((id) => !idsAsc50.has(id));
@@ -190,6 +206,7 @@ export async function GET(request: Request) {
       },
       overlapCanceladosComDevolucoes,
       claimsPorPedidoCancelado,
+      enviosPorPedidoCancelado,
     });
   } catch (err) {
     return NextResponse.json(
