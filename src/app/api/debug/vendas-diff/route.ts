@@ -66,12 +66,15 @@ async function buscarTudo(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const nickname = searchParams.get("conta");
+  const mlUserIdParam = searchParams.get("mluserid");
   const de = searchParams.get("de") ?? "2026-07-01";
   const ate = searchParams.get("ate") ?? "2026-07-27";
 
   const admin = createAdminClient();
   let query = admin.from("ml_accounts").select("id, ml_user_id, nickname").limit(1);
-  if (nickname) {
+  if (mlUserIdParam) {
+    query = admin.from("ml_accounts").select("id, ml_user_id, nickname").eq("ml_user_id", Number(mlUserIdParam)).limit(1);
+  } else if (nickname) {
     query = admin.from("ml_accounts").select("id, ml_user_id, nickname").ilike("nickname", `%${nickname}%`).limit(1);
   }
   const { data: contas, error: erroContas } = await query;
@@ -101,6 +104,24 @@ export async function GET(request: Request) {
     const overlapCanceladosComDevolucoes = devolucoesTodas
       .map((d) => ({ claimId: d.claimId, resourceId: claimIdParaResourceId.get(d.claimId) ?? null, custo: d.custo }))
       .filter((d) => d.resourceId !== null && idsCancelados.has(d.resourceId));
+
+    // Probe extra: para cada pedido CANCELADO, busca direto se existe uma
+    // reclamacao associada a ele (via resource_id), SEM restringir por data
+    // de criacao da reclamacao -- testa a hipotese de que o pedido foi
+    // devolvido (reclamacao aberta em outra data) e so DEPOIS o status do
+    // pedido virou "cancelled", o que faria nossa contagem de "devolvidas"
+    // (filtrada pela data da reclamacao) nao capturar o vinculo.
+    const claimsPorPedidoCancelado = await Promise.all(
+      cancelDesc50.pedidos.map(async (p) => {
+        const res = await fetch(
+          `${ML_API}/post-purchase/v1/claims/search?resource_id=${p.id}&resource=order`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (!res.ok) return { pedidoId: p.id, erro: `${res.status} ${await res.text()}` };
+        const data = await res.json();
+        return { pedidoId: p.id, resultadoBruto: data };
+      })
+    );
 
     const idsDesc50 = new Set(pagoDesc50.pedidos.map((p) => p.id));
     const idsAsc50 = new Set(pagoAsc50.pedidos.map((p) => p.id));
@@ -168,6 +189,7 @@ export async function GET(request: Request) {
         })),
       },
       overlapCanceladosComDevolucoes,
+      claimsPorPedidoCancelado,
     });
   } catch (err) {
     return NextResponse.json(
