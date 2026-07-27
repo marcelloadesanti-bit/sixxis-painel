@@ -7,20 +7,16 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import {
-  getDocumentosPeriodo,
-  baixarDocumentoLegal,
-  gerarEBaixarRelatorio,
-  type DocumentoFaturamento,
-  type FormatoRelatorio,
-} from "@/lib/mercadolivre/billing";
+import { getDocumentosPeriodo, baixarDocumentoLegal, type DocumentoFaturamento } from "@/lib/mercadolivre/billing";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
-// Nota: arquivos "use server" só podem exportar funções async -- não é
-// possível declarar `export const maxDuration` aqui (diferente de page.tsx).
-// gerarRelatorio faz polling (solicitar -> status -> baixar) com um teto
-// interno de 25s (ver gerarEBaixarRelatorio em billing.ts), que já fica
-// dentro do padrão de timeout de função da Vercel usado no projeto.
+// Nota: o relatório exportável (XLSX/CSV) NÃO usa server action -- o fluxo
+// de geração faz polling e pode passar dos ~10s de timeout padrão de uma
+// server action na Vercel (arquivos "use server" não podem declarar
+// `export const maxDuration`). Por isso ele vira uma rota de API dedicada
+// (src/app/api/faturamento/relatorio/route.ts, com maxDuration=60), chamada
+// via fetch direto do componente cliente -- ver ExportarRelatorio em
+// faturamento-por-conta.tsx.
 
 // Descobre a key real do período (ex: "2026-07-01") a partir do que já está
 // em cache -- evita uma chamada extra à API só pra redescobrir "qual é o
@@ -76,26 +72,5 @@ export async function baixarNotaFiscalPdf(
     return { base64, nomeArquivo: `${fileId}.pdf` };
   } catch (err) {
     return { erro: err instanceof Error ? err.message : "Falha ao baixar a nota fiscal." };
-  }
-}
-
-export async function gerarRelatorio(
-  contaId: string,
-  periodoKeySelecionado: string | null,
-  formato: FormatoRelatorio
-): Promise<{ base64: string; nomeArquivo: string } | { erro: string }> {
-  await exigirAcessoSecao("faturamento");
-
-  const admin = createAdminClient();
-  const chave = await periodoKeyReal(admin, contaId, periodoKeySelecionado);
-  if (!chave) {
-    return { erro: "Carregue o resumo deste período primeiro (aguarde o card acima terminar de carregar)." };
-  }
-
-  try {
-    const accessToken = await getValidAccessToken(contaId);
-    return await gerarEBaixarRelatorio(accessToken, chave, formato);
-  } catch (err) {
-    return { erro: err instanceof Error ? err.message : "Falha ao gerar relatório desta conta." };
   }
 }

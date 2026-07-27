@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { buscarNotasFiscais, baixarNotaFiscalPdf, gerarRelatorio } from "./actions";
+import { buscarNotasFiscais, baixarNotaFiscalPdf } from "./actions";
 import type { DocumentoFaturamento } from "@/lib/mercadolivre/billing";
 
 // Layout final (27/07/2026): dados reais da API de Faturamento (Billing) do
@@ -222,20 +222,30 @@ function ExportarRelatorio({ contaId, periodoKeySelecionado }: { contaId: string
   async function handleExportar(formato: "CSV" | "XLSX") {
     setGerando(formato);
     setErro(null);
-    const resultado = await gerarRelatorio(contaId, periodoKeySelecionado, formato);
-    setGerando(null);
-    if ("erro" in resultado) {
-      setErro(resultado.erro);
-      return;
+    try {
+      const resp = await fetch("/api/faturamento/relatorio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contaId, periodoKeySelecionado, formato }),
+      });
+      const resultado = (await resp.json()) as { base64: string; nomeArquivo: string } | { erro: string };
+      if (!resp.ok || "erro" in resultado) {
+        setErro("erro" in resultado ? resultado.erro : "Falha ao gerar relatório desta conta.");
+        return;
+      }
+      const bytes = Uint8Array.from(atob(resultado.base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = resultado.nomeArquivo;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErro("Falha de conexão ao gerar o relatório -- tente novamente.");
+    } finally {
+      setGerando(null);
     }
-    const bytes = Uint8Array.from(atob(resultado.base64), (c) => c.charCodeAt(0));
-    const blob = new Blob([bytes]);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = resultado.nomeArquivo;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   return (
