@@ -100,7 +100,9 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
             </p>
           )}
           {conta.erro ? (
-            <p className="text-xs text-red-500">{conta.erro}</p>
+            <p className={`text-xs ${conta.erro.includes("limite de contas por carregamento") ? "text-gray-500" : "text-red-500"}`}>
+              {conta.erro}
+            </p>
           ) : conta.semPeriodo ? (
             <p className="text-sm text-gray-400">
               Nenhum período de faturamento disponível ainda para esta conta.
