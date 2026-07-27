@@ -101,7 +101,7 @@ export async function getResumoFaturamento(
   accessToken: string,
   periodoKey: string
 ): Promise<ResumoFaturamento> {
-  const params = new URLSearchParams({ group: "ML" });
+  const params = new URLSearchParams({ group: "ML", document_type: "BILL" });
   const res = await fetch(
     `${ML_API}/billing/integration/periods/key/${periodoKey}/summary/details?${params.toString()}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
