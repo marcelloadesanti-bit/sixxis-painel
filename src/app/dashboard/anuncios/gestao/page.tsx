@@ -13,6 +13,8 @@ const OPCOES_ORDENACAO: { key: OrdenacaoAnuncios; label: string }[] = [
   { key: "mais_vendidos", label: "Mais vendidos (no período)" },
   { key: "mais_vendidos_total", label: "Mais vendidos (desde a criação)" },
   { key: "mais_visualizados", label: "Mais visualizados" },
+  { key: "maior_conversao", label: "Maior conversão" },
+  { key: "melhor_qualidade", label: "Melhor qualidade" },
 ];
 
 export default async function GestaoAnunciosPage({
@@ -110,6 +112,7 @@ export default async function GestaoAnunciosPage({
           linhas={linhas}
           periodoLabel={PRESETS.find((p) => p.key === preset)?.label}
           colunaVendidos={ordenacao === "mais_vendidos_total" ? "total" : "periodo"}
+          ordenacaoAtual={ordenacao}
           editavel
         />
       </div>
