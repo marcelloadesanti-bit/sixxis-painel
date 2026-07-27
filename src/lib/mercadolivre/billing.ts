@@ -243,13 +243,24 @@ export async function getFaturamentoConta(
 // gastar nenhuma chamada de API so pra montar a lista do seletor). Se a
 // conta nao teve movimento naquele mes, getResumoFaturamento devolve null
 // (404) e tratamos como "sem dados" -- sem gastar chamada extra nenhuma.
-// 27/07/2026: notas fiscais (faturas/notas de credito) de um periodo. Cada
-// documento pode ter 2 arquivos (PDF e XML) -- sempre preferimos o PDF para
-// o botao de download (o XML nao interessa ao usuario final).
+// 27/07/2026: notas fiscais (faturas/notas de credito) de um periodo.
+//
+// IMPORTANTE (descoberto testando ao vivo nas 5 contas reais em 27/07/2026):
+// para contas do Brasil (site MLB), o campo "files" desta API vem SEMPRE
+// vazio -- confirmado em 39 documentos de 2 contas diferentes. Isso é
+// esperado: no Brasil a nota fiscal (NF-e/DANFE) é emitida por um sistema
+// fiscal separado do Mercado Livre, não pela API de "billing" usada aqui
+// para o resumo de cobranças. Por isso o botão de baixar PDF nunca vai
+// aparecer para essas contas -- mantemos a lógica (caso a API mude ou outra
+// conta/país tenha arquivo disponível), mas sem prometer o download.
+// Também descoberto: "expiration_date" vem sempre com uma data-sentinela
+// sem sentido ("9999-12-31") para essas contas -- por isso usamos o período
+// (period.date_from/date_to) do próprio documento, que é o dado real.
 export type DocumentoFaturamento = {
   id: number;
   tipo: "BILL" | "CREDIT_NOTE";
-  dataVencimento: string;
+  periodoDataInicio: string;
+  periodoDataFim: string;
   valor: number;
   valorPendente: number;
   moeda: string;
@@ -276,10 +287,10 @@ export async function getDocumentosPeriodo(
     results: {
       id: number;
       document_type: "BILL" | "CREDIT_NOTE";
-      expiration_date: string;
       amount: number;
       unpaid_amount: number;
       currency_id: string;
+      period?: { date_from: string; date_to: string };
       files?: { file_id: string; reference_number: string }[];
     }[];
   };
@@ -290,7 +301,8 @@ export async function getDocumentosPeriodo(
     return {
       id: d.id,
       tipo: d.document_type,
-      dataVencimento: d.expiration_date,
+      periodoDataInicio: d.period?.date_from ?? "",
+      periodoDataFim: d.period?.date_to ?? "",
       valor: d.amount ?? 0,
       valorPendente: d.unpaid_amount ?? 0,
       moeda: d.currency_id,
