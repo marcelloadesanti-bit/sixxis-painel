@@ -13,9 +13,20 @@
 // raramente muda de uma hora para outra.
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getFaturamentoConta, type PeriodoFaturamento, type ResumoFaturamento } from "./billing";
+import {
+  getFaturamentoConta,
+  getResumoFaturamento,
+  type PeriodoFaturamento,
+  type ResumoFaturamento,
+} from "./billing";
 
 const IDADE_MAXIMA_CACHE_MS = 12 * 60 * 60 * 1000; // 12h
+
+// Chave de cache usada para o periodo "atual" (o mais recente, que ainda
+// pode mudar -- por isso tem TTL de 12h). Um mes anterior explicitamente
+// selecionado pelo usuario usa sua propria key real (ex: "2026-06-01") como
+// chave de cache e NUNCA expira, porque periodos fechados nao mudam mais.
+const CHAVE_PERIODO_ATUAL = "ATUAL";
 
 export type FaturamentoContaResultado = (
   | { status: "ok"; periodo: PeriodoFaturamento; resumo: ResumoFaturamento; desatualizado: boolean; atualizadoEm: string }
@@ -58,22 +69,50 @@ function montarResultadoDoCache(cache: LinhaCache, forcarDesatualizado = false):
   };
 }
 
+// Busca dados novos na API do ML e grava no cache sob `chaveCache`.
+// - Sem `periodoKeyExplicito`: comportamento original -- descobre o periodo
+//   mais recente e o resumo (2 chamadas), grava sob CHAVE_PERIODO_ATUAL.
+// - Com `periodoKeyExplicito` (mes anterior escolhido pelo usuario): busca
+//   direto o resumo daquele periodo (1 chamada so, mais barato -- nao
+//   precisa descobrir "qual e o periodo mais recente", ja sabemos a key).
 async function buscarEAtualizarCache(
   admin: ReturnType<typeof createAdminClient>,
   contaId: string,
   accessToken: string,
-  mlUserId: number
+  mlUserId: number,
+  periodoKeyExplicito: string | undefined,
+  chaveCache: string
 ): Promise<{ resultado: FaturamentoContaResultado; erro429: boolean }> {
   try {
-    const dados = await getFaturamentoConta(accessToken, mlUserId);
+    let periodo: PeriodoFaturamento | null;
+    let resumo: ResumoFaturamento | null;
+
+    if (periodoKeyExplicito) {
+      resumo = await getResumoFaturamento(accessToken, periodoKeyExplicito);
+      periodo = resumo
+        ? {
+            key: resumo.periodoKey,
+            dataInicio: resumo.dataInicio,
+            dataFim: resumo.dataFim,
+            valor: resumo.totalCobrado,
+            valorPendente: resumo.totalDivida,
+            status: "CLOSED",
+          }
+        : null;
+    } else {
+      const dados = await getFaturamentoConta(accessToken, mlUserId);
+      periodo = dados?.periodo ?? null;
+      resumo = dados?.resumo ?? null;
+    }
+
     const agora = new Date().toISOString();
 
-    if (!dados) {
+    if (!periodo || !resumo) {
       await admin
         .from("faturamento_cache")
         .upsert(
-          { conta_id: contaId, periodo_key: null, dados: null, status: "sem_periodo", erro: null, atualizado_em: agora },
-          { onConflict: "conta_id" }
+          { conta_id: contaId, periodo_key: chaveCache, dados: null, status: "sem_periodo", erro: null, atualizado_em: agora },
+          { onConflict: "conta_id,periodo_key" }
         );
       return {
         resultado: { status: "sem_periodo", desatualizado: false, atualizadoEm: agora, deCache: false },
@@ -81,27 +120,21 @@ async function buscarEAtualizarCache(
       };
     }
 
+    const dados = { periodo, resumo };
     await admin.from("faturamento_cache").upsert(
       {
         conta_id: contaId,
-        periodo_key: dados.periodo.key,
+        periodo_key: chaveCache,
         dados: dados as unknown as Record<string, unknown>,
         status: "ok",
         erro: null,
         atualizado_em: agora,
       },
-      { onConflict: "conta_id" }
+      { onConflict: "conta_id,periodo_key" }
     );
 
     return {
-      resultado: {
-        status: "ok",
-        periodo: dados.periodo,
-        resumo: dados.resumo,
-        desatualizado: false,
-        atualizadoEm: agora,
-        deCache: false,
-      },
+      resultado: { status: "ok", periodo, resumo, desatualizado: false, atualizadoEm: agora, deCache: false },
       erro429: false,
     };
   } catch (err) {
@@ -113,28 +146,43 @@ async function buscarEAtualizarCache(
   }
 }
 
-// Busca (com cache) o faturamento de uma conta. `permitirBusca=false` impede
-// qualquer chamada real à API do ML mesmo com cache expirado/forçado -- usado
-// pela página para respeitar o orçamento de tempo de execução da Vercel (ver
-// LIMITE_BUSCAS_AO_VIVO_POR_CARGA em page.tsx). Nesse caso devolvemos o
-// último cache conhecido (marcado desatualizado) ou um status "pendente" se
-// nunca houve cache.
+// Busca (com cache) o faturamento de uma conta.
+// - `periodoKey` ausente: periodo mais recente (o "atual"), cache com TTL de
+//   12h -- comportamento original.
+// - `periodoKey` presente (ex: "2026-06-01"): mes anterior explicitamente
+//   escolhido pelo usuario no seletor. Esse periodo esta fechado e nao muda
+//   mais, entao uma vez que tenhamos um resultado bom (ok ou sem_periodo) no
+//   cache, nunca mais precisamos rebuscar -- so com `forcar`.
+// `permitirBusca=false` impede qualquer chamada real à API do ML mesmo com
+// cache expirado/forçado -- usado pela página para respeitar o orçamento de
+// tempo de execução da Vercel (ver LIMITE_BUSCAS_AO_VIVO_POR_CARGA em
+// page.tsx). Nesse caso devolvemos o último cache conhecido (marcado
+// desatualizado) ou um status "pendente" se nunca houve cache.
 export async function getFaturamentoContaCacheado(
   contaId: string,
   accessToken: string,
   mlUserId: number,
-  { forcar = false, permitirBusca = true }: { forcar?: boolean; permitirBusca?: boolean } = {}
+  { forcar = false, permitirBusca = true, periodoKey }: { forcar?: boolean; permitirBusca?: boolean; periodoKey?: string } = {}
 ): Promise<FaturamentoContaResultado> {
   const admin = createAdminClient();
+  const chaveCache = periodoKey ?? CHAVE_PERIODO_ATUAL;
+  const historico = !!periodoKey;
 
   const { data: cache } = await admin
     .from("faturamento_cache")
     .select("periodo_key, dados, status, erro, atualizado_em")
     .eq("conta_id", contaId)
+    .eq("periodo_key", chaveCache)
     .maybeSingle();
 
-  const idadeMs = cache ? Date.now() - new Date(cache.atualizado_em).getTime() : Infinity;
-  const cacheValido = !!cache && idadeMs < IDADE_MAXIMA_CACHE_MS;
+  let cacheValido: boolean;
+  if (historico) {
+    // Periodo fechado: um resultado bom (ok ou sem_periodo) vale para sempre.
+    cacheValido = !!cache && (cache.status === "ok" || cache.status === "sem_periodo");
+  } else {
+    const idadeMs = cache ? Date.now() - new Date(cache.atualizado_em).getTime() : Infinity;
+    cacheValido = !!cache && idadeMs < IDADE_MAXIMA_CACHE_MS;
+  }
 
   if (cacheValido && !forcar) {
     return montarResultadoDoCache(cache as LinhaCache);
@@ -151,7 +199,7 @@ export async function getFaturamentoContaCacheado(
     };
   }
 
-  const { resultado } = await buscarEAtualizarCache(admin, contaId, accessToken, mlUserId);
+  const { resultado } = await buscarEAtualizarCache(admin, contaId, accessToken, mlUserId, periodoKey, chaveCache);
 
   if (resultado.status === "erro" && cache && cache.status === "ok" && cache.dados) {
     // Preferimos mostrar o ultimo dado bom conhecido a estourar erro na tela.
@@ -162,8 +210,8 @@ export async function getFaturamentoContaCacheado(
     await admin
       .from("faturamento_cache")
       .upsert(
-        { conta_id: contaId, periodo_key: null, dados: null, status: "erro", erro: resultado.erro, atualizado_em: new Date().toISOString() },
-        { onConflict: "conta_id" }
+        { conta_id: contaId, periodo_key: chaveCache, dados: null, status: "erro", erro: resultado.erro, atualizado_em: new Date().toISOString() },
+        { onConflict: "conta_id,periodo_key" }
       );
   }
 

@@ -178,17 +178,22 @@ export type ResumoFaturamento = {
 };
 
 // Resumo de encargos e bonificacoes de um periodo especifico (identificado
-// pela `key`, geralmente o primeiro dia do mes -- ex: "2026-07-01").
+// pela `key`, geralmente o primeiro dia do mes -- ex: "2026-07-01"). Devolve
+// null quando o periodo nao existe para esta conta (404 -- por exemplo, um
+// mes anterior a criacao da conta), em vez de estourar erro: isso permite ao
+// seletor de meses anteriores tentar qualquer uma das ultimas 12 chaves sem
+// se preocupar se a conta realmente teve movimento naquele mes.
 export async function getResumoFaturamento(
   accessToken: string,
   periodoKey: string
-): Promise<ResumoFaturamento> {
+): Promise<ResumoFaturamento | null> {
   const params = new URLSearchParams({ group: "ML", document_type: "BILL" });
   const res = await fetch(
     `${ML_API}/billing/integration/periods/key/${periodoKey}/summary/details?${params.toString()}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
+  if (res.status === 404) return null;
   if (!res.ok) {
     const corpo = await res.text();
     throw new Error(`Falha ao buscar resumo de faturamento (${res.status}): ${corpo.slice(0, 300)}`);
@@ -227,5 +232,30 @@ export async function getFaturamentoConta(
   await delay(ESPERA_ENTRE_CHAMADAS_MS);
 
   const resumo = await getResumoFaturamento(accessToken, periodo.key);
+  if (!resumo) return null;
   return { periodo, resumo };
+}
+
+// 27/07/2026: seletor de "meses anteriores". A documentacao oficial do ML
+// confirma que NAO e preciso consultar /monthly/periods antes -- a key de
+// qualquer endpoint de periodo e sempre o primeiro dia do mes (ex:
+// "2026-06-01"), entao geramos as chaves dos ultimos N meses localmente (sem
+// gastar nenhuma chamada de API so pra montar a lista do seletor). Se a
+// conta nao teve movimento naquele mes, getResumoFaturamento devolve null
+// (404) e tratamos como "sem dados" -- sem gastar chamada extra nenhuma.
+export function chavesDosUltimosMeses(quantidade = 12): { key: string; label: string }[] {
+  const hoje = new Date();
+  const meses: { key: string; label: string }[] = [];
+  const nomesMes = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+  ];
+  for (let i = 0; i < quantidade; i++) {
+    const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - i, 1));
+    const ano = d.getUTCFullYear();
+    const mes = d.getUTCMonth();
+    const key = `${ano}-${String(mes + 1).padStart(2, "0")}-01`;
+    meses.push({ key, label: `${nomesMes[mes]}/${ano}` });
+  }
+  return meses;
 }
