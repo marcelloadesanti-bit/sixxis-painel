@@ -7,8 +7,19 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getDocumentosPeriodo, baixarDocumentoLegal, type DocumentoFaturamento } from "@/lib/mercadolivre/billing";
+import {
+  getDocumentosPeriodo,
+  baixarDocumentoLegal,
+  gerarEBaixarRelatorio,
+  type DocumentoFaturamento,
+  type FormatoRelatorio,
+} from "@/lib/mercadolivre/billing";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+
+// gerarRelatorio faz polling (solicitar -> status -> baixar), podendo levar
+// ~25s+ -- garante o mesmo teto do plano Hobby da Vercel (60s) usado na
+// página, já que actions.ts vira sua própria função serverless.
+export const maxDuration = 60;
 
 // Descobre a key real do período (ex: "2026-07-01") a partir do que já está
 // em cache -- evita uma chamada extra à API só pra redescobrir "qual é o
@@ -64,5 +75,26 @@ export async function baixarNotaFiscalPdf(
     return { base64, nomeArquivo: `${fileId}.pdf` };
   } catch (err) {
     return { erro: err instanceof Error ? err.message : "Falha ao baixar a nota fiscal." };
+  }
+}
+
+export async function gerarRelatorio(
+  contaId: string,
+  periodoKeySelecionado: string | null,
+  formato: FormatoRelatorio
+): Promise<{ base64: string; nomeArquivo: string } | { erro: string }> {
+  await exigirAcessoSecao("faturamento");
+
+  const admin = createAdminClient();
+  const chave = await periodoKeyReal(admin, contaId, periodoKeySelecionado);
+  if (!chave) {
+    return { erro: "Carregue o resumo deste período primeiro (aguarde o card acima terminar de carregar)." };
+  }
+
+  try {
+    const accessToken = await getValidAccessToken(contaId);
+    return await gerarEBaixarRelatorio(accessToken, chave, formato);
+  } catch (err) {
+    return { erro: err instanceof Error ? err.message : "Falha ao gerar relatório desta conta." };
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { buscarNotasFiscais, baixarNotaFiscalPdf } from "./actions";
+import { buscarNotasFiscais, baixarNotaFiscalPdf, gerarRelatorio } from "./actions";
 import type { DocumentoFaturamento } from "@/lib/mercadolivre/billing";
 
 // Layout final (27/07/2026): dados reais da API de Faturamento (Billing) do
@@ -212,6 +212,54 @@ function NotasFiscais({ contaId, periodoKeySelecionado }: { contaId: string; per
   );
 }
 
+// 27/07/2026: relatório exportável (XLSX/CSV) do período -- geração sob
+// demanda (o Mercado Livre processa de forma assíncrona, por isso o botão
+// mostra "Gerando..." enquanto a server action faz o polling do status).
+function ExportarRelatorio({ contaId, periodoKeySelecionado }: { contaId: string; periodoKeySelecionado: string | null }) {
+  const [gerando, setGerando] = useState<"CSV" | "XLSX" | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function handleExportar(formato: "CSV" | "XLSX") {
+    setGerando(formato);
+    setErro(null);
+    const resultado = await gerarRelatorio(contaId, periodoKeySelecionado, formato);
+    setGerando(null);
+    if ("erro" in resultado) {
+      setErro(resultado.erro);
+      return;
+    }
+    const bytes = Uint8Array.from(atob(resultado.base64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resultado.nomeArquivo;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Exportar relatório:</span>
+      <button
+        onClick={() => handleExportar("CSV")}
+        disabled={gerando !== null}
+        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+      >
+        {gerando === "CSV" ? "Gerando..." : "CSV"}
+      </button>
+      <button
+        onClick={() => handleExportar("XLSX")}
+        disabled={gerando !== null}
+        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+      >
+        {gerando === "XLSX" ? "Gerando..." : "XLSX"}
+      </button>
+      {erro && <span className="text-xs text-red-500">{erro}</span>}
+    </div>
+  );
+}
+
 function ContaAccordionItem({
   conta,
   defaultOpen,
@@ -290,6 +338,7 @@ function ContaAccordionItem({
               <ListaGrupos titulo="Encargos por categoria" grupos={conta.encargos} />
               <ListaGrupos titulo="Bonificações por categoria" grupos={conta.bonificacoes} />
               <NotasFiscais contaId={conta.id} periodoKeySelecionado={periodoKeySelecionado} />
+              <ExportarRelatorio contaId={conta.id} periodoKeySelecionado={periodoKeySelecionado} />
             </>
           )}
         </div>
