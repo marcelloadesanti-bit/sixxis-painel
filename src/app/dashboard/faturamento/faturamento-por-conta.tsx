@@ -15,6 +15,8 @@ export type ContaFaturamento = {
   cor: string;
   erro: string | null;
   semPeriodo: boolean;
+  desatualizado: boolean;
+  atualizadoEmLabel: string | null;
   periodoLabel: string | null;
   totalCobradoLabel: string | null;
   totalPercepcoesLabel: string | null;
@@ -70,6 +72,11 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
           {conta.periodoLabel && (
             <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">{conta.periodoLabel}</span>
           )}
+          {conta.desatualizado && (
+            <span className="shrink-0 rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-500">
+              desatualizado
+            </span>
+          )}
         </div>
         <svg
           className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${aberto ? "rotate-180" : ""}`}
@@ -86,6 +93,12 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
 
       {aberto && (
         <div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+          {conta.atualizadoEmLabel && (
+            <p className="mb-2 text-[11px] text-gray-400">
+              Atualizado em {conta.atualizadoEmLabel}
+              {conta.desatualizado && " (cache antigo -- clique em Atualizar para tentar de novo)"}
+            </p>
+          )}
           {conta.erro ? (
             <p className="text-xs text-red-500">{conta.erro}</p>
           ) : conta.semPeriodo ? (
