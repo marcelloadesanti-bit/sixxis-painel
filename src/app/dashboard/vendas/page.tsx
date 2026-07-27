@@ -2,9 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getVendas, getTotaisPorStatus, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
+import { getVendas, getCanceladosClassificados, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
-import { getDevolucoesNoPeriodo, type Devolucao } from "@/lib/mercadolivre/returns";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
@@ -99,34 +98,32 @@ export default async function VendasPage({
     (c) => filtroConta === "todas" || c.id === filtroConta
   );
 
-  const resultados = await Promise.all(
-    contasParaBuscar.map(async (conta) => {
-      const nome = nomeConta(conta);
-      const cor = (conta.cor as string | null) ?? COR_PADRAO;
-      try {
-        const accessToken = await getValidAccessToken(conta.id);
-        const [vendas, cancelados, visitas, devolucoes] = await Promise.all([
-          getVendas(accessToken, conta.ml_user_id, periodo, conta.id, nome),
-          buscarSeguro(() => getTotaisPorStatus(accessToken, conta.ml_user_id, periodo, "cancelled")),
-          buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
-          buscarSeguro(() => getDevolucoesNoPeriodo(accessToken, conta.ml_user_id, { de, ate }, conta.id, nome)),
-        ]);
-        return { conta, nome, cor, vendas, cancelados, visitas, devolucoes, erro: null as string | null };
-      } catch (err) {
-        console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
-        return {
-          conta,
-          nome,
-          cor,
-          vendas: null,
-          cancelados: null,
-          visitas: null,
-          devolucoes: null,
-          erro: "Falha ao buscar vendas desta conta.",
-        };
-      }
-    })
-  );
+const resultados = await Promise.all(
+      contasParaBuscar.map(async (conta) => {
+              const nome = nomeConta(conta);
+              const cor = (conta.cor as string | null) ?? COR_PADRAO;
+              try {
+                        const accessToken = await getValidAccessToken(conta.id);
+                        const [vendas, canceladosClassificados, visitas] = await Promise.all([
+                                    getVendas(accessToken, conta.ml_user_id, periodo, conta.id, nome),
+                                    buscarSeguro(() => getCanceladosClassificados(accessToken, conta.ml_user_id, periodo)),
+                                    buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
+                                  ]);
+                        return { conta, nome, cor, vendas, canceladosClassificados, visitas, erro: null as string | null };
+              } catch (err) {
+                        console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
+                        return {
+                                    conta,
+                                    nome,
+                                    cor,
+                                    vendas: null,
+                                    canceladosClassificados: null,
+                                    visitas: null,
+                                    erro: "Falha ao buscar vendas desta conta.",
+                        };
+              }
+      })
+    );
 
   const todosPedidos: Pedido[] = resultados
     .flatMap((r) => r.vendas?.pedidos ?? [])
@@ -137,13 +134,18 @@ export default async function VendasPage({
   const algumCortado = resultados.some((r) => r.vendas?.cortado);
   const moeda = resultados.find((r) => r.vendas?.moeda)?.vendas?.moeda ?? "BRL";
 
-  const totalCancelados = resultados.reduce((soma, r) => soma + (r.cancelados?.quantidade ?? 0), 0);
-  const valorCancelado = resultados.reduce((soma, r) => soma + (r.cancelados?.valor ?? 0), 0);
-
-  const devolucoesAbertas: Devolucao[] = resultados.flatMap((r) => r.devolucoes?.abertas ?? []);
-  const devolucoesConcluidas: Devolucao[] = resultados.flatMap((r) => r.devolucoes?.concluidas ?? []);
-  const custoDevolucoesTotal = resultados.reduce((soma, r) => soma + (r.devolucoes?.custoTotal ?? 0), 0);
-  const moedaDevolucoes = [...devolucoesAbertas, ...devolucoesConcluidas].find((d) => d.moeda)?.moeda ?? moeda;
+const totalCancelados = resultados.reduce(
+      (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.quantidade ?? 0), 0
+    );
+    const valorCancelado = resultados.reduce(
+          (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.valor ?? 0), 0
+        );
+    const totalDevolvidos = resultados.reduce(
+          (soma, r) => soma + (r.canceladosClassificados?.devolvidos.quantidade ?? 0), 0
+        );
+    const valorDevolvido = resultados.reduce(
+          (soma, r) => soma + (r.canceladosClassificados?.devolvidos.valor ?? 0), 0
+        );
 
   // --- Formatacao por conta (texto ja pronto, evita mismatch de hidratacao) ---
   const contasFormatadas: ContaVendas[] = resultados.map((r) => {
@@ -170,7 +172,7 @@ export default async function VendasPage({
     const moedaConta = r.vendas.moeda ?? "BRL";
     const ticketMedio = r.vendas.totalPedidos > 0 ? r.vendas.valorSomado / r.vendas.totalPedidos : 0;
     const conversao = r.visitas !== null && r.visitas > 0 ? (r.vendas.totalPedidos / r.visitas) * 100 : null;
-    const qtdDevolvidas = r.devolucoes ? r.devolucoes.abertas.length + r.devolucoes.concluidas.length : null;
+    const cc = r.canceladosClassificados;
 
     return {
       id: r.conta.id,
@@ -185,18 +187,21 @@ export default async function VendasPage({
       quantidadeVendasLabel: formatarNumero(r.vendas.totalPedidos),
       conversaoLabel: conversao !== null ? `${conversao.toFixed(2).replace(".", ",")}%` : "—",
       canceladasLabel:
-        r.cancelados !== null
-          ? `${formatarNumero(r.cancelados.quantidade)} pedido${r.cancelados.quantidade === 1 ? "" : "s"}`
-          : "—",
-      canceladasValorLabel:
-        r.cancelados !== null && r.cancelados.quantidade > 0
-          ? formatarMoeda(r.cancelados.valor, r.cancelados.moeda ?? moedaConta)
-          : "",
-      devolvidasLabel: qtdDevolvidas !== null ? `${qtdDevolvidas} devolu${qtdDevolvidas === 1 ? "ção" : "ções"}` : "—",
-      devolvidasValorLabel:
-        qtdDevolvidas !== null && qtdDevolvidas > 0 && r.devolucoes && r.devolucoes.custoTotal > 0
-          ? `Custo: ${formatarMoeda(r.devolucoes.custoTotal, moedaConta)}`
-          : "",
+                cc !== null
+                ? `${formatarNumero(cc.canceladosPuros.quantidade)} pedido${cc.canceladosPuros.quantidade === 1 ? "" : "s"}`
+                  : "-",
+            canceladasValorLabel:
+                      cc !== null && cc.canceladosPuros.quantidade > 0
+                ? formatarMoeda(cc.canceladosPuros.valor, cc.moeda ?? moedaConta)
+                        : "",
+            devolvidasLabel:
+                      cc !== null
+                ? `${formatarNumero(cc.devolvidos.quantidade)} pedido${cc.devolvidos.quantidade === 1 ? "" : "s"}`
+                        : "-",
+            devolvidasValorLabel:
+                      cc !== null && cc.devolvidos.quantidade > 0
+                ? formatarMoeda(cc.devolvidos.valor, cc.moeda ?? moedaConta)
+                        : "",
     };
   });
 
@@ -322,19 +327,10 @@ export default async function VendasPage({
         </div>
         <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-xs uppercase text-gray-400">Devolvidos no período</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {formatarNumero(devolucoesAbertas.length + devolucoesConcluidas.length)}
-          </p>
-          <p className="text-xs text-gray-400">
-            {devolucoesAbertas.length} aberta{devolucoesAbertas.length === 1 ? "" : "s"} ·{" "}
-            {devolucoesConcluidas.length} concluída{devolucoesConcluidas.length === 1 ? "" : "s"}
-          </p>
-          {custoDevolucoesTotal > 0 && (
-            <p className="text-xs text-gray-400">
-              Custo: {formatarMoeda(custoDevolucoesTotal, moedaDevolucoes)}
-            </p>
-          )}
-        </div>
+          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalDevolvidos)}</p>
+          {valorDevolvido > 0 && (
+      <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
+      )}
       </div>
 
       <div className="mb-8">
