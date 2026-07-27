@@ -10,6 +10,18 @@
 
 const ML_API = "https://api.mercadolibre.com";
 
+// FASE 3: o rate limit do ML (5 req/min) é compartilhado entre TODAS as
+// contas e conta cada chamada (periods + summary = 2 por conta). Em
+// 27/07/2026 o carregamento sequencial com 2.5s entre contas ainda estourou
+// o limite na 3a conta, porque as duas chamadas de uma mesma conta saiam
+// juntas sem intervalo. Agora esperamos entre as duas chamadas também, com
+// um intervalo alinhado ao refill do bucket (~1 token a cada 12s).
+const ESPERA_ENTRE_CHAMADAS_MS = 13 * 1000;
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type PeriodoApi = {
   amount: number;
   unpaid_amount: number;
@@ -114,18 +126,20 @@ export async function getResumoFaturamento(
 
   const data = (await res.json()) as ResumoApi;
 
+  // Alguns campos (ex: total_perceptions) nem sempre vem preenchidos pela
+  // API para todas as contas -- sem o "?? 0" isso virava "R$ NaN" na tela.
   return {
     periodoKey: data.period.key,
     dataInicio: data.period.date_from,
     dataFim: data.period.date_to,
-    totalCobrado: data.bill_includes.total_amount,
-    totalPercepcoes: data.bill_includes.total_perceptions,
-    totalPago: data.payment_collected.total_payment,
-    totalNotaCredito: data.payment_collected.total_credit_note,
-    totalRecebidoConsolidado: data.payment_collected.total_collected,
-    totalDivida: data.payment_collected.total_debt,
-    encargos: (data.bill_includes.charges ?? []).map((c) => ({ label: c.label, valor: c.amount })),
-    bonificacoes: (data.bill_includes.bonuses ?? []).map((b) => ({ label: b.label, valor: b.amount })),
+    totalCobrado: data.bill_includes.total_amount ?? 0,
+    totalPercepcoes: data.bill_includes.total_perceptions ?? 0,
+    totalPago: data.payment_collected.total_payment ?? 0,
+    totalNotaCredito: data.payment_collected.total_credit_note ?? 0,
+    totalRecebidoConsolidado: data.payment_collected.total_collected ?? 0,
+    totalDivida: data.payment_collected.total_debt ?? 0,
+    encargos: (data.bill_includes.charges ?? []).map((c) => ({ label: c.label, valor: c.amount ?? 0 })),
+    bonificacoes: (data.bill_includes.bonuses ?? []).map((b) => ({ label: b.label, valor: b.amount ?? 0 })),
   };
 }
 
@@ -137,6 +151,10 @@ export async function getFaturamentoConta(
 ): Promise<{ periodo: PeriodoFaturamento; resumo: ResumoFaturamento } | null> {
   const periodo = await getPeriodoMaisRecente(accessToken, mlUserId);
   if (!periodo) return null;
+
+  // Intervalo entre as duas chamadas desta MESMA conta -- sem isso as duas
+  // saiam juntas e consumiam 2 tokens do bucket de uma vez.
+  await delay(ESPERA_ENTRE_CHAMADAS_MS);
 
   const resumo = await getResumoFaturamento(accessToken, periodo.key);
   return { periodo, resumo };

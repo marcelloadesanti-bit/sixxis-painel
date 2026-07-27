@@ -16,11 +16,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getFaturamentoConta, type PeriodoFaturamento, type ResumoFaturamento } from "./billing";
 
 const IDADE_MAXIMA_CACHE_MS = 12 * 60 * 60 * 1000; // 12h
-const ESPERA_RETRY_429_MS = 15 * 1000;
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export type FaturamentoContaResultado = (
   | { status: "ok"; periodo: PeriodoFaturamento; resumo: ResumoFaturamento; desatualizado: boolean; atualizadoEm: string }
@@ -118,11 +113,17 @@ async function buscarEAtualizarCache(
   }
 }
 
+// Busca (com cache) o faturamento de uma conta. `permitirBusca=false` impede
+// qualquer chamada real à API do ML mesmo com cache expirado/forçado -- usado
+// pela página para respeitar o orçamento de tempo de execução da Vercel (ver
+// LIMITE_BUSCAS_AO_VIVO_POR_CARGA em page.tsx). Nesse caso devolvemos o
+// último cache conhecido (marcado desatualizado) ou um status "pendente" se
+// nunca houve cache.
 export async function getFaturamentoContaCacheado(
   contaId: string,
   accessToken: string,
   mlUserId: number,
-  { forcar = false }: { forcar?: boolean } = {}
+  { forcar = false, permitirBusca = true }: { forcar?: boolean; permitirBusca?: boolean } = {}
 ): Promise<FaturamentoContaResultado> {
   const admin = createAdminClient();
 
@@ -139,15 +140,18 @@ export async function getFaturamentoContaCacheado(
     return montarResultadoDoCache(cache as LinhaCache);
   }
 
-  let { resultado, erro429 } = await buscarEAtualizarCache(admin, contaId, accessToken, mlUserId);
-
-  if (erro429) {
-    // Rate limit: espera um pouco e tenta mais uma vez antes de desistir.
-    await delay(ESPERA_RETRY_429_MS);
-    const segundaTentativa = await buscarEAtualizarCache(admin, contaId, accessToken, mlUserId);
-    resultado = segundaTentativa.resultado;
-    erro429 = segundaTentativa.erro429;
+  if (!permitirBusca) {
+    if (cache) return montarResultadoDoCache(cache as LinhaCache, true);
+    return {
+      status: "erro",
+      erro: 'Ainda não foi possível carregar esta conta (limite de contas por carregamento, para respeitar o rate limit do Mercado Livre). Clique em "Atualizar" novamente em alguns segundos.',
+      desatualizado: true,
+      atualizadoEm: null,
+      deCache: false,
+    };
   }
+
+  const { resultado } = await buscarEAtualizarCache(admin, contaId, accessToken, mlUserId);
 
   if (resultado.status === "erro" && cache && cache.status === "ok" && cache.dados) {
     // Preferimos mostrar o ultimo dado bom conhecido a estourar erro na tela.
