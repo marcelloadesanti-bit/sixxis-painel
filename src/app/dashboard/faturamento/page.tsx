@@ -3,11 +3,12 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getFaturamentoContaCacheado, type FaturamentoContaResultado } from "@/lib/mercadolivre/billing-cache";
+import type { GrupoFaturamento } from "@/lib/mercadolivre/billing";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import FaturamentoPorConta, {
   type ContaFaturamento,
-  type ItemFaturamentoFormatado,
+  type GrupoFaturamentoFormatado,
 } from "./faturamento-por-conta";
 
 // FASE 3 (cache + confiabilidade): a API de Faturamento do Mercado Livre
@@ -59,11 +60,15 @@ const formatarDataHora = (iso: string) =>
     timeZone: "America/Sao_Paulo",
   }).format(new Date(iso));
 
-function formatarItens(itens: { label: string; valor: number }[]): ItemFaturamentoFormatado[] {
-  return itens
-    .slice()
-    .sort((a, b) => b.valor - a.valor)
-    .map((i) => ({ label: i.label, valorLabel: formatarMoeda(i.valor) }));
+function formatarGrupos(grupos: GrupoFaturamento[]): GrupoFaturamentoFormatado[] {
+  return grupos.map((g) => ({
+    nome: g.nome,
+    totalLabel: formatarMoeda(g.total),
+    itens: g.itens
+      .slice()
+      .sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor))
+      .map((i) => ({ label: i.label, valorLabel: formatarMoeda(i.valor), temDescricao: i.temDescricao, codigo: i.codigo })),
+  }));
 }
 
 export default async function FaturamentoPage({
@@ -211,8 +216,8 @@ export default async function FaturamentoPage({
       totalNotaCreditoLabel: formatarMoeda(resumo.totalNotaCredito),
       totalRecebidoLabel: formatarMoeda(resumo.totalRecebidoConsolidado),
       totalDividaLabel: formatarMoeda(resumo.totalDivida),
-      encargos: formatarItens(resumo.encargos),
-      bonificacoes: formatarItens(resumo.bonificacoes),
+      encargos: formatarGrupos(resumo.encargos),
+      bonificacoes: formatarGrupos(resumo.bonificacoes),
     };
   });
 

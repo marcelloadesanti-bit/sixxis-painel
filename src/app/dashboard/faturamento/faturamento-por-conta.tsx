@@ -10,7 +10,12 @@ import { useState } from "react";
 // não aparecem aqui -- os mais próximos e corretos são "Despesas do
 // período", "Já pago" e "Saldo em aberto" (o que ainda falta pagar ao ML).
 
-export type ItemFaturamentoFormatado = { label: string; valorLabel: string };
+// 27/07/2026: os encargos agora vem agrupados por categoria (a mesma
+// classificação que o painel oficial do Mercado Livre usa -- "Tarifas de
+// venda", "Tarifas de envios", etc.), em vez de uma lista solta de códigos
+// internos (CVVML, CFONPN...) que ninguém consegue interpretar.
+export type ItemFaturamentoFormatado = { label: string; valorLabel: string; temDescricao: boolean; codigo: string };
+export type GrupoFaturamentoFormatado = { nome: string; totalLabel: string; itens: ItemFaturamentoFormatado[] };
 
 export type ContaFaturamento = {
   id: string;
@@ -27,8 +32,8 @@ export type ContaFaturamento = {
   totalNotaCreditoLabel: string | null;
   totalRecebidoLabel: string | null;
   totalDividaLabel: string | null;
-  encargos: ItemFaturamentoFormatado[];
-  bonificacoes: ItemFaturamentoFormatado[];
+  encargos: GrupoFaturamentoFormatado[];
+  bonificacoes: GrupoFaturamentoFormatado[];
 };
 
 function Campo({ label, valor }: { label: string; valor: string | null }) {
@@ -49,19 +54,38 @@ function CampoSecundario({ label, valor }: { label: string; valor: string | null
   );
 }
 
-function ListaItens({ titulo, itens }: { titulo: string; itens: ItemFaturamentoFormatado[] }) {
-  if (itens.length === 0) return null;
+// Mostra os encargos/bonificações agrupados por categoria, igual ao painel
+// oficial do Mercado Livre (ex: "Tarifas de venda: R$ X", com os itens que
+// compõem esse total logo abaixo). Itens sem descrição amigável da API
+// mostram o código interno de forma explícita, em vez de esconder que não
+// sabemos do que se trata.
+function ListaGrupos({ titulo, grupos }: { titulo: string; grupos: GrupoFaturamentoFormatado[] }) {
+  if (grupos.length === 0) return null;
   return (
     <div className="mt-3">
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{titulo}</p>
-      <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white text-sm dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
-        {itens.map((item, i) => (
-          <li key={i} className="flex items-center justify-between px-3 py-2">
-            <span className="text-gray-600 dark:text-gray-300">{item.label}</span>
-            <span className="font-medium text-gray-800 dark:text-gray-100">{item.valorLabel}</span>
-          </li>
+      <div className="divide-y divide-gray-200 rounded border border-gray-200 bg-white text-sm dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
+        {grupos.map((grupo) => (
+          <div key={grupo.nome} className="px-3 py-2">
+            <div className="flex items-center justify-between font-medium text-gray-800 dark:text-gray-100">
+              <span>{grupo.nome}</span>
+              <span>{grupo.totalLabel}</span>
+            </div>
+            {grupo.itens.length > 1 && (
+              <ul className="mt-1 space-y-0.5 pl-3">
+                {grupo.itens.map((item, i) => (
+                  <li key={i} className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                    <span>
+                      {item.temDescricao ? item.label : `Código ${item.codigo} (Mercado Livre não informa descrição para este item)`}
+                    </span>
+                    <span>{item.valorLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -133,8 +157,8 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
                 <CampoSecundario label="Recebido (consolidado)" valor={conta.totalRecebidoLabel} />
               </div>
 
-              <ListaItens titulo="Encargos (detalhado)" itens={conta.encargos} />
-              <ListaItens titulo="Bonificações (detalhado)" itens={conta.bonificacoes} />
+              <ListaGrupos titulo="Encargos por categoria" grupos={conta.encargos} />
+              <ListaGrupos titulo="Bonificações por categoria" grupos={conta.bonificacoes} />
             </>
           )}
         </div>
