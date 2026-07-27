@@ -243,6 +243,76 @@ export async function getFaturamentoConta(
 // gastar nenhuma chamada de API so pra montar a lista do seletor). Se a
 // conta nao teve movimento naquele mes, getResumoFaturamento devolve null
 // (404) e tratamos como "sem dados" -- sem gastar chamada extra nenhuma.
+// 27/07/2026: notas fiscais (faturas/notas de credito) de um periodo. Cada
+// documento pode ter 2 arquivos (PDF e XML) -- sempre preferimos o PDF para
+// o botao de download (o XML nao interessa ao usuario final).
+export type DocumentoFaturamento = {
+  id: number;
+  tipo: "BILL" | "CREDIT_NOTE";
+  dataVencimento: string;
+  valor: number;
+  valorPendente: number;
+  moeda: string;
+  fileIdPdf: string | null;
+};
+
+export async function getDocumentosPeriodo(
+  accessToken: string,
+  periodoKey: string
+): Promise<DocumentoFaturamento[]> {
+  const params = new URLSearchParams({ group: "ML", limit: "150" });
+  const res = await fetch(
+    `${ML_API}/billing/integration/periods/key/${periodoKey}/documents?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao buscar notas fiscais (${res.status}): ${corpo.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as {
+    results: {
+      id: number;
+      document_type: "BILL" | "CREDIT_NOTE";
+      expiration_date: string;
+      amount: number;
+      unpaid_amount: number;
+      currency_id: string;
+      files?: { file_id: string; reference_number: string }[];
+    }[];
+  };
+
+  return (data.results ?? []).map((d) => {
+    const arquivos = d.files ?? [];
+    const pdf = arquivos.find((f) => f.file_id.toLowerCase().endsWith("_pdf")) ?? arquivos[0];
+    return {
+      id: d.id,
+      tipo: d.document_type,
+      dataVencimento: d.expiration_date,
+      valor: d.amount ?? 0,
+      valorPendente: d.unpaid_amount ?? 0,
+      moeda: d.currency_id,
+      fileIdPdf: pdf?.file_id ?? null,
+    };
+  });
+}
+
+// Baixa o PDF de uma nota fiscal/nota de credito legal a partir do file_id
+// obtido em getDocumentosPeriodo. Devolve o binario cru (o chamador decide
+// o que fazer -- ex: converter pra base64 numa server action).
+export async function baixarDocumentoLegal(accessToken: string, fileId: string): Promise<ArrayBuffer> {
+  const res = await fetch(`${ML_API}/billing/integration/legal_document/${fileId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao baixar nota fiscal (${res.status}): ${corpo.slice(0, 300)}`);
+  }
+  return res.arrayBuffer();
+}
+
 export function chavesDosUltimosMeses(quantidade = 12): { key: string; label: string }[] {
   const hoje = new Date();
   const meses: { key: string; label: string }[] = [];
