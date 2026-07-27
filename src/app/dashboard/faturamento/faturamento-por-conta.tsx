@@ -2,21 +2,52 @@
 
 import { useState } from "react";
 
-// Fase 1 (estrutura): ainda sem dados reais -- a API de Faturamento do
-// Mercado Livre (Billing) retorna 404 para o app Sixxis (validado em
-// 26/07/2026 com 2 contas diferentes). O layout ja fica pronto para receber
-// os valores reais assim que a liberacao sair no Developer Center.
+// Fase 2 (verificação): agora com dados reais da API de Faturamento
+// (Billing) do Mercado Livre. Layout ainda simples/cru de propósito -- o
+// objetivo desta etapa é confirmar que os números batem com o Mercado Livre
+// antes de desenhar a versão final (ver conversa de 27/07/2026).
+
+export type ItemFaturamentoFormatado = { label: string; valorLabel: string };
+
 export type ContaFaturamento = {
   id: string;
   nome: string;
   cor: string;
+  erro: string | null;
+  semPeriodo: boolean;
+  periodoLabel: string | null;
+  totalCobradoLabel: string | null;
+  totalPercepcoesLabel: string | null;
+  totalPagoLabel: string | null;
+  totalNotaCreditoLabel: string | null;
+  totalRecebidoLabel: string | null;
+  totalDividaLabel: string | null;
+  encargos: ItemFaturamentoFormatado[];
+  bonificacoes: ItemFaturamentoFormatado[];
 };
 
-function PlaceholderCard({ label }: { label: string }) {
+function Campo({ label, valor }: { label: string; valor: string | null }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+    <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
       <p className="text-xs text-gray-400">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-gray-300 dark:text-gray-600">—</p>
+      <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-gray-100">{valor ?? "—"}</p>
+    </div>
+  );
+}
+
+function ListaItens({ titulo, itens }: { titulo: string; itens: ItemFaturamentoFormatado[] }) {
+  if (itens.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{titulo}</p>
+      <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white text-sm dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
+        {itens.map((item, i) => (
+          <li key={i} className="flex items-center justify-between px-3 py-2">
+            <span className="text-gray-600 dark:text-gray-300">{item.label}</span>
+            <span className="font-medium text-gray-800 dark:text-gray-100">{item.valorLabel}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -36,9 +67,9 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
             style={{ backgroundColor: conta.cor }}
           />
           <span className="truncate font-semibold text-gray-800 dark:text-gray-100">{conta.nome}</span>
-          <span className="hidden shrink-0 rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-medium text-yellow-700 sm:inline dark:bg-yellow-900/20 dark:text-yellow-500">
-            Aguardando liberação da API
-          </span>
+          {conta.periodoLabel && (
+            <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">{conta.periodoLabel}</span>
+          )}
         </div>
         <svg
           className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${aberto ? "rotate-180" : ""}`}
@@ -55,16 +86,26 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
 
       {aberto && (
         <div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <PlaceholderCard label="Disponível" />
-            <PlaceholderCard label="A receber" />
-            <PlaceholderCard label="Retido (reclamações)" />
-            <PlaceholderCard label="Despesas do período" />
-          </div>
-          <p className="mt-3 text-xs text-gray-400">
-            Despesas, faturas e relatórios de gastos desta conta aparecerão aqui assim que a API de
-            Faturamento do Mercado Livre estiver liberada para o app Sixxis.
-          </p>
+          {conta.erro ? (
+            <p className="text-xs text-red-500">{conta.erro}</p>
+          ) : conta.semPeriodo ? (
+            <p className="text-sm text-gray-400">
+              Nenhum período de faturamento disponível ainda para esta conta.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <Campo label="Total cobrado no período" valor={conta.totalCobradoLabel} />
+                <Campo label="Total pago" valor={conta.totalPagoLabel} />
+                <Campo label="Dívida em aberto" valor={conta.totalDividaLabel} />
+                <Campo label="Percepções tributárias" valor={conta.totalPercepcoesLabel} />
+                <Campo label="Nota de crédito" valor={conta.totalNotaCreditoLabel} />
+                <Campo label="Total recebido (consolidado)" valor={conta.totalRecebidoLabel} />
+              </div>
+              <ListaItens titulo="Encargos" itens={conta.encargos} />
+              <ListaItens titulo="Bonificações" itens={conta.bonificacoes} />
+            </>
+          )}
         </div>
       )}
     </div>
