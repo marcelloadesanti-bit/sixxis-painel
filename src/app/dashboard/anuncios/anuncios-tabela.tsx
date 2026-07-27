@@ -1,4 +1,7 @@
-import type { LinhaAnuncio } from "@/lib/mercadolivre/items";
+"use client";
+
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { LinhaAnuncio, OrdenacaoAnuncios } from "@/lib/mercadolivre/items";
 
 const formatarMoeda = (valor: number, moeda: string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
@@ -18,15 +21,62 @@ function badgeCatalogo(status: LinhaAnuncio["precoParaGanhar"]) {
   return { label: "Perdendo", cor: "bg-red-50 text-red-600" };
 }
 
+// Cabecalho de coluna clicavel: reaproveita o mesmo mecanismo de ordenacao
+// (query params ordenar/pagina) ja usado pelo AnunciosFiltros, entao um
+// clique aqui produz o mesmo resultado que escolher a opcao equivalente no
+// filtro "Ordenar por" -- so que direto na coluna, com indicacao visual de
+// qual metrica esta ativa no momento.
+function ThOrdenavel({
+  label,
+  chave,
+  ordenacaoAtual,
+}: {
+  label: string;
+  chave: OrdenacaoAnuncios;
+  ordenacaoAtual: OrdenacaoAnuncios;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const ativo = ordenacaoAtual === chave;
+
+  function ordenarPor() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("ordenar", chave);
+    params.set("pagina", "1");
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  return (
+    <th className="px-3 py-2">
+      <button
+        type="button"
+        onClick={ordenarPor}
+        title={`Ordenar por ${label.toLowerCase()}`}
+        className={`flex items-center gap-1 uppercase hover:text-gray-700 ${
+          ativo ? "font-semibold text-[var(--color-sixxis-navy)]" : ""
+        }`}
+      >
+        {label}
+        <span className={`text-[10px] ${ativo ? "opacity-100" : "opacity-0"}`}>▼</span>
+      </button>
+    </th>
+  );
+}
+
 export default function AnunciosTabela({
   linhas,
   periodoLabel,
   colunaVendidos = "periodo",
+  ordenacaoAtual,
   editavel = false,
 }: {
   linhas: LinhaAnuncio[];
   periodoLabel?: string;
   colunaVendidos?: "periodo" | "total";
+  // Ordenacao atualmente aplicada (vem da URL). Usada para destacar a coluna
+  // ativa e montar os links de "ordenar por esta coluna".
+  ordenacaoAtual: OrdenacaoAnuncios;
   // Quando true, o anuncio vira link para a tela de edicao (Editar anuncios).
   // Quando false (Resumo), a linha e apenas informativa, sem navegacao.
   editavel?: boolean;
@@ -49,10 +99,14 @@ export default function AnunciosTabela({
             <th className="px-3 py-2">Anúncio</th>
             <th className="px-3 py-2">Preço</th>
             <th className="px-3 py-2">Estoque</th>
-            <th className="px-3 py-2">{labelVendidos}</th>
-            <th className="px-3 py-2">Visitas{periodoLabel ? ` (${periodoLabel})` : ""}</th>
-            <th className="px-3 py-2">Conversão</th>
-            <th className="px-3 py-2">Qualidade</th>
+            <ThOrdenavel label={labelVendidos} chave="mais_vendidos" ordenacaoAtual={ordenacaoAtual} />
+            <ThOrdenavel
+              label={`Visitas${periodoLabel ? ` (${periodoLabel})` : ""}`}
+              chave="mais_visualizados"
+              ordenacaoAtual={ordenacaoAtual}
+            />
+            <ThOrdenavel label="Conversão" chave="maior_conversao" ordenacaoAtual={ordenacaoAtual} />
+            <ThOrdenavel label="Qualidade" chave="melhor_qualidade" ordenacaoAtual={ordenacaoAtual} />
             <th className="px-3 py-2">Catálogo</th>
           </tr>
         </thead>
