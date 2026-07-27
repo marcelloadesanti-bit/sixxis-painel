@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { buscarNotasFiscais, baixarNotaFiscalPdf } from "./actions";
+import type { DocumentoFaturamento } from "@/lib/mercadolivre/billing";
 
 // Layout final (27/07/2026): dados reais da API de Faturamento (Billing) do
 // Mercado Livre, com os campos renomeados para termos de negócio. Nota
@@ -90,7 +92,128 @@ function ListaGrupos({ titulo, grupos }: { titulo: string; grupos: GrupoFaturame
   );
 }
 
-function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; defaultOpen: boolean }) {
+const TIPO_DOCUMENTO_LABEL: Record<DocumentoFaturamento["tipo"], string> = {
+  BILL: "Fatura",
+  CREDIT_NOTE: "Nota de crédito",
+};
+
+function formatarDataBr(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function formatarMoeda(valor: number, moeda: string): string {
+  try {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda || "BRL" }).format(valor);
+  } catch {
+    return `${moeda} ${valor.toFixed(2)}`;
+  }
+}
+
+// 27/07/2026: notas fiscais sob demanda -- só busca na API do ML quando o
+// usuário clica "Ver notas fiscais" (não a cada carregamento de página, pra
+// não gastar orçamento extra do rate limit de 5 req/min à toa). O download
+// do PDF vem em base64 pela server action e vira um arquivo via Blob no
+// navegador.
+function NotasFiscais({ contaId, periodoKeySelecionado }: { contaId: string; periodoKeySelecionado: string | null }) {
+  const [aberto, setAberto] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [documentos, setDocumentos] = useState<DocumentoFaturamento[] | null>(null);
+  const [baixandoId, setBaixandoId] = useState<string | null>(null);
+
+  async function handleAbrir() {
+    const novoAberto = !aberto;
+    setAberto(novoAberto);
+    if (novoAberto && documentos === null && !carregando) {
+      setCarregando(true);
+      setErro(null);
+      const resultado = await buscarNotasFiscais(contaId, periodoKeySelecionado);
+      setCarregando(false);
+      if ("erro" in resultado) {
+        setErro(resultado.erro);
+      } else {
+        setDocumentos(resultado.documentos);
+      }
+    }
+  }
+
+  async function handleBaixar(fileId: string) {
+    setBaixandoId(fileId);
+    const resultado = await baixarNotaFiscalPdf(contaId, fileId);
+    setBaixandoId(null);
+    if ("erro" in resultado) {
+      setErro(resultado.erro);
+      return;
+    }
+    const bytes = Uint8Array.from(atob(resultado.base64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resultado.nomeArquivo;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={handleAbrir}
+        className="text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+      >
+        {aberto ? "▲" : "▼"} Notas fiscais
+      </button>
+      {aberto && (
+        <div className="mt-1 rounded border border-gray-200 bg-white text-sm dark:border-gray-700 dark:bg-gray-800">
+          {carregando && <p className="p-3 text-xs text-gray-400">Carregando...</p>}
+          {erro && <p className="p-3 text-xs text-red-500">{erro}</p>}
+          {documentos && documentos.length === 0 && (
+            <p className="p-3 text-xs text-gray-400">Nenhuma nota fiscal encontrada neste período.</p>
+          )}
+          {documentos && documentos.length > 0 && (
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              {documentos.map((doc) => (
+                <li key={doc.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-gray-600 dark:text-gray-300">
+                    {TIPO_DOCUMENTO_LABEL[doc.tipo]} — venc. {formatarDataBr(doc.dataVencimento)}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="font-medium text-gray-800 dark:text-gray-100">
+                      {formatarMoeda(doc.valor, doc.moeda)}
+                    </span>
+                    {doc.fileIdPdf ? (
+                      <button
+                        onClick={() => handleBaixar(doc.fileIdPdf!)}
+                        disabled={baixandoId === doc.fileIdPdf}
+                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                      >
+                        {baixandoId === doc.fileIdPdf ? "Baixando..." : "Baixar PDF"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">PDF indisponível</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContaAccordionItem({
+  conta,
+  defaultOpen,
+  periodoKeySelecionado,
+}: {
+  conta: ContaFaturamento;
+  defaultOpen: boolean;
+  periodoKeySelecionado: string | null;
+}) {
   const [aberto, setAberto] = useState(defaultOpen);
 
   return (
@@ -159,6 +282,7 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
 
               <ListaGrupos titulo="Encargos por categoria" grupos={conta.encargos} />
               <ListaGrupos titulo="Bonificações por categoria" grupos={conta.bonificacoes} />
+              <NotasFiscais contaId={conta.id} periodoKeySelecionado={periodoKeySelecionado} />
             </>
           )}
         </div>
@@ -167,11 +291,22 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
   );
 }
 
-export default function FaturamentoPorConta({ contas }: { contas: ContaFaturamento[] }) {
+export default function FaturamentoPorConta({
+  contas,
+  periodoKeySelecionado = null,
+}: {
+  contas: ContaFaturamento[];
+  periodoKeySelecionado?: string | null;
+}) {
   return (
     <div className="flex flex-col gap-3">
       {contas.map((conta, i) => (
-        <ContaAccordionItem key={conta.id} conta={conta} defaultOpen={i === 0} />
+        <ContaAccordionItem
+          key={conta.id}
+          conta={conta}
+          defaultOpen={i === 0}
+          periodoKeySelecionado={periodoKeySelecionado}
+        />
       ))}
     </div>
   );

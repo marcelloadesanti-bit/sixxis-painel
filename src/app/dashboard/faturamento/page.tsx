@@ -306,7 +306,7 @@ export default async function FaturamentoPage({
           Nenhuma conta Mercado Livre conectada ainda.
         </div>
       ) : (
-        <FaturamentoPorConta contas={contasFaturamento} />
+        <FaturamentoPorConta contas={contasFaturamento} periodoKeySelecionado={periodoKey ?? null} />
       )}
     </div>
   );
