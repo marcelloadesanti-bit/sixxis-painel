@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { secoesVisiveis, secoesAdminVisiveis, temAcessoSubsecao, type PermissoesUsuario } from "@/lib/permissoes";
+import { useSidebar } from "./sidebar-context";
 
 type SubItemMenu = { href: string; label: string };
 
@@ -14,6 +14,17 @@ type ItemMenu = {
   subitens?: SubItemMenu[];
 };
 
+// Icone de "colapsar/expandir barra lateral", mesmo estilo do botao usado
+// pelo Claude (retangulo com uma divisao vertical perto da borda esquerda).
+function IconeAlternar() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <line x1="8" y1="3.5" x2="8" y2="16.5" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
 export default function AppSidebar({
   isAdmin,
   permissoes,
@@ -21,7 +32,7 @@ export default function AppSidebar({
   isAdmin: boolean;
   permissoes: PermissoesUsuario;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const { aberto, alternar } = useSidebar();
   const pathname = usePathname();
 
   const itensSecoes: ItemMenu[] = secoesVisiveis(isAdmin, permissoes).map((s) => {
@@ -59,95 +70,77 @@ export default function AppSidebar({
   };
 
   return (
-    <>
-      {/* Trilho de icones, sempre visivel */}
-      <nav className="fixed left-0 top-0 z-30 flex h-screen w-16 flex-col items-center gap-1 border-r border-gray-200 bg-white py-4">
+    <nav
+      className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-gray-200 bg-white transition-[width] duration-150 ${
+        aberto ? "w-64" : "w-16"
+      }`}
+    >
+      <div
+        className={`flex h-16 shrink-0 items-center border-b border-gray-200 ${
+          aberto ? "justify-between px-4" : "justify-center"
+        }`}
+      >
+        {aberto && <p className="truncate text-sm font-semibold text-gray-800">Painel Sixxis</p>}
         <button
-          onClick={() => setAberto((v) => !v)}
-          aria-label="Abrir menu"
-          className="mb-3 flex h-10 w-10 items-center justify-center rounded text-xl text-gray-600 hover:bg-gray-100"
+          onClick={alternar}
+          title={aberto ? "Fechar barra lateral" : "Abrir barra lateral"}
+          aria-label={aberto ? "Fechar barra lateral" : "Abrir barra lateral"}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
         >
-          ☰
+          <IconeAlternar />
         </button>
-        {itens.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            title={item.label}
-            className={`flex h-10 w-10 items-center justify-center rounded text-xl hover:bg-gray-100 ${
-              ativo(item.href) ? "bg-[var(--color-sixxis-navy)]/10 text-[var(--color-sixxis-navy)]" : "text-gray-500"
-            }`}
-          >
-            {item.icon}
-          </Link>
-        ))}
-      </nav>
+      </div>
 
-      {/* Painel expandido, sobrepondo o conteudo, igual ao menu do ML */}
-      {aberto && (
-        <>
-          <div
-            className="fixed inset-0 z-20 bg-black/20"
-            onClick={() => setAberto(false)}
-          />
-          <div className="fixed left-16 top-0 z-30 h-screen w-72 overflow-y-auto border-r border-gray-200 bg-white p-4 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-800">Painel Sixxis</p>
-              <button
-                onClick={() => setAberto(false)}
-                className="text-gray-400 hover:text-gray-600"
-                aria-label="Fechar menu"
+      <ul className={`flex flex-1 flex-col gap-1 overflow-y-auto py-3 ${aberto ? "px-3" : "items-center px-2"}`}>
+        {itens.map((item) => (
+          <li key={item.href} className="w-full">
+            {!aberto ? (
+              <Link
+                href={item.href}
+                title={item.label}
+                className={`flex h-10 w-10 items-center justify-center rounded text-xl hover:bg-gray-100 ${
+                  ativo(item.href) ? "bg-[var(--color-sixxis-navy)]/10 text-[var(--color-sixxis-navy)]" : "text-gray-500"
+                }`}
               >
-                ✕
-              </button>
-            </div>
-            <ul className="flex flex-col gap-1">
-              {itens.map((item) => (
-                <li key={item.href}>
-                  {item.subitens ? (
-                    <>
-                      <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-800">
-                        <span className="text-lg">{item.icon}</span>
-                        {item.label}
-                      </div>
-                      <ul className="ml-4 flex flex-col gap-0.5 border-l border-gray-200 pl-4">
-                        {item.subitens.map((sub) => (
-                          <li key={sub.href}>
-                            <Link
-                              href={sub.href}
-                              onClick={() => setAberto(false)}
-                              className={`block rounded px-3 py-1.5 text-sm hover:bg-gray-50 ${
-                                subitemAtivo(sub, item.subitens!)
-                                  ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
-                                  : "text-gray-600"
-                              }`}
-                            >
-                              {sub.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  ) : (
-                    <Link
-                      href={item.href}
-                      onClick={() => setAberto(false)}
-                      className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-gray-50 ${
-                        ativo(item.href)
-                          ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      {item.label}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
-    </>
+                {item.icon}
+              </Link>
+            ) : item.subitens ? (
+              <>
+                <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-800">
+                  <span className="text-lg">{item.icon}</span>
+                  {item.label}
+                </div>
+                <ul className="ml-4 flex flex-col gap-0.5 border-l border-gray-200 pl-4">
+                  {item.subitens.map((sub) => (
+                    <li key={sub.href}>
+                      <Link
+                        href={sub.href}
+                        className={`block rounded px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                          subitemAtivo(sub, item.subitens!)
+                            ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
+                            : "text-gray-600"
+                        }`}
+                      >
+                        {sub.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <Link
+                href={item.href}
+                className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-gray-50 ${
+                  ativo(item.href) ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]" : "text-gray-700"
+                }`}
+              >
+                <span className="text-lg">{item.icon}</span>
+                {item.label}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
