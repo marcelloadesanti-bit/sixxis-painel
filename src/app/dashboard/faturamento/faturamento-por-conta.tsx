@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 
-// Fase 2 (verificação): agora com dados reais da API de Faturamento
-// (Billing) do Mercado Livre. Layout ainda simples/cru de propósito -- o
-// objetivo desta etapa é confirmar que os números batem com o Mercado Livre
-// antes de desenhar a versão final (ver conversa de 27/07/2026).
+// Layout final (27/07/2026): dados reais da API de Faturamento (Billing) do
+// Mercado Livre, com os campos renomeados para termos de negócio. Nota
+// importante -- a API de Billing traz as COBRANÇAS que o ML faz da conta
+// (tarifas, frete, ads), não o saldo de vendas do vendedor. Por isso os
+// termos "Disponível" / "A receber" (que existem no saldo do Mercado Pago)
+// não aparecem aqui -- os mais próximos e corretos são "Despesas do
+// período", "Já pago" e "Saldo em aberto" (o que ainda falta pagar ao ML).
 
 export type ItemFaturamentoFormatado = { label: string; valorLabel: string };
 
@@ -33,6 +36,15 @@ function Campo({ label, valor }: { label: string; valor: string | null }) {
     <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
       <p className="text-xs text-gray-400">{label}</p>
       <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-gray-100">{valor ?? "—"}</p>
+    </div>
+  );
+}
+
+function CampoSecundario({ label, valor }: { label: string; valor: string | null }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+      <span>{label}</span>
+      <span className="font-medium text-gray-600 dark:text-gray-300">{valor ?? "—"}</span>
     </div>
   );
 }
@@ -109,16 +121,20 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaFaturamento; d
             </p>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <Campo label="Total cobrado no período" valor={conta.totalCobradoLabel} />
-                <Campo label="Total pago" valor={conta.totalPagoLabel} />
-                <Campo label="Dívida em aberto" valor={conta.totalDividaLabel} />
-                <Campo label="Percepções tributárias" valor={conta.totalPercepcoesLabel} />
-                <Campo label="Nota de crédito" valor={conta.totalNotaCreditoLabel} />
-                <Campo label="Total recebido (consolidado)" valor={conta.totalRecebidoLabel} />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <Campo label="Despesas do período" valor={conta.totalCobradoLabel} />
+                <Campo label="Já pago" valor={conta.totalPagoLabel} />
+                <Campo label="Saldo em aberto" valor={conta.totalDividaLabel} />
               </div>
-              <ListaItens titulo="Encargos" itens={conta.encargos} />
-              <ListaItens titulo="Bonificações" itens={conta.bonificacoes} />
+
+              <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-3 dark:border-gray-700 dark:bg-gray-800">
+                <CampoSecundario label="Percepções tributárias" valor={conta.totalPercepcoesLabel} />
+                <CampoSecundario label="Nota de crédito" valor={conta.totalNotaCreditoLabel} />
+                <CampoSecundario label="Recebido (consolidado)" valor={conta.totalRecebidoLabel} />
+              </div>
+
+              <ListaItens titulo="Encargos (detalhado)" itens={conta.encargos} />
+              <ListaItens titulo="Bonificações (detalhado)" itens={conta.bonificacoes} />
             </>
           )}
         </div>

@@ -250,28 +250,28 @@ export default async function FaturamentoPage({
         {totalContasComErro > 0 && `, ${totalContasComErro} com falha na consulta`}).
       </p>
 
-      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/10 dark:text-blue-400">
-        <span className="font-semibold">Fase de verificação:</span> esta tela já consulta a API real de
-        Faturamento do Mercado Livre (com cache de até 12h para não estourar o limite de requisições do
-        ML). Cada carregamento atualiza no máximo {LIMITE_BUSCAS_AO_VIVO_POR_CARGA} contas ao vivo (as com
-        cache mais antigo primeiro) para respeitar o limite da Vercel -- clique em &quot;Atualizar&quot; mais de
-        uma vez, com alguns segundos de intervalo, para atualizar todas as contas. Os campos abaixo ainda
-        são os nomes originais da API -- a versão final será desenhada depois de confirmarmos que os
-        valores batem com o painel do Mercado Livre.
+      <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-400">
+        Dados oficiais de faturamento do Mercado Livre (cobranças da plataforma -- não é o saldo de vendas
+        do vendedor). Atualiza sozinho a cada 12h; clique em &quot;Atualizar&quot; para forçar uma consulta nova
+        (no máximo {LIMITE_BUSCAS_AO_VIVO_POR_CARGA} contas por clique -- clique mais de uma vez para
+        atualizar todas).
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Total cobrado no período</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Despesas do período</p>
           <p className="mt-2 text-2xl font-bold text-gray-800 dark:text-gray-100">{formatarMoeda(totalCobrado)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Cobrado pelo Mercado Livre (tarifas, frete, ads)</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Total pago</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Já pago</p>
           <p className="mt-2 text-2xl font-bold text-gray-800 dark:text-gray-100">{formatarMoeda(totalPago)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Pago à Mercado Livre no período</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Dívida em aberto</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Saldo em aberto</p>
           <p className="mt-2 text-2xl font-bold text-gray-800 dark:text-gray-100">{formatarMoeda(totalDivida)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Ainda a pagar à Mercado Livre</p>
         </div>
       </div>
 
