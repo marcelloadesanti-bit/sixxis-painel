@@ -16,10 +16,11 @@ import {
 } from "@/lib/mercadolivre/billing";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 
-// gerarRelatorio faz polling (solicitar -> status -> baixar), podendo levar
-// ~25s+ -- garante o mesmo teto do plano Hobby da Vercel (60s) usado na
-// página, já que actions.ts vira sua própria função serverless.
-export const maxDuration = 60;
+// Nota: arquivos "use server" só podem exportar funções async -- não é
+// possível declarar `export const maxDuration` aqui (diferente de page.tsx).
+// gerarRelatorio faz polling (solicitar -> status -> baixar) com um teto
+// interno de 25s (ver gerarEBaixarRelatorio em billing.ts), que já fica
+// dentro do padrão de timeout de função da Vercel usado no projeto.
 
 // Descobre a key real do período (ex: "2026-07-01") a partir do que já está
 // em cache -- evita uma chamada extra à API só pra redescobrir "qual é o
