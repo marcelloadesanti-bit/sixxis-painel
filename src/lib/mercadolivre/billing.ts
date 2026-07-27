@@ -325,6 +325,76 @@ export async function baixarDocumentoLegal(accessToken: string, fileId: string):
   return res.arrayBuffer();
 }
 
+// 27/07/2026: relatório exportável (XLSX/CSV) do período -- fluxo de 3
+// passos documentado pelo ML: (1) solicita a geração, (2) consulta o status
+// até ficar pronto (processamento assíncrono do lado do ML), (3) baixa o
+// arquivo pronto. Feito sob demanda (o usuário clica no botão), não a cada
+// carregamento de página -- mesmo motivo do rate limit já usado em notas
+// fiscais.
+export type FormatoRelatorio = "CSV" | "XLSX";
+
+export async function gerarEBaixarRelatorio(
+  accessToken: string,
+  periodoKey: string,
+  formato: FormatoRelatorio
+): Promise<{ base64: string; nomeArquivo: string }> {
+  const resCriar = await fetch(`${ML_API}/billing/integration/periods/key/${periodoKey}/reports`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ group: "ML", document_type: "BILL", report_format: formato }),
+  });
+  if (!resCriar.ok) {
+    const corpo = await resCriar.text();
+    throw new Error(`Falha ao solicitar relatório (${resCriar.status}): ${corpo.slice(0, 300)}`);
+  }
+  const criado = (await resCriar.json()) as { file_id?: string; fileId?: string; id?: string };
+  const fileId = criado.file_id ?? criado.fileId ?? criado.id;
+  if (!fileId) {
+    throw new Error("O Mercado Livre não retornou o identificador do relatório solicitado.");
+  }
+
+  // Consulta o status a cada 2s, respeitando o limite de execução da função
+  // (maxDuration=60 no plano Hobby da Vercel) -- desiste em 25s.
+  const inicio = Date.now();
+  let pronto = false;
+  while (Date.now() - inicio < 25000) {
+    const resStatus = await fetch(`${ML_API}/billing/integration/reports/${fileId}/status`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!resStatus.ok) {
+      const corpo = await resStatus.text();
+      throw new Error(`Falha ao consultar status do relatório (${resStatus.status}): ${corpo.slice(0, 300)}`);
+    }
+    const statusData = (await resStatus.json()) as { status: "PROCESSING" | "READY" | "ERROR" };
+    if (statusData.status === "READY") {
+      pronto = true;
+      break;
+    }
+    if (statusData.status === "ERROR") {
+      throw new Error("O Mercado Livre não conseguiu gerar o relatório deste período.");
+    }
+    await delay(2000);
+  }
+  if (!pronto) {
+    throw new Error("O relatório está demorando mais que o esperado -- tente novamente em alguns instantes.");
+  }
+
+  const resArquivo = await fetch(`${ML_API}/billing/integration/reports/${fileId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!resArquivo.ok) {
+    const corpo = await resArquivo.text();
+    throw new Error(`Falha ao baixar relatório (${resArquivo.status}): ${corpo.slice(0, 300)}`);
+  }
+  const bytes = await resArquivo.arrayBuffer();
+  const base64 = Buffer.from(bytes).toString("base64");
+  const extensao = formato === "CSV" ? "csv" : "xlsx";
+  return { base64, nomeArquivo: `relatorio-faturamento-${periodoKey}.${extensao}` };
+}
+
 export function chavesDosUltimosMeses(quantidade = 12): { key: string; label: string }[] {
   const hoje = new Date();
   const meses: { key: string; label: string }[] = [];
