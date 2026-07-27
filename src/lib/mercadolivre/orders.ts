@@ -226,6 +226,86 @@ export async function getTotaisPorStatus(
   return { quantidade: totalNaApi, valor, moeda };
 }
 
+export type ClassificacaoCancelados = {
+    canceladosPuros: { quantidade: number; valor: number };
+    devolvidos: { quantidade: number; valor: number };
+    moeda: string | null;
+};
+
+// Classifica os pedidos CANCELADOS do periodo em duas categorias, no mesmo
+// criterio que o proprio painel do vendedor do Mercado Livre usa (descoberto
+// testando ao vivo em 27/07/2026, comparando pedido a pedido com o que o
+// usuario via na plataforma):
+// - "Cancelados": pedido cancelado sem que um envio tenha sido despachado
+//   (sem registro de shipment, ou o registro nunca saiu do vendedor).
+// - "Devolvidos": pedido cujo envio chegou a ser despachado mas nao foi
+//   entregue e voltou ao remetente (shipment.status === "not_delivered" --
+//   cobre substatus como "returned", "stolen", "lost", etc).
+// Antes disso, a metrica de "devolvidos" em Vendas usava o rastreamento por
+// reclamacao (post-purchase claims) igual ao de Pos-venda, mas isso so
+// capturava por coincidencia 1 dos 9 casos reais testados (a maioria das
+// devolucoes por envio nao gera uma reclamacao formal) e era uma checagem
+// cara (reclamacao por reclamacao). O criterio por status de envio bateu
+// exatamente com os valores que o usuario reportou da plataforma.
+export async function getCanceladosClassificados(
+    accessToken: string,
+    mlUserId: number,
+    periodo: PeriodoISO
+  ): Promise<ClassificacaoCancelados> {
+    let offset = 0;
+    let totalNaApi = 0;
+    const pedidos: { id: number; valor: number }[] = [];
+    let moeda: string | null = null;
+  
+    while (true) {
+          const params = new URLSearchParams({
+                  seller: String(mlUserId),
+                  "order.status": "cancelled",
+                  "order.date_created.from": periodo.desde,
+                  "order.date_created.to": periodo.ate,
+                  limit: String(LIMITE_POR_PAGINA),
+                  offset: String(offset),
+          });
+          const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
+                  headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!res.ok) throw new Error(`Falha ao buscar cancelados: ${res.status}`);
+          const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
+          totalNaApi = data.paging.total;
+          for (const p of data.results) {
+                  pedidos.push({ id: p.id, valor: p.total_amount ?? 0 });
+                  if (!moeda) moeda = p.currency_id;
+          }
+          offset += LIMITE_POR_PAGINA;
+          if (offset >= totalNaApi || data.results.length === 0) break;
+    }
+  
+    let canceladosPuros = { quantidade: 0, valor: 0 };
+    let devolvidos = { quantidade: 0, valor: 0 };
+  
+    const classificacoes = await Promise.all(
+          pedidos.map(async (p) => {
+                  try {
+                            const envio = await getEnvioPedido(accessToken, p.id);
+                            const foiDevolvido = envio?.status === "not_delivered";
+                            return { valor: p.valor, foiDevolvido };
+                  } catch {
+                            return { valor: p.valor, foiDevolvido: false };
+                  }
+          })
+        );
+  
+    for (const c of classificacoes) {
+          if (c.foiDevolvido) {
+                  devolvidos = { quantidade: devolvidos.quantidade + 1, valor: devolvidos.valor + c.valor };
+          } else {
+                  canceladosPuros = { quantidade: canceladosPuros.quantidade + 1, valor: canceladosPuros.valor + c.valor };
+          }
+    }
+  
+    return { canceladosPuros, devolvidos, moeda };
+}
+
 export type ProdutoRanking = {
   itemId: string;
   titulo: string;
