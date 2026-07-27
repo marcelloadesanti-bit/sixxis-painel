@@ -356,14 +356,21 @@ export async function gerarEBaixarRelatorio(
     throw new Error("O Mercado Livre não retornou o identificador do relatório solicitado.");
   }
 
+  // 27/07/2026: descoberto ao testar ao vivo -- o GET de status/download
+  // também exige "document_type" (e "group") como query string, iguais aos
+  // usados na criação, mesmo o file_id já contendo essa informação no nome
+  // (ex: "ML-M-report-BILL-2026-08-01-...").
+  const paramsConsulta = new URLSearchParams({ group: "ML", document_type: "BILL" });
+
   // Consulta o status a cada 2s, respeitando o limite de execução da função
   // (maxDuration=60 no plano Hobby da Vercel) -- desiste em 25s.
   const inicio = Date.now();
   let pronto = false;
   while (Date.now() - inicio < 25000) {
-    const resStatus = await fetch(`${ML_API}/billing/integration/reports/${fileId}/status`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const resStatus = await fetch(
+      `${ML_API}/billing/integration/reports/${fileId}/status?${paramsConsulta.toString()}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
     if (!resStatus.ok) {
       const corpo = await resStatus.text();
       throw new Error(`Falha ao consultar status do relatório (${resStatus.status}): ${corpo.slice(0, 300)}`);
@@ -382,7 +389,7 @@ export async function gerarEBaixarRelatorio(
     throw new Error("O relatório está demorando mais que o esperado -- tente novamente em alguns instantes.");
   }
 
-  const resArquivo = await fetch(`${ML_API}/billing/integration/reports/${fileId}`, {
+  const resArquivo = await fetch(`${ML_API}/billing/integration/reports/${fileId}?${paramsConsulta.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!resArquivo.ok) {
