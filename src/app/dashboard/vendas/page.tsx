@@ -332,6 +332,7 @@ const totalCancelados = resultados.reduce(
       <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
       )}
       </div>
+      </div>
 
       <div className="mb-8">
         <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Por conta</h2>
