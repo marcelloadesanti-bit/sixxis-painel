@@ -53,6 +53,8 @@ const SORT_MAP: Record<string, string> = {
   mais_vendidos: "last_updated_desc", // busca normal; reordenamos por vendas do periodo depois
   mais_vendidos_total: "sold_quantity_desc", // ordenacao nativa ja e por vendas desde a criacao
   mais_visualizados: "last_updated_desc", // busca normal; reordenamos por visitas depois
+  maior_conversao: "last_updated_desc", // busca normal; reordenamos por conversao (vendas/visitas) depois
+  melhor_qualidade: "last_updated_desc", // busca normal; reordenamos por saude (item.health) depois
 };
 
 export type OrdenacaoAnuncios = keyof typeof SORT_MAP;
@@ -268,9 +270,13 @@ export async function listarAnunciosResumo(
     ordenadas = [...todasLinhas].sort(
       (a, b) => new Date(b.dataAtualizacao).getTime() - new Date(a.dataAtualizacao).getTime()
     );
+  } else if (ordenacao === "melhor_qualidade") {
+    // saude (item.health) ja vem no bulk de itens, sem custo extra de API.
+    // Anuncios sem saude calculada (null) ficam por ultimo.
+    ordenadas = [...todasLinhas].sort((a, b) => (b.saude ?? -1) - (a.saude ?? -1));
   }
 
-  if (ordenacao === "mais_visualizados") {
+  if (ordenacao === "mais_visualizados" || ordenacao === "maior_conversao") {
     // precisa de visitas de todo o conjunto coletado para poder ordenar direito
     const visitasPorLinha = new Map<string, number>();
     for (const conta of contas) {
@@ -278,10 +284,22 @@ export async function listarAnunciosResumo(
       const visitas = await buscarVisitas(conta.accessToken, idsDaConta, periodo.de, periodo.ate);
       for (const [id, total] of visitas) visitasPorLinha.set(id, total);
     }
-    ordenadas = [...todasLinhas].sort(
-      (a, b) => (visitasPorLinha.get(b.id) ?? 0) - (visitasPorLinha.get(a.id) ?? 0)
-    );
-    for (const linha of ordenadas) linha.visitasPeriodo = visitasPorLinha.get(linha.id) ?? 0;
+    for (const linha of todasLinhas) linha.visitasPeriodo = visitasPorLinha.get(linha.id) ?? 0;
+
+    if (ordenacao === "mais_visualizados") {
+      ordenadas = [...todasLinhas].sort(
+        (a, b) => (visitasPorLinha.get(b.id) ?? 0) - (visitasPorLinha.get(a.id) ?? 0)
+      );
+    } else {
+      // maior_conversao: vendas do periodo / visitas do periodo (mesma regra
+      // usada depois para exibir a coluna Conversao).
+      const conversaoDe = (l: LinhaAnuncio) => {
+        const visitas = visitasPorLinha.get(l.id) ?? 0;
+        if (visitas > 0) return l.vendidosPeriodo / visitas;
+        return l.vendidosPeriodo > 0 ? 1 : 0;
+      };
+      ordenadas = [...todasLinhas].sort((a, b) => conversaoDe(b) - conversaoDe(a));
+    }
   }
 
   // 4. pagina
@@ -299,7 +317,7 @@ export async function listarAnunciosResumo(
   for (const [contaId, ids] of idsPorContaPagina) {
     const accessToken = porConta.get(contaId)!;
     const [visitas, precoParaGanhar] = await Promise.all([
-      ordenacao === "mais_visualizados"
+      ordenacao === "mais_visualizados" || ordenacao === "maior_conversao"
         ? Promise.resolve(new Map<string, number>())
         : buscarVisitas(accessToken, ids, periodo.de, periodo.ate),
       buscarPrecoParaGanhar(accessToken, ids),
