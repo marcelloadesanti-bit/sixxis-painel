@@ -89,7 +89,7 @@ export async function GET(request: Request) {
     const [pagoDesc50, pagoAsc50, pagoDesc100Unico, cancelDesc50, devolucoes, reclamacoes] = await Promise.all([
       buscarTudo(accessToken, conta.ml_user_id, "paid", desde, ateISO, "date_desc", 50),
       buscarTudo(accessToken, conta.ml_user_id, "paid", desde, ateISO, "date_asc", 50),
-      buscarTudo(accessToken, conta.ml_user_id, "paid", desde, ateISO, "date_desc", 100),
+      buscarTudo(accessToken, conta.ml_user_id, "paid", desde, ateISO, "date_desc", 51),
       buscarTudo(accessToken, conta.ml_user_id, "cancelled", desde, ateISO, "date_desc", 50),
       getDevolucoesNoPeriodo(accessToken, conta.ml_user_id, { de, ate }, conta.id as string, conta.nickname as string),
       getReclamacoesNoPeriodo(accessToken, conta.ml_user_id, { de, ate }, conta.id as string, conta.nickname as string),
@@ -136,7 +136,7 @@ export async function GET(request: Request) {
         valor: somaValor(pagoAsc50.pedidos),
         totalReportadoPorPagina: pagoAsc50.totalReportadoPorPagina,
       },
-      probe_3_desc_pagina_unica_100: {
+      probe_3_desc_pagina_unica_51: {
         quantidade: pagoDesc100Unico.pedidos.length,
         valor: somaValor(pagoDesc100Unico.pedidos),
         totalReportadoPorPagina: pagoDesc100Unico.totalReportadoPorPagina,
