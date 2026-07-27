@@ -177,7 +177,8 @@ function NotasFiscais({ contaId, periodoKeySelecionado }: { contaId: string; per
               {documentos.map((doc) => (
                 <li key={doc.id} className="flex items-center justify-between gap-3 px-3 py-2">
                   <span className="text-gray-600 dark:text-gray-300">
-                    {TIPO_DOCUMENTO_LABEL[doc.tipo]} — venc. {formatarDataBr(doc.dataVencimento)}
+                    {TIPO_DOCUMENTO_LABEL[doc.tipo]} — {formatarDataBr(doc.periodoDataInicio)} a{" "}
+                    {formatarDataBr(doc.periodoDataFim)}
                   </span>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="font-medium text-gray-800 dark:text-gray-100">
@@ -198,6 +199,12 @@ function NotasFiscais({ contaId, periodoKeySelecionado }: { contaId: string; per
                 </li>
               ))}
             </ul>
+          )}
+          {documentos && documentos.length > 0 && (
+            <p className="border-t border-gray-200 p-2 text-[11px] text-gray-400 dark:border-gray-700">
+              PDF não disponível via API para contas do Brasil (a nota fiscal é emitida por sistema fiscal
+              separado do Mercado Livre).
+            </p>
           )}
         </div>
       )}
