@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getFaturamentoContaCacheado, type FaturamentoContaResultado } from "@/lib/mercadolivre/billing-cache";
-import type { GrupoFaturamento } from "@/lib/mercadolivre/billing";
+import { chavesDosUltimosMeses, type GrupoFaturamento } from "@/lib/mercadolivre/billing";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import FaturamentoPorConta, {
   type ContaFaturamento,
   type GrupoFaturamentoFormatado,
 } from "./faturamento-por-conta";
+import SeletorMes from "./seletor-mes";
 
 // FASE 3 (cache + confiabilidade): a API de Faturamento do Mercado Livre
 // aplica rate limit de 5 requisições por minuto, compartilhado entre as
@@ -74,11 +75,22 @@ function formatarGrupos(grupos: GrupoFaturamento[]): GrupoFaturamentoFormatado[]
 export default async function FaturamentoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ atualizar?: string }>;
+  searchParams: Promise<{ atualizar?: string; mes?: string }>;
 }) {
   await exigirAcessoSecao("faturamento");
-  const { atualizar } = await searchParams;
+  const { atualizar, mes } = await searchParams;
   const forcar = atualizar === "1";
+
+  // Se `mes` vier preenchido (ex: "2026-06-01"), o usuário escolheu um
+  // período anterior no seletor -- caso contrário consultamos o período mais
+  // recente (comportamento padrão, cache com TTL de 12h). Períodos
+  // anteriores ficam em cache permanente (ver billing-cache.ts).
+  const periodoKey = mes && mes !== "ATUAL" ? mes : undefined;
+  const chaveCache = periodoKey ?? "ATUAL";
+  const mesesDisponiveis = chavesDosUltimosMeses(12);
+  const mesSelecionadoLabel = periodoKey
+    ? (mesesDisponiveis.find((m) => m.key === periodoKey)?.label ?? periodoKey)
+    : null;
 
   const supabase = await createClient();
 
@@ -102,7 +114,8 @@ export default async function FaturamentoPage({
   // Contas sem cache (nunca buscadas) recebem prioridade máxima.
   const { data: cachesExistentes } = await supabase
     .from("faturamento_cache")
-    .select("conta_id, atualizado_em");
+    .select("conta_id, atualizado_em")
+    .eq("periodo_key", chaveCache);
   const idadeCachePorConta = new Map<string, number>();
   for (const c of cachesExistentes ?? []) {
     idadeCachePorConta.set(c.conta_id as string, Date.now() - new Date(c.atualizado_em as string).getTime());
@@ -128,6 +141,7 @@ export default async function FaturamentoPage({
       const resultado = await getFaturamentoContaCacheado(contaId, accessToken, conta.ml_user_id as number, {
         forcar,
         permitirBusca,
+        periodoKey,
       });
       resultadoPorConta.set(contaId, resultado);
       if (!resultado.deCache) {
@@ -239,27 +253,33 @@ export default async function FaturamentoPage({
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <div className="mb-1 flex items-center justify-between gap-3">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-[var(--color-sixxis-navy)]">Faturamento</h1>
-        <Link
-          href="/dashboard/faturamento?atualizar=1"
-          className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-        >
-          Atualizar
-        </Link>
+        <div className="flex items-center gap-2">
+          <SeletorMes meses={mesesDisponiveis} />
+          <Link
+            href={`/dashboard/faturamento?atualizar=1${mes ? `&mes=${mes}` : ""}`}
+            className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          >
+            Atualizar
+          </Link>
+        </div>
       </div>
       <p className="mb-4 text-sm text-gray-500">
-        Consolidado do período de faturamento mais recente das {contasFaturamento.length} contas
-        conectadas ({contasComDados.length} com dados
+        Consolidado do período {mesSelecionadoLabel ? `de ${mesSelecionadoLabel}` : "mais recente"} das{" "}
+        {contasFaturamento.length} contas conectadas ({contasComDados.length} com dados
         {totalContasSemPeriodo > 0 && `, ${totalContasSemPeriodo} sem período disponível`}
         {totalContasComErro > 0 && `, ${totalContasComErro} com falha na consulta`}).
       </p>
 
       <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-400">
         Dados oficiais de faturamento do Mercado Livre (cobranças da plataforma -- não é o saldo de vendas
-        do vendedor). Atualiza sozinho a cada 12h; clique em &quot;Atualizar&quot; para forçar uma consulta nova
-        (no máximo {LIMITE_BUSCAS_AO_VIVO_POR_CARGA} contas por clique -- clique mais de uma vez para
-        atualizar todas).
+        do vendedor). {periodoKey
+          ? "Período fechado -- uma vez consultado, fica salvo permanentemente (não muda mais)."
+          : "Atualiza sozinho a cada 12h."}{" "}
+        Clique em &quot;Atualizar&quot; para forçar uma consulta nova (no máximo{" "}
+        {LIMITE_BUSCAS_AO_VIVO_POR_CARGA} contas por clique -- clique mais de uma vez para atualizar todas).
+        Use o seletor de mês para consultar períodos anteriores.
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
