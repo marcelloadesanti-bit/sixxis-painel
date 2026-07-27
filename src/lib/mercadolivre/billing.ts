@@ -72,14 +72,32 @@ export async function getPeriodoMaisRecente(
   };
 }
 
-type ItemFaturamento = { label: string; amount: number; type: string };
+// 27/07/2026: inspecionamos o JSON bruto (rota de debug temporaria) e
+// descobrimos dois problemas na tipagem original, escrita so a partir da
+// documentacao (sem nunca ter visto uma resposta real):
+// 1) o campo certo e "total_perception" (singular) -- estavamos lendo
+//    "total_perceptions" (plural), por isso sempre vinha undefined.
+// 2) cada item de encargo/bonificacao tem MUITO mais informacao do que so
+//    label/amount: "type" (codigo interno, ex: CVVML), "group_id" e
+//    "group_description" (categoria, ex: "Cargos por venta"). O label as
+//    vezes vem com nome amigavel em portugues (ex: "Campanhas de
+//    publicidade - Product Ads"), as vezes vem so o codigo cru (igual ao
+//    type). Usamos group_id/group_description para agrupar os encargos nas
+//    mesmas categorias que aparecem no painel oficial do Mercado Livre.
+type ItemFaturamento = {
+  label: string;
+  amount: number;
+  type: string;
+  group_id: number;
+  group_description: string;
+};
 
 type ResumoApi = {
   user: { nickname: string };
   period: { date_from: string; date_to: string; expiration_date: string; key: string };
   bill_includes: {
     total_amount: number;
-    total_perceptions: number;
+    total_perception: number;
     bonuses: ItemFaturamento[];
     charges: ItemFaturamento[];
   };
@@ -93,6 +111,58 @@ type ResumoApi = {
   errors: unknown[];
 };
 
+// Nomes em português usados no painel oficial do Mercado Livre para cada
+// categoria (group_id), confirmados observando o JSON real de 3 contas
+// diferentes em 27/07/2026. Para um group_id que ainda não vimos, caímos de
+// volta na descrição que a própria API manda (às vezes em espanhol) em vez
+// de inventar uma tradução -- dado financeiro não pode ser um chute.
+const GRUPO_LABEL_PT: Record<number, string> = {
+  3: "Bonificações",
+  6: "Tarifas de envios Full",
+  11: "Tarifas de envios no Mercado Livre",
+  14: "Tarifas de venda",
+  21: "Tarifas da Minha Página (eShop)",
+  24: "Tarifas por campanha de publicidade",
+  32: "Taxas de parcelamento",
+  37: "Tarifas do programa de afiliados",
+  39: "Reembolso de DIFAL",
+};
+
+function nomeGrupoPt(item: ItemFaturamento): string {
+  return GRUPO_LABEL_PT[item.group_id] ?? item.group_description?.trim() ?? "Outros";
+}
+
+export type ItemFaturamentoDetalhado = { label: string; valor: number; codigo: string; temDescricao: boolean };
+export type GrupoFaturamento = { grupoId: number; nome: string; total: number; itens: ItemFaturamentoDetalhado[] };
+
+// Agrupa os itens (encargos ou bonificações) pela categoria oficial do ML
+// (group_id), somando o total de cada categoria -- é a mesma lógica que o
+// painel do Mercado Livre usa para mostrar "Tarifas de venda: R$ X",
+// "Tarifas de envios: R$ Y" etc.
+function agruparPorCategoria(itens: ItemFaturamento[]): GrupoFaturamento[] {
+  const porGrupo = new Map<number, GrupoFaturamento>();
+  for (const item of itens) {
+    const existente = porGrupo.get(item.group_id);
+    const valor = item.amount ?? 0;
+    const detalhe: ItemFaturamentoDetalhado = {
+      label: item.label,
+      valor,
+      codigo: item.type,
+      // Se o label veio igual ao codigo interno, o ML nao mandou uma
+      // descricao amigavel para este item -- mostramos isso na tela em vez
+      // de fingir que sabemos do que se trata.
+      temDescricao: item.label !== item.type,
+    };
+    if (existente) {
+      existente.total += valor;
+      existente.itens.push(detalhe);
+    } else {
+      porGrupo.set(item.group_id, { grupoId: item.group_id, nome: nomeGrupoPt(item), total: valor, itens: [detalhe] });
+    }
+  }
+  return [...porGrupo.values()].sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+}
+
 export type ResumoFaturamento = {
   periodoKey: string;
   dataInicio: string;
@@ -103,8 +173,8 @@ export type ResumoFaturamento = {
   totalNotaCredito: number;
   totalRecebidoConsolidado: number;
   totalDivida: number;
-  encargos: { label: string; valor: number }[];
-  bonificacoes: { label: string; valor: number }[];
+  encargos: GrupoFaturamento[];
+  bonificacoes: GrupoFaturamento[];
 };
 
 // Resumo de encargos e bonificacoes de um periodo especifico (identificado
@@ -133,13 +203,13 @@ export async function getResumoFaturamento(
     dataInicio: data.period.date_from,
     dataFim: data.period.date_to,
     totalCobrado: data.bill_includes.total_amount ?? 0,
-    totalPercepcoes: data.bill_includes.total_perceptions ?? 0,
+    totalPercepcoes: data.bill_includes.total_perception ?? 0,
     totalPago: data.payment_collected.total_payment ?? 0,
     totalNotaCredito: data.payment_collected.total_credit_note ?? 0,
     totalRecebidoConsolidado: data.payment_collected.total_collected ?? 0,
     totalDivida: data.payment_collected.total_debt ?? 0,
-    encargos: (data.bill_includes.charges ?? []).map((c) => ({ label: c.label, valor: c.amount ?? 0 })),
-    bonificacoes: (data.bill_includes.bonuses ?? []).map((b) => ({ label: b.label, valor: b.amount ?? 0 })),
+    encargos: agruparPorCategoria(data.bill_includes.charges ?? []),
+    bonificacoes: agruparPorCategoria(data.bill_includes.bonuses ?? []),
   };
 }
 
