@@ -38,10 +38,22 @@ export type PeriodoISO = {
 // com o fuso de Brasilia, cobrindo o dia inteiro -- mesma convencao usada
 // no periodoDeDatas do Mercado Livre, para os filtros de periodo baterem
 // entre as duas plataformas.
+//
+// Diferenca importante em relacao ao ML: a SP-API exige que CreatedBefore
+// (Orders) e PostedBefore (Finances) sejam SEMPRE no minimo 2 minutos no
+// passado em relacao ao horario da requisicao -- passar um "ate" que caia
+// no futuro (ex: hoje as 23:59:59, quando ainda sao 10h da manha) faz a
+// Amazon recusar a chamada inteira com HTTP 400. Por isso, sempre que o fim
+// do periodo pedido cair depois de "agora - 3min", usamos esse limite
+// seguro no lugar do fim do dia.
 export function periodoDeDatas(de: string, ate: string): PeriodoISO {
+  const fimDoDia = new Date(`${ate}T23:59:59.999-03:00`);
+  const limiteSeguro = new Date(Date.now() - 3 * 60 * 1000);
+  const ateFinal = fimDoDia.getTime() > limiteSeguro.getTime() ? limiteSeguro : fimDoDia;
+
   return {
     desde: `${de}T00:00:00.000-03:00`,
-    ate: `${ate}T23:59:59.999-03:00`,
+    ate: ateFinal.toISOString(),
   };
 }
 
