@@ -2,13 +2,13 @@
 // O admin sempre tem acesso total (nao passa por essas checagens).
 // Colaboradores tem um objeto `permissoes` (jsonb na tabela profiles) no formato:
 // {
-//   resumo: { acesso: true, nivel: "edicao" },
-//   vendas: { acesso: true, nivel: "leitura" },
-//   publicidade: { acesso: false, nivel: "leitura" },
-//   promocoes: { acesso: false, nivel: "leitura" },
-//   amazon: { acesso: false, nivel: "leitura" },
-//   pos_venda: { acesso: true, nivel: "edicao", subsecoes: ["mensagens"] },
-//   faturamento: { acesso: false, nivel: "leitura" },
+// resumo: { acesso: true, nivel: "edicao" },
+// vendas: { acesso: true, nivel: "leitura" },
+// publicidade: { acesso: false, nivel: "leitura" },
+// promocoes: { acesso: false, nivel: "leitura" },
+// amazon: { acesso: false, nivel: "leitura" },
+// pos_venda: { acesso: true, nivel: "edicao", subsecoes: ["mensagens"] },
+// faturamento: { acesso: false, nivel: "leitura" },
 // }
 // `subsecoes` (opcional): lista de sub-abas liberadas. Se omitido/undefined,
 // todas as sub-abas da secao ficam liberadas.
@@ -23,6 +23,10 @@ export type SubsecaoAmazon =
   | "amz_publicidade"
   | "amz_conteudo_a"
   | "amz_anuncios";
+// SIGE: sistema de gestao/fechamento mensal (equivalente automatizado da
+// planilha SIEGE). "sige_metas_comissao" fica de fora por ora -- essa parte
+// (calculo de comissao) mora dentro da aba Metas existente, nao no SIGE.
+export type SubsecaoSige = "sige_relatorios" | "sige_fechamento" | "sige_historico";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -45,13 +49,14 @@ export type CodigoSecao =
   // configuracoes/actions.ts sobre por que essa distincao existe.
   | "equipe"
   | "contas"
+  | "sige"
   | "metas";
 
 // Codigos de secao que sao exclusivamente administrativas. Usados para
 // impedir, em profundidade (defesa em camadas), que essas chaves entrem no
 // objeto `permissoes` de um colaborador comum mesmo que alguem tente burlar
 // a UI.
-export const CODIGOS_SECOES_ADMIN: CodigoSecao[] = ["equipe", "contas", "metas"];
+export const CODIGOS_SECOES_ADMIN: CodigoSecao[] = ["equipe", "contas", "sige", "metas"];
 
 export type PermissoesUsuario = Partial<Record<CodigoSecao, PermissaoSecao>>;
 
@@ -114,13 +119,25 @@ export const SECOES: DefinicaoSecao[] = [
   { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "🧾" },
 ];
 
-// Secoes administrativas: gestao de equipe, contas ML conectadas e metas.
+// Secoes administrativas: gestao de equipe, contas ML/Amazon conectadas,
+// SIGE (fechamento mensal/relatorios/historico) e metas.
 // So aparecem no seletor de permissoes ao criar/editar um ADMINISTRADOR
 // (nunca um colaborador comum) e so ficam visiveis no sidebar/cabecalho para
 // quem tiver acesso concedido a elas (ou for o admin master).
 export const SECOES_ADMIN: DefinicaoSecao[] = [
   { codigo: "equipe", label: "Configurações", href: "/dashboard/configuracoes", icon: "⚙️" },
   { codigo: "contas", label: "Contas conectadas", href: "/dashboard/contas", icon: "🔗" },
+  {
+    codigo: "sige",
+    label: "SIGE",
+    href: "/dashboard/sige/relatorios",
+    icon: "📊",
+    subsecoes: [
+      { codigo: "sige_relatorios", label: "Relatórios", href: "/dashboard/sige/relatorios" },
+      { codigo: "sige_fechamento", label: "Fechamento Mensal", href: "/dashboard/sige/fechamento" },
+      { codigo: "sige_historico", label: "Histórico de Desempenho", href: "/dashboard/sige/historico" },
+    ],
+  },
   { codigo: "metas", label: "Metas", href: "/dashboard/configuracoes/metas", icon: "🎯" },
 ];
 
@@ -138,9 +155,9 @@ export const PERMISSOES_PADRAO_ADMINISTRADOR: PermissoesUsuario = Object.fromEnt
 
 // Remove qualquer chave de secao administrativa de um objeto de permissoes.
 // Defesa em profundidade: usada no server action de colaborador comum para
-// garantir que, mesmo que alguem tente enviar `equipe`/`contas`/`metas` via
-// uma requisicao manipulada, essas chaves nunca sejam persistidas para uma
-// role que nao seja "administrador" ou "admin".
+// garantir que, mesmo que alguem tente enviar `equipe`/`contas`/`sige`/`metas`
+// via uma requisicao manipulada, essas chaves nunca sejam persistidas para
+// uma role que nao seja "administrador" ou "admin".
 export function removerPermissoesAdmin(permissoes: PermissoesUsuario): PermissoesUsuario {
   const limpo = { ...permissoes };
   for (const codigo of CODIGOS_SECOES_ADMIN) {
@@ -189,9 +206,8 @@ export function temAcessoSubsecao(
 }
 
 // Lista de secoes operacionais (com href) que o usuario deve ver no sidebar.
-// Secoes administrativas (equipe/contas/metas) tem visibilidade propria via
-// `secoesAdminVisiveis`, pois no cabecalho elas aparecem como botoes
-// dedicados em vez de itens de sidebar.
+// Secoes administrativas (equipe/contas/sige/metas) tem visibilidade propria
+// via `secoesAdminVisiveis`.
 export function secoesVisiveis(
   isAdmin: boolean,
   permissoes: PermissoesUsuario | null | undefined
