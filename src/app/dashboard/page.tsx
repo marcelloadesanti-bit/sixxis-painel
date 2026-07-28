@@ -24,12 +24,48 @@ import MetaWidget from "./meta-widget";
 import { AoVivoProvider } from "./ao-vivo-context";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
+import { getValidAccessToken as getValidAccessTokenAmazon } from "@/lib/amazon/token";
+import {
+  getVendas as getVendasAmazon,
+  periodoDeDatas as periodoDeDatasAmazon,
+  classificarCancelados as classificarCanceladosAmazon,
+} from "@/lib/amazon/orders";
+
+// A pagina Resumo consolida Mercado Livre + Amazon. Por decisao explicita do
+// escopo da integracao Amazon (so vendas e faturamento agregados, o resto
+// fica dentro do proprio Seller Central), a Amazon so entra nos cards de
+// "Vendas brutas" / "Quantidade de vendas", no filtro de contas, no grafico
+// de linha e na pizza de participacao -- ela NAO entra em Visualizacoes,
+// Conversao, Produtos mais vendidos, Pos-venda nem Vendas ao vivo (nenhuma
+// dessas metricas existe hoje na integracao Amazon).
+export const maxDuration = 60;
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
   new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: moeda ?? "BRL",
   }).format(valor);
+
+// Agrupa os pedidos Amazon (que vem como lista crua) em uma serie diaria no
+// mesmo formato que o Mercado Livre ja usa no grafico -- sem precisar de
+// nenhuma chamada extra a API, ja que os pedidos completos do periodo ja
+// foram buscados em getVendasAmazon.
+function agruparPedidosAmazonPorDia(
+  pedidos: { dataCriacao: string; valor: number }[]
+): { data: string; quantidade: number; valor: number }[] {
+  const mapa = new Map<string, { quantidade: number; valor: number }>();
+  for (const p of pedidos) {
+    // Ajusta pro fuso de Brasilia (-03:00) antes de extrair o dia, mesma
+    // convencao usada no restante da integracao Amazon.
+    const dataLocal = new Date(new Date(p.dataCriacao).getTime() - 3 * 60 * 60 * 1000);
+    const chave = dataLocal.toISOString().slice(0, 10);
+    const atual = mapa.get(chave) ?? { quantidade: 0, valor: 0 };
+    atual.quantidade += 1;
+    atual.valor += p.valor;
+    mapa.set(chave, atual);
+  }
+  return Array.from(mapa.entries()).map(([data, v]) => ({ data, ...v }));
+}
 
 export default async function ResumoPage({
   searchParams,
@@ -67,16 +103,26 @@ export default async function ResumoPage({
   const { de: deAnterior, ate: ateAnterior } = periodoMesAnterior(de, ate);
   const periodoAnterior = periodoDeDatas(deAnterior, ateAnterior);
 
-  const { data: contas } = await supabase
+  const { data: contasMLRaw } = await supabase
     .from("ml_accounts")
     .select("id, ml_user_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
+  const contasML = contasMLRaw ?? [];
 
-  const todasContasIds = (contas ?? []).map((c) => c.id);
+  const { data: contasAmazonRaw } = await supabase
+    .from("amazon_accounts")
+    .select("id, seller_id, marketplace_id, nickname, apelido, cor")
+    .order("nickname", { ascending: true });
+  const contasAmazon = contasAmazonRaw ?? [];
+
+  const todasContasIdsML = contasML.map((c) => c.id);
+  const todasContasIds = [...todasContasIdsML, ...contasAmazon.map((c) => c.id)];
   const idsSelecionados = params.contas
     ? params.contas.split(",").filter((id) => todasContasIds.includes(id))
     : todasContasIds;
-  const contasFiltradas = (contas ?? []).filter((c) => idsSelecionados.includes(c.id));
+
+  const contasFiltradas = contasML.filter((c) => idsSelecionados.includes(c.id));
+  const contasAmazonFiltradas = contasAmazon.filter((c) => idsSelecionados.includes(c.id));
 
   const resultados = await Promise.all(
     contasFiltradas.map(async (conta) => {
@@ -151,6 +197,54 @@ export default async function ResumoPage({
     })
   );
 
+  // Vendas Amazon do periodo atual e anterior, para entrar nos totais
+  // consolidados / grafico / pizza junto com o Mercado Livre. Reaproveita
+  // periodoDeDatas da Amazon (que ja trata o limite de "nao pode cair no
+  // futuro" da SP-API).
+  const periodoAtualAmazon = periodoDeDatasAmazon(de, ate);
+  const periodoAnteriorAmazon = periodoDeDatasAmazon(deAnterior, ateAnterior);
+
+  const resultadosAmazon = await Promise.all(
+    contasAmazonFiltradas.map(async (conta) => {
+      try {
+        const accessToken = await getValidAccessTokenAmazon(conta.id);
+        const [vendasAtual, vendasAnterior] = await Promise.all([
+          getVendasAmazon(
+            accessToken,
+            conta.marketplace_id as string,
+            periodoAtualAmazon,
+            conta.id,
+            conta.nickname as string
+          ),
+          getVendasAmazon(
+            accessToken,
+            conta.marketplace_id as string,
+            periodoAnteriorAmazon,
+            conta.id,
+            conta.nickname as string
+          ),
+        ]);
+        const cancelados = classificarCanceladosAmazon(vendasAtual.pedidos);
+        return {
+          conta,
+          vendasAtual,
+          vendasAnterior,
+          cancelados,
+          erro: null as string | null,
+        };
+      } catch (err) {
+        console.error(`Erro ao buscar resumo Amazon de ${conta.nickname}:`, err);
+        return {
+          conta,
+          vendasAtual: null,
+          vendasAnterior: null,
+          cancelados: null,
+          erro: "Falha ao buscar dados desta conta.",
+        };
+      }
+    })
+  );
+
   // "Vendas brutas" soma pedidos pagos + pedidos cancelados no período (o
   // cancelamento e informativo, nao e descontado do total bruto) -- essa
   // parte bate com o painel real do Mercado Livre. POREM o valor de cada
@@ -160,23 +254,43 @@ export default async function ResumoPage({
   // adicional pago pelo cliente. Por isso este numero pode ficar menor que
   // o "Vendas brutas" mostrado na propria plataforma do ML quando ha
   // pedidos com frete pago pelo comprador -- isso e esperado.
-  const faturamentoTotal =
+  const faturamentoTotalML =
     resultados.reduce((s, r) => s + (r.pagas?.valor ?? 0), 0) +
     resultados.reduce((s, r) => s + (r.canceladas?.valor ?? 0), 0);
-  const vendasTotais =
+  const vendasTotaisML =
     resultados.reduce((s, r) => s + (r.pagas?.quantidade ?? 0), 0) +
     resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
-  const canceladosTotal = resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
-  const visitasTotais = resultados.reduce((s, r) => s + r.visitas, 0);
-  const moeda = resultados.find((r) => r.pagas?.moeda)?.pagas?.moeda ?? "BRL";
-  const conversao = visitasTotais > 0 ? (vendasTotais / visitasTotais) * 100 : 0;
+  const canceladosTotalML = resultados.reduce((s, r) => s + (r.canceladas?.quantidade ?? 0), 0);
 
-  const faturamentoAnterior =
+  const faturamentoAnteriorML =
     resultados.reduce((s, r) => s + (r.pagasAnterior?.valor ?? 0), 0) +
     resultados.reduce((s, r) => s + (r.canceladasAnterior?.valor ?? 0), 0);
-  const vendasAnteriores =
+  const vendasAnterioresML =
     resultados.reduce((s, r) => s + (r.pagasAnterior?.quantidade ?? 0), 0) +
     resultados.reduce((s, r) => s + (r.canceladasAnterior?.quantidade ?? 0), 0);
+
+  // Vendas brutas Amazon = todos os pedidos do periodo (pagos + cancelados),
+  // mesmo criterio ja usado para o Mercado Livre.
+  const faturamentoTotalAmazon = resultadosAmazon.reduce((s, r) => s + (r.vendasAtual?.valorSomado ?? 0), 0);
+  const vendasTotaisAmazon = resultadosAmazon.reduce((s, r) => s + (r.vendasAtual?.totalPedidos ?? 0), 0);
+  const canceladosTotalAmazon = resultadosAmazon.reduce((s, r) => s + (r.cancelados?.quantidade ?? 0), 0);
+  const faturamentoAnteriorAmazon = resultadosAmazon.reduce((s, r) => s + (r.vendasAnterior?.valorSomado ?? 0), 0);
+  const vendasAnterioresAmazon = resultadosAmazon.reduce((s, r) => s + (r.vendasAnterior?.totalPedidos ?? 0), 0);
+
+  const faturamentoTotal = faturamentoTotalML + faturamentoTotalAmazon;
+  const vendasTotais = vendasTotaisML + vendasTotaisAmazon;
+  const canceladosTotal = canceladosTotalML + canceladosTotalAmazon;
+  const faturamentoAnterior = faturamentoAnteriorML + faturamentoAnteriorAmazon;
+  const vendasAnteriores = vendasAnterioresML + vendasAnterioresAmazon;
+
+  // Visualizacoes e conversao continuam exclusivas do Mercado Livre -- a
+  // integracao Amazon (fase atual) nao traz dado de visitas.
+  const visitasTotais = resultados.reduce((s, r) => s + r.visitas, 0);
+  const moeda = resultados.find((r) => r.pagas?.moeda)?.pagas?.moeda
+    ?? resultadosAmazon.find((r) => r.vendasAtual?.moeda)?.vendasAtual?.moeda
+    ?? "BRL";
+  const conversao = visitasTotais > 0 ? (vendasTotais / visitasTotais) * 100 : 0;
+
   const visitasAnteriores = resultados.reduce((s, r) => s + r.visitasAnterior, 0);
   const conversaoAnterior = visitasAnteriores > 0 ? (vendasAnteriores / visitasAnteriores) * 100 : 0;
 
@@ -186,6 +300,8 @@ export default async function ResumoPage({
 
   // Produtos mais vendidos consolidado entre todas as contas (chave por
   // conta+item, ja que o mesmo id de anuncio pode existir em contas diferentes).
+  // Continua exclusivo do Mercado Livre (a Amazon nao envia dado de anuncio
+  // nesta fase, por decisao de escopo).
   const produtosConsolidados = resultados
     .flatMap((r) =>
       r.produtos.map((p) => ({ ...p, contaNickname: nomeConta(r.conta) }))
@@ -193,13 +309,20 @@ export default async function ResumoPage({
     .sort((a, b) => b.quantidade - a.quantidade)
     .slice(0, 5);
 
-  const contasParaGrafico = resultados.map((r) => ({
-    id: r.conta.id,
-    nickname: nomeConta(r.conta),
-    cor: r.conta.cor ?? COR_PADRAO,
-  }));
+  const contasParaGrafico = [
+    ...resultados.map((r) => ({
+      id: r.conta.id,
+      nickname: nomeConta(r.conta),
+      cor: r.conta.cor ?? COR_PADRAO,
+    })),
+    ...resultadosAmazon.map((r) => ({
+      id: r.conta.id,
+      nickname: nomeConta(r.conta),
+      cor: r.conta.cor ?? COR_PADRAO,
+    })),
+  ];
 
-  const seriesPorConta = Object.fromEntries(
+  const seriesPorContaML = Object.fromEntries(
     resultados.map((r) => [
       r.conta.id,
       {
@@ -209,14 +332,45 @@ export default async function ResumoPage({
     ])
   );
 
-  const pizza = resultados
-    .map((r) => ({
-      contaId: r.conta.id,
-      nickname: nomeConta(r.conta),
-      cor: r.conta.cor ?? COR_PADRAO,
-      valor: (r.pagas?.valor ?? 0) + (r.canceladas?.valor ?? 0),
-    }))
-    .filter((f) => f.valor > 0);
+  const seriesPorContaAmazon = Object.fromEntries(
+    resultadosAmazon.map((r) => [
+      r.conta.id,
+      {
+        atual: {
+          vendas: agruparPedidosAmazonPorDia(r.vendasAtual?.pedidos ?? []),
+          visitas: [] as { data: string; total: number }[],
+        },
+        anterior: {
+          vendas: agruparPedidosAmazonPorDia(r.vendasAnterior?.pedidos ?? []),
+          visitas: [] as { data: string; total: number }[],
+        },
+      },
+    ])
+  );
+
+  const seriesPorConta = { ...seriesPorContaML, ...seriesPorContaAmazon };
+
+  const pizza = [
+    ...resultados
+      .map((r) => ({
+        contaId: r.conta.id,
+        nickname: nomeConta(r.conta),
+        cor: r.conta.cor ?? COR_PADRAO,
+        valor: (r.pagas?.valor ?? 0) + (r.canceladas?.valor ?? 0),
+      }))
+      .filter((f) => f.valor > 0),
+    ...resultadosAmazon
+      .map((r) => ({
+        contaId: r.conta.id,
+        nickname: nomeConta(r.conta),
+        cor: r.conta.cor ?? COR_PADRAO,
+        valor: r.vendasAtual?.valorSomado ?? 0,
+      }))
+      .filter((f) => f.valor > 0),
+  ];
+
+  const totalContasConectadas = contasML.length + contasAmazon.length;
+  const contasSelecionadasNomes = [...contasFiltradas, ...contasAmazonFiltradas].map((c) => nomeConta(c));
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -234,11 +388,11 @@ export default async function ResumoPage({
       <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)] dark:text-white">Resumo</h1>
       <p className="mb-4 text-sm text-gray-500">
         {idsSelecionados.length === todasContasIds.length
-          ? `Consolidado de todas as ${contas?.length ?? 0} contas conectadas`
-          : `Mostrando: ${contasFiltradas.map((c) => nomeConta(c)).join(", ")}`}
+          ? `Consolidado de todas as ${totalContasConectadas} contas conectadas`
+          : `Mostrando: ${contasSelecionadasNomes.join(", ")}`}
       </p>
 
-      <AoVivoProvider contaIds={idsSelecionados}>
+      <AoVivoProvider contaIds={idsSelecionados.filter((id) => todasContasIdsML.includes(id))}>
         <MetaWidget isAdmin={isAdmin} />
 
         <div className="mb-6 flex flex-wrap items-end gap-4">
@@ -288,11 +442,10 @@ export default async function ResumoPage({
         </div>
 
         <ResumoFiltros
-          todasContas={(contas ?? []).map((c) => ({
-            id: c.id,
-            nickname: nomeConta(c),
-            cor: c.cor ?? COR_PADRAO,
-          }))}
+          todasContas={[
+            ...contasML.map((c) => ({ id: c.id, nickname: nomeConta(c), cor: c.cor ?? COR_PADRAO })),
+            ...contasAmazon.map((c) => ({ id: c.id, nickname: nomeConta(c), cor: c.cor ?? COR_PADRAO })),
+          ]}
           contasSelecionadas={idsSelecionados}
         />
 
@@ -317,6 +470,13 @@ export default async function ResumoPage({
           pizza={pizza}
         />
       </AoVivoProvider>
+
+      {(contasAmazon.length > 0) && (
+        <p className="mb-8 -mt-4 text-xs text-gray-400">
+          Visualizações e conversão consideram só as contas Mercado Livre (a integração Amazon cobre vendas e
+          faturamento; o restante é gerenciado direto no Seller Central).
+        </p>
+      )}
 
       {canceladosTotal > 0 && (
         <p className="mb-8 text-xs text-gray-500">
@@ -373,7 +533,7 @@ export default async function ResumoPage({
         </Link>
       </div>
 
-      {resultados.some((r) => r.erro) && (
+      {(resultados.some((r) => r.erro) || resultadosAmazon.some((r) => r.erro)) && (
         <ul className="mb-4 text-xs text-red-500">
           {resultados
             .filter((r) => r.erro)
@@ -382,12 +542,19 @@ export default async function ResumoPage({
                 {nomeConta(r.conta)}: {r.erro}
               </li>
             ))}
+          {resultadosAmazon
+            .filter((r) => r.erro)
+            .map((r) => (
+              <li key={r.conta.id}>
+                {nomeConta(r.conta)} (Amazon): {r.erro}
+              </li>
+            ))}
         </ul>
       )}
 
-      {(!contas || contas.length === 0) && (
+      {contasML.length === 0 && contasAmazon.length === 0 && (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-          Nenhuma conta Mercado Livre conectada ainda. Use &quot;+ Conectar conta&quot; no topo da página.
+          Nenhuma conta conectada ainda. Use &quot;+ Conectar conta&quot; no topo da página.
         </div>
       )}
     </div>
