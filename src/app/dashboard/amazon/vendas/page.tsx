@@ -230,6 +230,13 @@ export default async function AmazonVendasPage({
         {new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")} (horário de Brasília)
       </p>
 
+      {resultados.some((r) => r.erro) && (
+        <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600 dark:bg-red-950/40">
+          Falha ao buscar vendas de: {resultados.filter((r) => r.erro).map((r) => r.nome).join(", ")}. Os
+          totais abaixo podem estar incompletos — tente novamente em alguns instantes.
+        </div>
+      )}
+
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <p className="text-xs uppercase text-gray-400">Pedidos no período</p>
