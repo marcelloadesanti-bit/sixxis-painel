@@ -6,16 +6,23 @@
 //   vendas: { acesso: true, nivel: "leitura" },
 //   publicidade: { acesso: false, nivel: "leitura" },
 //   promocoes: { acesso: false, nivel: "leitura" },
+//   amazon: { acesso: false, nivel: "leitura" },
 //   pos_venda: { acesso: true, nivel: "edicao", subsecoes: ["mensagens"] },
 //   faturamento: { acesso: false, nivel: "leitura" },
 // }
-// `subsecoes` (opcional, apenas pos_venda por enquanto): lista de sub-abas liberadas.
-// Se omitido/undefined, todas as sub-abas da secao ficam liberadas.
+// `subsecoes` (opcional): lista de sub-abas liberadas. Se omitido/undefined,
+// todas as sub-abas da secao ficam liberadas.
 
 export type NivelAcesso = "leitura" | "edicao";
 
 export type SubsecaoPosVenda = "perguntas" | "mensagens" | "reclamacoes";
 export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar" | "tendencias_busca";
+export type SubsecaoAmazon =
+  | "amz_vendas"
+  | "amz_faturamento"
+  | "amz_publicidade"
+  | "amz_conteudo_a"
+  | "amz_anuncios";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -29,6 +36,7 @@ export type CodigoSecao =
   | "anuncios"
   | "publicidade"
   | "promocoes"
+  | "amazon"
   | "pos_venda"
   | "faturamento"
   // Secoes administrativas: nunca ficam disponiveis para colaboradores comuns.
@@ -39,7 +47,7 @@ export type CodigoSecao =
   | "contas"
   | "metas";
 
-// Codigos de secao que sao exclusivamente administrativos. Usados para
+// Codigos de secao que sao exclusivamente administrativas. Usados para
 // impedir, em profundidade (defesa em camadas), que essas chaves entrem no
 // objeto `permissoes` de um colaborador comum mesmo que alguem tente burlar
 // a UI.
@@ -53,9 +61,9 @@ export type DefinicaoSecao = {
   href: string;
   icon: string;
   // `href` na subsecao e opcional: quando presente, vira um item navegavel
-  // proprio no submenu do sidebar (ex: Anuncios). Quando ausente, a subsecao
-  // e usada apenas para controle de acesso dentro de uma pagina unica
-  // (ex: Pos-venda, onde as 3 sub-abas convivem na mesma tela).
+  // proprio no submenu do sidebar (ex: Anuncios, Amazon). Quando ausente, a
+  // subsecao e usada apenas para controle de acesso dentro de uma pagina
+  // unica (ex: Pos-venda, onde as 3 sub-abas convivem na mesma tela).
   subsecoes?: { codigo: string; label: string; href?: string }[];
 };
 
@@ -79,6 +87,19 @@ export const SECOES: DefinicaoSecao[] = [
   },
   { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "📣" },
   { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "🏷" },
+  {
+    codigo: "amazon",
+    label: "Amazon",
+    href: "/dashboard/amazon/vendas",
+    icon: "🛒",
+    subsecoes: [
+      { codigo: "amz_vendas", label: "Vendas", href: "/dashboard/amazon/vendas" },
+      { codigo: "amz_faturamento", label: "Faturamento", href: "/dashboard/amazon/faturamento" },
+      { codigo: "amz_publicidade", label: "Publicidade", href: "/dashboard/amazon/publicidade" },
+      { codigo: "amz_conteudo_a", label: "Conteúdo A+", href: "/dashboard/amazon/conteudo-a" },
+      { codigo: "amz_anuncios", label: "Anúncios", href: "/dashboard/amazon/anuncios" },
+    ],
+  },
   {
     codigo: "pos_venda",
     label: "Pós-venda",
