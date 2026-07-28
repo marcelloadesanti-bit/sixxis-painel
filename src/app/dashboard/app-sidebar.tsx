@@ -47,11 +47,22 @@ export default function AppSidebar({
     };
   });
 
-  const itensAdmin: ItemMenu[] = secoesAdminVisiveis(isAdmin, permissoes).map((s) => ({
-    href: s.href,
-    label: s.label,
-    icon: s.icon,
-  }));
+  // Mesma logica de subitens de itensSecoes -- secoes administrativas (ex:
+  // SIGE) tambem podem ter subsecoes navegaveis (Relatorios / Fechamento
+  // Mensal / Historico) e precisam do mesmo tratamento, senao o item vira
+  // um link unico direto para a primeira subsecao e as demais ficam
+  // invisiveis no menu (bug corrigido aqui).
+  const itensAdmin: ItemMenu[] = secoesAdminVisiveis(isAdmin, permissoes).map((s) => {
+    const subitens = (s.subsecoes ?? [])
+      .filter((sub) => sub.href && temAcessoSubsecao(isAdmin, permissoes, s.codigo, sub.codigo))
+      .map((sub) => ({ href: sub.href!, label: sub.label }));
+    return {
+      href: s.href,
+      label: s.label,
+      icon: s.icon,
+      subitens: subitens.length > 0 ? subitens : undefined,
+    };
+  });
 
   const itens: ItemMenu[] = [...itensSecoes, ...itensAdmin];
 
