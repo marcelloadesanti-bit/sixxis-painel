@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/sige/comissao/atualizar",
+      "schedule": "30 2 * * *"
+    }
+  ]
+}
