@@ -37,6 +37,23 @@ type ItemAdsRel = {
   erro?: string;
 };
 
+type IndicadorCrescimento = {
+  nome: string;
+  formato: "moeda" | "numero" | "pct" | "roas";
+  valor: number;
+  vsMesAnterior: number | null;
+  vsAnoAnterior: number | null;
+};
+
+type LinhaHistoricoResumo = {
+  mesChave: string;
+  rotulo: string;
+  totalFaturamento: number;
+  totalVendas: number;
+  investimentoAds: number;
+  roas: number | null;
+};
+
 type ResultadoVendas = {
   tipo: "vendas";
   periodo: { de: string; ate: string };
@@ -51,7 +68,13 @@ type ResultadoAds = {
   itens: ItemAdsRel[];
 };
 
-type Resultado = ResultadoVendas | ResultadoAds;
+type ResultadoCrescimento = {
+  tipo: "crescimento";
+  mesAtual: { rotulo: string; periodoDe: string; periodoAte: string; indicadores: IndicadorCrescimento[] } | null;
+  historico: LinhaHistoricoResumo[];
+};
+
+type Resultado = ResultadoVendas | ResultadoAds | ResultadoCrescimento;
 
 function formatarMoeda(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -65,9 +88,27 @@ function formatarRoas(v: number | null): string {
   return v !== null ? `${v.toFixed(2)}x` : "—";
 }
 
+function formatarIndicador(i: IndicadorCrescimento): string {
+  if (i.formato === "moeda") return formatarMoeda(i.valor);
+  if (i.formato === "roas") return formatarRoas(i.valor);
+  if (i.formato === "pct") return formatarPct(i.valor);
+  return i.valor.toLocaleString("pt-BR");
+}
+
+function Variacao({ v }: { v: number | null }) {
+  if (v === null) return <span className="text-gray-400">—</span>;
+  const positivo = v >= 0;
+  return (
+    <span className={positivo ? "text-green-600" : "text-red-500"}>
+      {positivo ? "▲" : "▼"} {Math.abs(v * 100).toFixed(1)}%
+    </span>
+  );
+}
+
 const TIPOS_RELATORIO: { key: string; label: string; disponivel: boolean }[] = [
   { key: "vendas", label: "Vendas", disponivel: true },
   { key: "ads", label: "Publicidade / Investimento / Retorno", disponivel: true },
+  { key: "crescimento", label: "Crescimento", disponivel: true },
   { key: "visitas", label: "Visitas", disponivel: false },
 ];
 
@@ -101,12 +142,19 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
     setErro(null);
     setResultado(null);
 
-    const { de, ate } =
-      preset === "personalizado" ? { de: deCustom, ate: ateCustom } : periodoDoPreset(preset, new Date());
+    const params = new URLSearchParams({ tipo });
 
-    const params = new URLSearchParams({ tipo, de, ate });
-    if (selecionadas.size > 0 && selecionadas.size < contas.length) {
-      params.set("contas", Array.from(selecionadas).join(","));
+    // Crescimento le fechamentos ja congelados -- nao tem periodo nem
+    // filtro de contas (equivalente a "Rel. Crescimento" da planilha, que
+    // sempre mostra o ultimo mes fechado).
+    if (tipo !== "crescimento") {
+      const { de, ate } =
+        preset === "personalizado" ? { de: deCustom, ate: ateCustom } : periodoDoPreset(preset, new Date());
+      params.set("de", de);
+      params.set("ate", ate);
+      if (selecionadas.size > 0 && selecionadas.size < contas.length) {
+        params.set("contas", Array.from(selecionadas).join(","));
+      }
     }
 
     try {
@@ -125,6 +173,7 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
   }
 
   const tituloRelatorio = TIPOS_RELATORIO.find((t) => t.key === (resultado?.tipo ?? tipo))?.label ?? "Relatório";
+  const podeGerar = tipo === "crescimento" || selecionadas.size > 0;
 
   return (
     <div>
@@ -159,87 +208,96 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
           ))}
         </div>
 
-        <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Período</p>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPreset(p.key)}
-              className={`rounded-full px-3 py-1.5 text-sm ${
-                preset === p.key
-                  ? "bg-[var(--color-sixxis-navy)] text-white"
-                  : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setPreset("personalizado")}
-            className={`rounded-full px-3 py-1.5 text-sm ${
-              preset === "personalizado"
-                ? "bg-[var(--color-sixxis-navy)] text-white"
-                : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            Personalizado
-          </button>
-          {preset === "personalizado" && (
-            <span className="flex items-center gap-2">
-              <input
-                type="date"
-                value={deCustom}
-                onChange={(e) => setDeCustom(e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-              <span className="text-gray-400">até</span>
-              <input
-                type="date"
-                value={ateCustom}
-                onChange={(e) => setAteCustom(e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1 text-sm"
-              />
-            </span>
-          )}
-        </div>
-
-        <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Contas</p>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <button
-            onClick={alternarTodas}
-            className={`rounded-full px-3 py-1.5 text-sm ${
-              todasSelecionadas
-                ? "bg-[var(--color-sixxis-navy)] text-white"
-                : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            Todas
-          </button>
-          {contas.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => alternarConta(c.id)}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
-                selecionadas.has(c.id) ? "border-transparent text-white" : "border-gray-300 text-gray-600 hover:bg-gray-50"
-              }`}
-              style={selecionadas.has(c.id) ? { backgroundColor: c.cor } : undefined}
-            >
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
-              {c.nome}
-            </button>
-          ))}
-          {contas.length === 0 && <p className="text-sm text-gray-400">Nenhuma conta disponível.</p>}
-        </div>
-        {tipo === "ads" && (
+        {tipo === "crescimento" ? (
           <p className="mb-4 text-xs text-gray-400">
-            O filtro de contas acima vale só para o Mercado Ads de cada conta ML. Google Ads e Meta Ads (lançados no
-            Fechamento Mensal) sempre entram no relatório, independente da seleção.
+            Este relatório usa os fechamentos mensais já concluídos (não tem período nem filtro de contas) --
+            compara o último mês fechado com o mês anterior e o mesmo mês do ano anterior.
           </p>
+        ) : (
+          <>
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Período</p>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setPreset(p.key)}
+                  className={`rounded-full px-3 py-1.5 text-sm ${
+                    preset === p.key
+                      ? "bg-[var(--color-sixxis-navy)] text-white"
+                      : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button
+                onClick={() => setPreset("personalizado")}
+                className={`rounded-full px-3 py-1.5 text-sm ${
+                  preset === "personalizado"
+                    ? "bg-[var(--color-sixxis-navy)] text-white"
+                    : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Personalizado
+              </button>
+              {preset === "personalizado" && (
+                <span className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={deCustom}
+                    onChange={(e) => setDeCustom(e.target.value)}
+                    className="rounded border border-gray-300 px-2 py-1 text-sm"
+                  />
+                  <span className="text-gray-400">até</span>
+                  <input
+                    type="date"
+                    value={ateCustom}
+                    onChange={(e) => setAteCustom(e.target.value)}
+                    className="rounded border border-gray-300 px-2 py-1 text-sm"
+                  />
+                </span>
+              )}
+            </div>
+
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Contas</p>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                onClick={alternarTodas}
+                className={`rounded-full px-3 py-1.5 text-sm ${
+                  todasSelecionadas
+                    ? "bg-[var(--color-sixxis-navy)] text-white"
+                    : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Todas
+              </button>
+              {contas.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => alternarConta(c.id)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
+                    selecionadas.has(c.id) ? "border-transparent text-white" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                  }`}
+                  style={selecionadas.has(c.id) ? { backgroundColor: c.cor } : undefined}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
+                  {c.nome}
+                </button>
+              ))}
+              {contas.length === 0 && <p className="text-sm text-gray-400">Nenhuma conta disponível.</p>}
+            </div>
+            {tipo === "ads" && (
+              <p className="mb-4 text-xs text-gray-400">
+                O filtro de contas acima vale só para o Mercado Ads de cada conta ML. Google Ads e Meta Ads (lançados
+                no Fechamento Mensal) sempre entram no relatório, independente da seleção.
+              </p>
+            )}
+          </>
         )}
 
         <button
           onClick={gerar}
-          disabled={carregando || selecionadas.size === 0}
+          disabled={carregando || !podeGerar}
           className="rounded bg-[var(--color-sixxis-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           {carregando ? "Gerando..." : "Gerar relatório"}
@@ -255,17 +313,19 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
             <p className="text-xs text-gray-500">Gerado em {new Date().toLocaleString("pt-BR")}</p>
           </div>
 
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs text-gray-400">
-              Período: {resultado.periodo.de} a {resultado.periodo.ate}
-            </p>
-            <button
-              onClick={() => window.print()}
-              className="print-hide rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300"
-            >
-              Imprimir / Baixar PDF
-            </button>
-          </div>
+          {resultado.tipo !== "crescimento" && (
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs text-gray-400">
+                Período: {resultado.periodo.de} a {resultado.periodo.ate}
+              </p>
+              <button
+                onClick={() => window.print()}
+                className="print-hide rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300"
+              >
+                Imprimir / Baixar PDF
+              </button>
+            </div>
+          )}
 
           {resultado.tipo === "vendas" ? (
             <>
@@ -329,7 +389,7 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
                 </table>
               </div>
             </>
-          ) : (
+          ) : resultado.tipo === "ads" ? (
             <>
               <div className="mb-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -422,6 +482,86 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
                   </tbody>
                 </table>
               </div>
+            </>
+          ) : (
+            <>
+              {resultado.mesAtual === null ? (
+                <p className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400 dark:border-gray-600">
+                  Nenhum fechamento realizado ainda.{" "}
+                  <a href="/dashboard/sige/fechamento" className="underline">
+                    Fazer o primeiro fechamento
+                  </a>
+                  .
+                </p>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs text-gray-400">
+                      Performance do mês: {resultado.mesAtual.rotulo} ({resultado.mesAtual.periodoDe} a{" "}
+                      {resultado.mesAtual.periodoAte})
+                    </p>
+                    <button
+                      onClick={() => window.print()}
+                      className="print-hide rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300"
+                    >
+                      Imprimir / Baixar PDF
+                    </button>
+                  </div>
+
+                  <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700">
+                          <th className="p-3">Indicador</th>
+                          <th className="p-3 text-right">Valor</th>
+                          <th className="p-3 text-right">vs Mês Ant.</th>
+                          <th className="p-3 text-right">vs Ano Ant.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultado.mesAtual.indicadores.map((i) => (
+                          <tr key={i.nome} className="border-b border-gray-100 last:border-0 dark:border-gray-700">
+                            <td className="p-3 font-medium">{i.nome}</td>
+                            <td className="p-3 text-right">{formatarIndicador(i)}</td>
+                            <td className="p-3 text-right">
+                              <Variacao v={i.vsMesAnterior} />
+                            </td>
+                            <td className="p-3 text-right">
+                              <Variacao v={i.vsAnoAnterior} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Histórico — últimos 12 meses</p>
+                  <div className="overflow-x-auto rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700">
+                          <th className="p-3">Mês</th>
+                          <th className="p-3 text-right">Faturamento (R$)</th>
+                          <th className="p-3 text-right">Vendas</th>
+                          <th className="p-3 text-right">Investimento Ads (R$)</th>
+                          <th className="p-3 text-right">ROAS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...resultado.historico].reverse().map((l) => (
+                          <tr key={l.mesChave} className="border-b border-gray-100 last:border-0 dark:border-gray-700">
+                            <td className="p-3 font-medium">{l.rotulo}</td>
+                            <td className="p-3 text-right">{formatarMoeda(l.totalFaturamento)}</td>
+                            <td className="p-3 text-right">{l.totalVendas}</td>
+                            <td className="p-3 text-right">{formatarMoeda(l.investimentoAds)}</td>
+                            <td className="p-3 text-right">{formatarRoas(l.roas)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
