@@ -4,6 +4,7 @@ import AppSidebar from "./app-sidebar";
 import LogoutButton from "./logout-button";
 import ThemeToggle from "./theme-toggle";
 import NotificationBell from "./notification-bell";
+import SoundToggle from "./sound-toggle";
 import Logo from "./logo";
 import { SidebarProvider } from "./sidebar-context";
 import DashboardContent from "./dashboard-content";
@@ -89,6 +90,7 @@ export default async function DashboardLayout({
                 </a>
               )}
               <NotificationBell />
+              <SoundToggle />
               <ThemeToggle />
               <LogoutButton />
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { somEstaMudo } from "./sound-toggle";
 
 type Categoria = "vendas" | "perguntas" | "mensagens" | "reclamacoes";
 
@@ -66,6 +67,7 @@ export default function NotificationBell() {
   const audioPronto = useRef(false);
 
   const tocarSom = useCallback((categoria: Categoria) => {
+    if (somEstaMudo()) return;
     try {
       const audio = new Audio(CONFIG[categoria].som);
       audio.volume = 0.6;
