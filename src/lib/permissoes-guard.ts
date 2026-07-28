@@ -45,3 +45,27 @@ export async function exigirAcessoSecao(secao: CodigoSecao, subsecao?: string) {
     podeEditar: podeEditarSecao(isAdmin, permissoes, secao),
   };
 }
+
+// Guarda para telas restritas ao admin master (role "admin"), que NUNCA
+// devem ficar concedíveis via o objeto permissoes JSONB -- diferente das
+// SECOES_ADMIN normais (equipe/contas/sige/metas), que um administrador
+// comum pode receber acesso. Ex de uso: Metas & Comissão (SIGE). So existe 1
+// admin master por definição (ver README de seguranca em
+// dashboard/configuracoes/actions.ts sobre a distincao admin x administrador
+// x colaborador). Redireciona para /dashboard se nao for o master.
+export async function exigirMaster() {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+
+  if (profile?.role !== "admin") {
+    redirect("/dashboard");
+  }
+
+  return { user };
+}
