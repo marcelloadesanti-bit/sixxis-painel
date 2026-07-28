@@ -55,6 +55,13 @@ export default function AppSidebar({
 
   const itens: ItemMenu[] = [...itensSecoes, ...itensAdmin];
 
+  // Metas & Comissao nunca fica concedivel via permissoes JSONB (ver
+  // exigirMaster em lib/permissoes-guard.ts) -- por isso entra direto aqui,
+  // fora do sistema generico de SECOES_ADMIN, visivel so para o master.
+  if (isAdmin) {
+    itens.push({ href: "/dashboard/sige/comissao", label: "Metas & Comissão", icon: "💰" });
+  }
+
   const ativo = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname?.startsWith(href);
 
