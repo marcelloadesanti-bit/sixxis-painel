@@ -19,9 +19,10 @@ export default async function ComissaoPage() {
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const admin = createAdminClient();
-  const [{ data: config }, { data: metasMensaisRaw }] = await Promise.all([
+  const [{ data: config }, { data: metasMensaisRaw }, { data: snapshotRow }] = await Promise.all([
     admin.from("sige_comissao_config").select("pesos, niveis, recebedores").eq("id", 1).maybeSingle(),
     admin.from("metas_mensais").select("ano, mes, valor"),
+    admin.from("sige_comissao_snapshot").select("ano, mes, resultado, calculado_em, disparado_por").eq("id", 1).maybeSingle(),
   ]);
 
   const metasMensais = (metasMensaisRaw ?? []).map((m) => ({
@@ -29,6 +30,16 @@ export default async function ComissaoPage() {
     mes: m.mes as number,
     valor: Number(m.valor),
   }));
+
+  const snapshotInicial = snapshotRow
+    ? {
+        ano: snapshotRow.ano as number,
+        mes: snapshotRow.mes as number,
+        resultado: snapshotRow.resultado,
+        calculadoEm: snapshotRow.calculado_em as string,
+        disparadoPor: snapshotRow.disparado_por as "cron" | "manual",
+      }
+    : null;
 
   return (
     <main className="mx-auto max-w-5xl p-6">
@@ -39,7 +50,7 @@ export default async function ComissaoPage() {
         Calculadora de comissão variável escalonada por atingimento de meta, por canal (orgânico / pago / Amazon).
         Visível apenas para o administrador master.
       </p>
-      <ComissaoClient configInicial={config ?? null} metasMensais={metasMensais} />
+      <ComissaoClient configInicial={config ?? null} metasMensais={metasMensais} snapshotInicial={snapshotInicial} />
     </main>
   );
 }

@@ -1,13 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatarData } from "@/lib/date-utils";
+import {
+  calcularCanaisAutomaticos,
+  calcularComissao,
+  type ConfigComissao as Config,
+  type Nivel,
+  type Pesos,
+  type Recebedor,
+  type ResultadoComissao,
+} from "@/lib/sige/comissao";
 
-type Pesos = { organico: number; pago: number; amazon: number };
-type Nivel = { nivel: number; minima: number; maxima: number; comissao: number; ativo: boolean };
-type Recebedor = { nome: string; ativo: boolean; percentual: number };
-type Config = { pesos: Pesos; niveis: Nivel[]; recebedores: Recebedor[] };
 type MetaMensal = { ano: number; mes: number; valor: number };
+type SnapshotResumo = {
+  ano: number;
+  mes: number;
+  resultado: ResultadoComissao;
+  calculadoEm: string;
+  disparadoPor: "cron" | "manual";
+};
 
 const CONFIG_PADRAO: Config = {
   pesos: { organico: 65, pago: 35, amazon: 0 },
@@ -26,6 +38,11 @@ const CONFIG_PADRAO: Config = {
   ],
 };
 
+const NOMES_MES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
 function primeiroDiaMes(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -38,29 +55,23 @@ function numero(v: string): number {
 function formatarMoeda(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
-
-type ResultadoCanal = {
-  nome: string;
-  meta: number;
-  valor: number;
-  percentual: number | null;
-  nivel: Nivel | null;
-  comissao: number;
-};
-type Resultado = {
-  metaTotal: number;
-  faturamentoTotal: number;
-  canais: ResultadoCanal[];
-  comissaoTotal: number;
-  recebedoresAtivos: (Recebedor & { valor: number })[];
-};
+function formatarDataHora(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function ComissaoClient({
   configInicial,
   metasMensais,
+  snapshotInicial,
 }: {
   configInicial: Config | null;
   metasMensais: MetaMensal[];
+  snapshotInicial: SnapshotResumo | null;
 }) {
   const [aba, setAba] = useState<"calculadora" | "config">("calculadora");
   const [config, setConfig] = useState<Config>(configInicial ?? CONFIG_PADRAO);
@@ -69,6 +80,47 @@ export default function ComissaoClient({
   const [sucessoConfig, setSucessoConfig] = useState(false);
 
   const hoje = new Date();
+  const anoAtual = hoje.getFullYear();
+  const mesAtual = hoje.getMonth() + 1;
+
+  const [snapshot, setSnapshot] = useState<SnapshotResumo | null>(snapshotInicial);
+  const [atualizandoSnapshot, setAtualizandoSnapshot] = useState(false);
+  const [erroSnapshot, setErroSnapshot] = useState<string | null>(null);
+
+  async function atualizarSnapshot() {
+    setAtualizandoSnapshot(true);
+    setErroSnapshot(null);
+    try {
+      const res = await fetch("/api/sige/comissao/atualizar", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setErroSnapshot(data.erro ?? "Falha ao atualizar o resumo automático.");
+        return;
+      }
+      setSnapshot({
+        ano: data.ano,
+        mes: data.mes,
+        resultado: data.resultado,
+        calculadoEm: data.calculadoEm,
+        disparadoPor: data.disparadoPor,
+      });
+    } catch {
+      setErroSnapshot("Falha ao atualizar o resumo automático.");
+    } finally {
+      setAtualizandoSnapshot(false);
+    }
+  }
+
+  // Se nunca foi calculado, ou o snapshot guardado e de um mes anterior
+  // (virada de mes sem o cron ainda ter rodado), recalcula automaticamente
+  // ao abrir a pagina -- sem exigir clique.
+  useEffect(() => {
+    if (!snapshot || snapshot.ano !== anoAtual || snapshot.mes !== mesAtual) {
+      atualizarSnapshot();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const mesPassado = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
   const [periodoDe, setPeriodoDe] = useState(formatarData(primeiroDiaMes(mesPassado)));
   const [periodoAte, setPeriodoAte] = useState(formatarData(ultimoDiaMes(mesPassado)));
@@ -83,7 +135,7 @@ export default function ComissaoClient({
   const [amazon, setAmazon] = useState("");
   const [buscando, setBuscando] = useState(false);
   const [erroCalc, setErroCalc] = useState<string | null>(null);
-  const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [resultado, setResultado] = useState<ResultadoComissao | null>(null);
 
   function sugerirMeta(de: string, ate: string) {
     const dDe = new Date(de + "T00:00:00");
@@ -117,30 +169,35 @@ export default function ComissaoClient({
         setErroCalc(vendas.erro ?? ads.erro ?? "Falha ao buscar dados automáticos.");
         return;
       }
-      const faturamentoTotal = Number(vendas.consolidado.faturamentoLiquido ?? 0);
-      const amazonFaturamento = ((vendas.itens ?? []) as { tipo: string; faturamentoLiquido: number }[])
-        .filter((i) => i.tipo === "amazon")
+      type ItemVendaResp = { tipo: string; faturamentoLiquido: number; faturamentoBruto: number };
+      const itens = (vendas.itens ?? []) as ItemVendaResp[];
+      // ML + canais manuais entram pelo faturamento LIQUIDO (bruto -
+      // cancelados - devolvidos); Amazon entra pelo faturamento BRUTO puro
+      // (sem descontar taxas nem cancelamentos), dividido 50/50 com o
+      // organico logo abaixo -- regra provisoria ate a Amazon ganhar meta
+      // propria.
+      const baseNaoAmazon = itens
+        .filter((i) => i.tipo !== "amazon")
         .reduce((s, i) => s + Number(i.faturamentoLiquido ?? 0), 0);
-      const pagoRetorno = Number(ads.consolidado.retorno ?? 0);
-      const organicoCalc = Math.max(0, faturamentoTotal - amazonFaturamento - pagoRetorno);
+      const amazonBrutoCalc = itens
+        .filter((i) => i.tipo === "amazon")
+        .reduce((s, i) => s + Number(i.faturamentoBruto ?? 0), 0);
+      const adsRetorno = Number(ads.consolidado.retorno ?? 0);
+
+      const { organico: organicoCalc, pago: pagoCalc } = calcularCanaisAutomaticos({
+        baseNaoAmazon,
+        amazonBruto: amazonBrutoCalc,
+        adsRetorno,
+      });
 
       setOrganico(organicoCalc.toFixed(2));
-      setPago(pagoRetorno.toFixed(2));
-      setAmazon(amazonFaturamento.toFixed(2));
+      setPago(pagoCalc.toFixed(2));
+      setAmazon(amazonBrutoCalc.toFixed(2));
     } catch {
       setErroCalc("Falha ao buscar dados automáticos.");
     } finally {
       setBuscando(false);
     }
-  }
-
-  function encontrarNivel(pct: number): Nivel | null {
-    const ativos = config.niveis.filter((n) => n.ativo).sort((a, b) => a.minima - b.minima);
-    if (ativos.length === 0) return null;
-    for (const n of ativos) {
-      if (pct >= n.minima && pct <= n.maxima) return n;
-    }
-    return ativos[ativos.length - 1];
   }
 
   function calcular() {
@@ -151,37 +208,12 @@ export default function ComissaoClient({
       setResultado(null);
       return;
     }
-
     const organicoNum = numero(organico);
     const pagoNum = numero(pago);
-    // Amazon ainda nao entra de fato no calculo (integracao futura) -- zera
-    // o valor sempre que o peso do canal estiver em 0%, mesmo que exista um
-    // faturamento real preenchido no campo.
-    const amazonNum = config.pesos.amazon === 0 ? 0 : numero(amazon);
-
-    function calcCanal(nome: string, peso: number, valor: number): ResultadoCanal {
-      const meta = metaTotalNum * (peso / 100);
-      if (meta <= 0) {
-        return { nome, meta, valor, percentual: null, nivel: null, comissao: 0 };
-      }
-      const percentual = (valor / meta) * 100;
-      const nivel = encontrarNivel(percentual);
-      const comissao = nivel ? (nivel.comissao / 100) * valor : 0;
-      return { nome, meta, valor, percentual, nivel, comissao };
-    }
-
-    const canais = [
-      calcCanal("Orgânico", config.pesos.organico, organicoNum),
-      calcCanal("Pago (Ads)", config.pesos.pago, pagoNum),
-      calcCanal("Amazon", config.pesos.amazon, amazonNum),
-    ];
-    const faturamentoTotal = organicoNum + pagoNum + amazonNum;
-    const comissaoTotal = canais.reduce((s, c) => s + c.comissao, 0);
-    const recebedoresAtivos = config.recebedores
-      .filter((r) => r.ativo)
-      .map((r) => ({ ...r, valor: comissaoTotal * (r.percentual / 100) }));
-
-    setResultado({ metaTotal: metaTotalNum, faturamentoTotal, canais, comissaoTotal, recebedoresAtivos });
+    const amazonNum = numero(amazon); // informativo -- ja deve estar embutido em organico/pago
+    setResultado(
+      calcularComissao({ metaTotal: metaTotalNum, organico: organicoNum, pago: pagoNum, amazonBruto: amazonNum, config })
+    );
   }
 
   const somaPesos = config.pesos.organico + config.pesos.pago + config.pesos.amazon;
@@ -462,6 +494,66 @@ export default function ComissaoClient({
       {aba === "calculadora" && (
         <div className="flex flex-col gap-6">
           <div className="rounded border border-gray-200 bg-white p-4 print-hide dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500">
+                  Resumo automático — {NOMES_MES[mesAtual - 1]} {anoAtual} (em andamento)
+                </p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  Atualiza sozinho todo dia às 23:30
+                  {snapshot ? ` · Última atualização: ${formatarDataHora(snapshot.calculadoEm)}` : ""}
+                </p>
+              </div>
+              <button
+                onClick={atualizarSnapshot}
+                disabled={atualizandoSnapshot}
+                className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300"
+              >
+                {atualizandoSnapshot ? "Atualizando..." : "Atualizar agora"}
+              </button>
+            </div>
+
+            {erroSnapshot && (
+              <p className="mb-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-600">{erroSnapshot}</p>
+            )}
+
+            {!snapshot || snapshot.resultado.metaTotal <= 0 ? (
+              <p className="text-sm text-gray-400">
+                {atualizandoSnapshot
+                  ? "Calculando pela primeira vez..."
+                  : "Configure a meta deste mês (seção Metas) para habilitar o cálculo automático."}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded border border-gray-100 p-3 dark:border-gray-700">
+                  <p className="text-xs text-gray-400">Meta do mês</p>
+                  <p className="text-base font-semibold text-gray-800 dark:text-white">
+                    {formatarMoeda(snapshot.resultado.metaTotal)}
+                  </p>
+                </div>
+                <div className="rounded border border-gray-100 p-3 dark:border-gray-700">
+                  <p className="text-xs text-gray-400">Faturamento até agora</p>
+                  <p className="text-base font-semibold text-gray-800 dark:text-white">
+                    {formatarMoeda(snapshot.resultado.faturamentoTotal)}
+                  </p>
+                </div>
+                <div className="rounded border border-gray-100 p-3 dark:border-gray-700">
+                  <p className="text-xs text-gray-400">% da meta</p>
+                  <p className="text-base font-semibold text-gray-800 dark:text-white">
+                    {((snapshot.resultado.faturamentoTotal / snapshot.resultado.metaTotal) * 100).toFixed(1)}%
+                  </p>
+                </div>
+                <div className="rounded border border-green-100 bg-green-50 p-3 dark:border-green-900 dark:bg-green-900/20">
+                  <p className="text-xs text-gray-500">Comissão projetada</p>
+                  <p className="text-base font-semibold text-green-700 dark:text-green-400">
+                    {formatarMoeda(snapshot.resultado.comissaoTotal)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded border border-gray-200 bg-white p-4 print-hide dark:border-gray-700 dark:bg-gray-800">
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Período</p>
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <button
@@ -514,7 +606,7 @@ export default function ComissaoClient({
             </p>
             <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-500">Orgânico (R$)</label>
+                <label className="mb-1 block text-xs text-gray-500">Orgânico (R$) -- líquido</label>
                 <input
                   type="text"
                   value={organico}
@@ -533,7 +625,7 @@ export default function ComissaoClient({
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-500">
-                  Amazon (R$) {config.pesos.amazon === 0 && <span className="text-gray-400">-- zerado no cálculo</span>}
+                  Amazon (R$) -- bruto <span className="text-gray-400">(já dividido 50/50 em Orgânico/Pago)</span>
                 </label>
                 <input
                   type="text"
@@ -609,6 +701,16 @@ export default function ComissaoClient({
                         <td className="p-3 text-right font-medium">{formatarMoeda(c.comissao)}</td>
                       </tr>
                     ))}
+                    <tr className="border-b border-gray-100 bg-gray-50/50 text-gray-500 last:border-0 dark:border-gray-700 dark:bg-gray-700/20">
+                      <td className="p-3">
+                        Amazon <span className="text-xs">(informativo -- já somado 50/50 acima)</span>
+                      </td>
+                      <td className="p-3 text-right">—</td>
+                      <td className="p-3 text-right">{formatarMoeda(resultado.amazonBrutoInformativo)}</td>
+                      <td className="p-3 text-right">—</td>
+                      <td className="p-3 text-right">—</td>
+                      <td className="p-3 text-right">{formatarMoeda(0)}</td>
+                    </tr>
                     <tr className="bg-gray-50 font-semibold dark:bg-gray-700/40">
                       <td className="p-3">Total</td>
                       <td className="p-3 text-right">{formatarMoeda(resultado.metaTotal)}</td>
