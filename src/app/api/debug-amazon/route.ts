@@ -26,6 +26,13 @@ export async function GET() {
   const de = new Date(hoje.getTime() - 365 * 86400000);
   const periodo = periodoDeDatas(de.toISOString().slice(0, 10), hoje.toISOString().slice(0, 10));
 
+  // Finances API (PostedAfter/PostedBefore) tem um limite documentado de 180
+  // dias de intervalo -- testamos Faturamento com uma janela de 30 dias em
+  // paralelo para confirmar se o 400 no periodo de 365 dias e so por causa
+  // desse limite (e nao um problema generalizado).
+  const de30 = new Date(hoje.getTime() - 30 * 86400000);
+  const periodoCurto = periodoDeDatas(de30.toISOString().slice(0, 10), hoje.toISOString().slice(0, 10));
+
   const resultados: any[] = [];
 
   for (const conta of contas) {
@@ -59,6 +66,13 @@ export async function GET() {
         linha.faturamento = faturamento;
       } catch (e: any) {
         linha.faturamentoErro = e?.message ?? String(e);
+      }
+
+      try {
+        const faturamento30 = await getFaturamento(accessToken, periodoCurto);
+        linha.faturamento30dias = faturamento30;
+      } catch (e: any) {
+        linha.faturamento30diasErro = e?.message ?? String(e);
       }
     } catch (e: any) {
       linha.tokenErro = e?.message ?? String(e);
