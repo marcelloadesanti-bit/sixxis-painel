@@ -3,11 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getTotaisPorStatus, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
+import { getValidAccessToken as getValidAccessTokenAmazon } from "@/lib/amazon/token";
+import { getVendas as getVendasAmazon, periodoDeDatas as periodoDeDatasAmazon } from "@/lib/amazon/orders";
 
 // Rota leve para as secoes "ao vivo" do Resumo: vendas de hoje (respeita o
-// filtro de conta da pagina) e progresso da meta do mes (sempre consolidado,
-// todas as contas, ignora o filtro -- a meta e da empresa como um todo).
-// Feita para ser chamada com frequencia (polling do cliente, a cada 2 min).
+// filtro de conta da pagina, so Mercado Livre -- a Amazon nao tem "vendas ao
+// vivo" nesta fase) e progresso da meta do mes (sempre consolidado, todas as
+// contas de AMBAS as plataformas, ignora o filtro -- a meta e da empresa
+// como um todo). Feita para ser chamada com frequencia (polling do cliente,
+// a cada 2 min).
+export const maxDuration = 30;
+
 export async function GET(request: Request) {
   const supabase = await createClient();
   const {
@@ -53,7 +59,9 @@ export async function GET(request: Request) {
 
   const conversao = visualizacoes > 0 ? (quantidadeVendas / visualizacoes) * 100 : 0;
 
-  // Meta do mes: sempre todas as contas, do dia 1 ate hoje.
+  // Meta do mes: sempre todas as contas de AMBAS as plataformas, do dia 1
+  // ate hoje -- a Amazon entra aqui com o mesmo criterio de "vendas brutas"
+  // (pagos + cancelados) ja usado em Vendas/Resumo.
   const ano = hoje.getFullYear();
   const mes = hoje.getMonth() + 1;
   const primeiroDia = `${ano}-${String(mes).padStart(2, "0")}-01`;
@@ -71,6 +79,29 @@ export async function GET(request: Request) {
         faturamentoMes += pagas.valor + canceladas.valor;
       } catch (err) {
         console.error(`Erro ao buscar faturamento do mes de ${conta.id}:`, err);
+      }
+    })
+  );
+
+  const { data: todasContasAmazon } = await supabase
+    .from("amazon_accounts")
+    .select("id, seller_id, marketplace_id, nickname");
+  const periodoMesAmazon = periodoDeDatasAmazon(primeiroDia, hojeStr);
+
+  await Promise.all(
+    (todasContasAmazon ?? []).map(async (conta) => {
+      try {
+        const accessToken = await getValidAccessTokenAmazon(conta.id);
+        const vendas = await getVendasAmazon(
+          accessToken,
+          conta.marketplace_id as string,
+          periodoMesAmazon,
+          conta.id,
+          conta.nickname as string
+        );
+        faturamentoMes += vendas.valorSomado;
+      } catch (err) {
+        console.error(`Erro ao buscar faturamento Amazon do mes de ${conta.id}:`, err);
       }
     })
   );
