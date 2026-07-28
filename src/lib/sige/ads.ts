@@ -14,18 +14,20 @@ export type ItemAds = {
   cor: string;
   investimento: number;
   retorno: number;
+  vendas: number;
   impressoes: number;
   cliques: number;
   erro?: string;
 };
 
-export const ADS_ZERADO = { investimento: 0, retorno: 0, impressoes: 0, cliques: 0 };
+export const ADS_ZERADO = { investimento: 0, retorno: 0, vendas: 0, impressoes: 0, cliques: 0 };
 
 export function somarItensAds(itens: ItemAds[]) {
   return itens.reduce(
     (acc, i) => ({
       investimento: acc.investimento + i.investimento,
       retorno: acc.retorno + i.retorno,
+      vendas: acc.vendas + i.vendas,
       impressoes: acc.impressoes + i.impressoes,
       cliques: acc.cliques + i.cliques,
     }),
@@ -67,6 +69,7 @@ export async function buscarAdsMl(de: string, ate: string, idsFiltro: string[] |
             cor: c.cor ?? "#64748b",
             investimento: campanhas.reduce((s, camp) => s + camp.metricas.cost, 0),
             retorno: campanhas.reduce((s, camp) => s + camp.metricas.total_amount, 0),
+            vendas: campanhas.reduce((s, camp) => s + camp.metricas.units_quantity, 0),
             impressoes: campanhas.reduce((s, camp) => s + camp.metricas.prints, 0),
             cliques: campanhas.reduce((s, camp) => s + camp.metricas.clicks, 0),
           };
@@ -102,15 +105,16 @@ export async function buscarAdsManuais(de: string, ate: string): Promise<ItemAds
 
   const { data: lancamentos } = await admin
     .from("sige_ads_manuais")
-    .select("plataforma, periodo_de, periodo_ate, investimento, retorno, impressoes, cliques")
+    .select("plataforma, periodo_de, periodo_ate, investimento, retorno, vendas, impressoes, cliques")
     .lte("periodo_de", ate)
     .gte("periodo_ate", de);
 
-  const porPlataforma = new Map<string, { investimento: number; retorno: number; impressoes: number; cliques: number }>();
+  const porPlataforma = new Map<string, { investimento: number; retorno: number; vendas: number; impressoes: number; cliques: number }>();
   for (const l of lancamentos ?? []) {
     const atual = porPlataforma.get(l.plataforma) ?? { ...ADS_ZERADO };
     atual.investimento += Number(l.investimento ?? 0);
     atual.retorno += Number(l.retorno ?? 0);
+    atual.vendas += Number(l.vendas ?? 0);
     atual.impressoes += Number(l.impressoes ?? 0);
     atual.cliques += Number(l.cliques ?? 0);
     porPlataforma.set(l.plataforma, atual);
