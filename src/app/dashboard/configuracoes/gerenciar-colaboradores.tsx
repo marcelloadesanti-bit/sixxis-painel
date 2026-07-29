@@ -8,6 +8,7 @@ import {
   type CodigoSecao,
   type DefinicaoSecao,
 } from "@/lib/permissoes";
+import { IconeSecao } from "@/lib/icone-secao";
 import {
   criarColaboradorAction,
   atualizarColaboradorAction,
@@ -73,7 +74,8 @@ export function SeletorPermissoes({
                   checked={config.acesso}
                   onChange={(e) => alternarAcesso(secao.codigo, e.target.checked)}
                 />
-                {secao.icon} {secao.label}
+                <IconeSecao chave={secao.icon} className="h-4 w-4 shrink-0 text-gray-500" />
+                {secao.label}
               </label>
 
               {config.acesso && (
