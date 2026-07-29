@@ -62,11 +62,25 @@ export const CODIGOS_SECOES_ADMIN: CodigoSecao[] = ["equipe", "contas", "sige", 
 
 export type PermissoesUsuario = Partial<Record<CodigoSecao, PermissaoSecao>>;
 
+// Codigo dos grupos visuais da sidebar (ver GRUPOS_SIDEBAR abaixo). Secoes
+// sem `grupo` (ex: Resumo) aparecem soltas, fora de qualquer grupo, no topo.
+export type CodigoGrupoSidebar =
+  | "vendas_anuncios"
+  | "canais"
+  | "atendimento"
+  | "financeiro"
+  | "gestao"
+  | "administracao";
+
 export type DefinicaoSecao = {
   codigo: CodigoSecao;
   label: string;
   href: string;
+  // Chave de icone, resolvida via IconeSecao (src/lib/icone-secao.tsx) em um
+  // componente lucide-react. Nao e mais um emoji literal.
   icon: string;
+  // Grupo visual da sidebar. Ausente = fica solto, fora de qualquer grupo.
+  grupo?: CodigoGrupoSidebar;
   // `href` na subsecao e opcional: quando presente, vira um item navegavel
   // proprio no submenu do sidebar (ex: Anuncios, Amazon). Quando ausente, a
   // subsecao e usada apenas para controle de acesso dentro de uma pagina
@@ -74,17 +88,30 @@ export type DefinicaoSecao = {
   subsecoes?: { codigo: string; label: string; href?: string }[];
 };
 
+// Rotulos dos grupos visuais da sidebar, na ordem em que devem aparecer.
+// Reagrupamento puramente visual -- nao altera href, permissao ou nome de
+// nenhuma secao.
+export const GRUPOS_SIDEBAR: { codigo: CodigoGrupoSidebar; label: string }[] = [
+  { codigo: "vendas_anuncios", label: "Vendas & Anúncios" },
+  { codigo: "canais", label: "Canais" },
+  { codigo: "atendimento", label: "Atendimento" },
+  { codigo: "financeiro", label: "Financeiro" },
+  { codigo: "gestao", label: "Gestão" },
+  { codigo: "administracao", label: "Administração" },
+];
+
 // Fonte unica de verdade da lista de secoes do painel.
 // Ao criar uma nova secao no futuro, basta adiciona-la aqui para que
 // ela apareca automaticamente na tela de Configuracoes.
 export const SECOES: DefinicaoSecao[] = [
-  { codigo: "resumo", label: "Resumo", href: "/dashboard", icon: "🏠" },
-  { codigo: "vendas", label: "Vendas", href: "/dashboard/vendas", icon: "🏷️" },
+  { codigo: "resumo", label: "Resumo", href: "/dashboard", icon: "Home" },
+  { codigo: "vendas", label: "Vendas", href: "/dashboard/vendas", icon: "Receipt", grupo: "vendas_anuncios" },
   {
     codigo: "anuncios",
     label: "Anúncios",
     href: "/dashboard/anuncios",
-    icon: "🛍️",
+    icon: "ShoppingBag",
+    grupo: "vendas_anuncios",
     subsecoes: [
       { codigo: "resumo_anuncios", label: "Resumo", href: "/dashboard/anuncios" },
       { codigo: "gestao", label: "Editar anúncios", href: "/dashboard/anuncios/gestao" },
@@ -92,13 +119,14 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "tendencias_busca", label: "Tendências de busca", href: "/dashboard/anuncios/tendencias" },
     ],
   },
-  { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "📣" },
-  { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "🏷" },
+  { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "Megaphone", grupo: "vendas_anuncios" },
+  { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "BadgePercent", grupo: "vendas_anuncios" },
   {
     codigo: "amazon",
     label: "Amazon",
     href: "/dashboard/amazon/vendas",
-    icon: "🛒",
+    icon: "Package",
+    grupo: "canais",
     subsecoes: [
       { codigo: "amz_vendas", label: "Vendas", href: "/dashboard/amazon/vendas" },
       { codigo: "amz_faturamento", label: "Faturamento", href: "/dashboard/amazon/faturamento" },
@@ -111,19 +139,21 @@ export const SECOES: DefinicaoSecao[] = [
     codigo: "pos_venda",
     label: "Pós-venda",
     href: "/dashboard/pos-venda",
-    icon: "📦",
+    icon: "Headset",
+    grupo: "atendimento",
     subsecoes: [
       { codigo: "perguntas", label: "Perguntas" },
       { codigo: "mensagens", label: "Mensagens" },
       { codigo: "reclamacoes", label: "Reclamações" },
     ],
   },
-  { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "🧾" },
+  { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "FileText", grupo: "financeiro" },
   {
     codigo: "concorrencia",
     label: "Concorrência",
     href: "/dashboard/concorrencia",
-    icon: "🔭",
+    icon: "Telescope",
+    grupo: "vendas_anuncios",
     subsecoes: [
       { codigo: "benchmark_preco", label: "Benchmark de Preço" },
       { codigo: "mais_vendidos", label: "Mais Vendidos por Categoria" },
@@ -137,20 +167,21 @@ export const SECOES: DefinicaoSecao[] = [
 // (nunca um colaborador comum) e so ficam visiveis no sidebar/cabecalho para
 // quem tiver acesso concedido a elas (ou for o admin master).
 export const SECOES_ADMIN: DefinicaoSecao[] = [
-  { codigo: "equipe", label: "Configurações", href: "/dashboard/configuracoes", icon: "⚙️" },
-  { codigo: "contas", label: "Contas conectadas", href: "/dashboard/contas", icon: "🔗" },
+  { codigo: "equipe", label: "Configurações", href: "/dashboard/configuracoes", icon: "Settings", grupo: "administracao" },
+  { codigo: "contas", label: "Contas conectadas", href: "/dashboard/contas", icon: "Link2", grupo: "administracao" },
   {
     codigo: "sige",
     label: "SIGE",
     href: "/dashboard/sige/relatorios",
-    icon: "📊",
+    icon: "BarChart3",
+    grupo: "gestao",
     subsecoes: [
       { codigo: "sige_relatorios", label: "Relatórios", href: "/dashboard/sige/relatorios" },
       { codigo: "sige_fechamento", label: "Fechamento Mensal", href: "/dashboard/sige/fechamento" },
       { codigo: "sige_historico", label: "Histórico de Desempenho", href: "/dashboard/sige/historico" },
     ],
   },
-  { codigo: "metas", label: "Metas", href: "/dashboard/configuracoes/metas", icon: "🎯" },
+  { codigo: "metas", label: "Metas", href: "/dashboard/configuracoes/metas", icon: "Target", grupo: "gestao" },
 ];
 
 // Todas as secoes existentes no painel (operacionais + administrativas).
