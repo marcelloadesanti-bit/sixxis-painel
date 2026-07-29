@@ -27,6 +27,7 @@ export type SubsecaoAmazon =
 // planilha SIEGE). "sige_metas_comissao" fica de fora por ora -- essa parte
 // (calculo de comissao) mora dentro da aba Metas existente, nao no SIGE.
 export type SubsecaoSige = "sige_relatorios" | "sige_fechamento" | "sige_historico";
+export type SubsecaoConcorrencia = "benchmark_preco" | "mais_vendidos";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -43,6 +44,7 @@ export type CodigoSecao =
   | "amazon"
   | "pos_venda"
   | "faturamento"
+  | "concorrencia"
   // Secoes administrativas: nunca ficam disponiveis para colaboradores comuns.
   // So podem ser concedidas a usuarios com role "administrador" (ou ao admin
   // master, que sempre tem acesso total). Ver README de seguranca em
@@ -117,6 +119,16 @@ export const SECOES: DefinicaoSecao[] = [
     ],
   },
   { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "🧾" },
+  {
+    codigo: "concorrencia",
+    label: "Concorrência",
+    href: "/dashboard/concorrencia",
+    icon: "🔭",
+    subsecoes: [
+      { codigo: "benchmark_preco", label: "Benchmark de Preço" },
+      { codigo: "mais_vendidos", label: "Mais Vendidos por Categoria" },
+    ],
+  },
 ];
 
 // Secoes administrativas: gestao de equipe, contas ML/Amazon conectadas,
