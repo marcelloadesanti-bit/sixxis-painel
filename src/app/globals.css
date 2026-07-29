@@ -14,64 +14,66 @@ body {
 
 /* Modo escuro: sobrescreve globalmente as classes utilitarias de
    cinza/branco usadas de forma consistente em todas as paginas do painel,
-   para cobrir o app inteiro sem precisar editar tela por tela. */
+   para cobrir o app inteiro sem precisar editar tela por tela.
+   Paleta neutra (grafite/preto quente), no estilo da interface do Claude --
+   substitui a paleta anterior com tom azulado por uma mais neutra. */
 .dark body {
-  background-color: #0f1420;
-  color: #e5e7eb;
+  background-color: #1a1918;
+  color: #ececec;
 }
 
 .dark .bg-white {
-  background-color: #1a2033;
+  background-color: #262624;
 }
 
 .dark .bg-gray-50 {
-  background-color: #10162a;
+  background-color: #201f1d;
 }
 
 .dark .bg-gray-100 {
-  background-color: #1f2740;
+  background-color: #322f2c;
 }
 
 .dark .border-gray-200,
 .dark .border-gray-300 {
-  border-color: #2a3148;
+  border-color: #3a3733;
 }
 
 .dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #2a3148;
+  border-color: #3a3733;
 }
 
 .dark .text-gray-900,
 .dark .text-gray-800 {
-  color: #f1f5f9;
+  color: #f5f4f2;
 }
 
 .dark .text-gray-700 {
-  color: #d3dae8;
+  color: #d6d3cf;
 }
 
 .dark .text-gray-600 {
-  color: #aab4c8;
+  color: #b0aca6;
 }
 
 .dark .text-gray-500 {
-  color: #8a94ac;
+  color: #8c8781;
 }
 
 .dark .text-gray-400 {
-  color: #6b7690;
+  color: #6d6863;
 }
 
 .dark .hover\:bg-gray-50:hover,
 .dark .hover\:bg-gray-100:hover {
-  background-color: #232b45;
+  background-color: #3d3a36;
 }
 
 .dark input,
 .dark select {
-  background-color: #10162a;
-  color: #e5e7eb;
+  background-color: #201f1d;
+  color: #ececec;
 }
 
 .dark .bg-black\/20 {
