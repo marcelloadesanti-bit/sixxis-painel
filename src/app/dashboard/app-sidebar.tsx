@@ -1,8 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { secoesVisiveis, secoesAdminVisiveis, temAcessoSubsecao, type PermissoesUsuario } from "@/lib/permissoes";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  secoesVisiveis,
+  secoesAdminVisiveis,
+  temAcessoSubsecao,
+  GRUPOS_SIDEBAR,
+  type PermissoesUsuario,
+  type CodigoGrupoSidebar,
+} from "@/lib/permissoes";
+import { IconeSecao } from "@/lib/icone-secao";
 import { useSidebar } from "./sidebar-context";
 
 type SubItemMenu = { href: string; label: string };
@@ -11,6 +21,7 @@ type ItemMenu = {
   href: string;
   label: string;
   icon: string;
+  grupo?: CodigoGrupoSidebar;
   subitens?: SubItemMenu[];
 };
 
@@ -43,6 +54,7 @@ export default function AppSidebar({
       href: s.href,
       label: s.label,
       icon: s.icon,
+      grupo: s.grupo,
       subitens: subitens.length > 0 ? subitens : undefined,
     };
   });
@@ -60,6 +72,7 @@ export default function AppSidebar({
       href: s.href,
       label: s.label,
       icon: s.icon,
+      grupo: s.grupo,
       subitens: subitens.length > 0 ? subitens : undefined,
     };
   });
@@ -70,7 +83,7 @@ export default function AppSidebar({
   // exigirMaster em lib/permissoes-guard.ts) -- por isso entra direto aqui,
   // fora do sistema generico de SECOES_ADMIN, visivel so para o master.
   if (isAdmin) {
-    itens.push({ href: "/dashboard/sige/comissao", label: "Metas & Comissão", icon: "💰" });
+    itens.push({ href: "/dashboard/sige/comissao", label: "Metas & Comissão", icon: "Target", grupo: "gestao" });
   }
 
   const ativo = (href: string) =>
@@ -86,6 +99,76 @@ export default function AppSidebar({
     const maisEspecifico = candidatos.reduce((a, b) => (b.href.length > a.href.length ? b : a));
     return maisEspecifico.href === sub.href;
   };
+
+  // Grupo que contem a secao ativa agora -- usado so como valor inicial do
+  // estado de grupos abertos; a partir dai o usuario controla livremente
+  // quais grupos ficam abertos/fechados.
+  const grupoAtivoInicial = itens.find((item) => item.grupo && ativo(item.href))?.grupo;
+
+  const [gruposAbertos, setGruposAbertos] = useState<Set<CodigoGrupoSidebar>>(
+    () => new Set(grupoAtivoInicial ? [grupoAtivoInicial] : [])
+  );
+
+  function alternarGrupo(codigo: CodigoGrupoSidebar) {
+    setGruposAbertos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(codigo)) novo.delete(codigo);
+      else novo.add(codigo);
+      return novo;
+    });
+  }
+
+  // Itens sem grupo (Resumo) ficam soltos no topo; os demais sao agrupados
+  // por CodigoGrupoSidebar e renderizados na ordem de GRUPOS_SIDEBAR.
+  const itensSoltos = itens.filter((item) => !item.grupo);
+  const itensPorGrupo = new Map<CodigoGrupoSidebar, ItemMenu[]>();
+  for (const item of itens) {
+    if (!item.grupo) continue;
+    const lista = itensPorGrupo.get(item.grupo) ?? [];
+    lista.push(item);
+    itensPorGrupo.set(item.grupo, lista);
+  }
+
+  function renderItem(item: ItemMenu) {
+    return (
+      <li key={item.href} className="w-full">
+        {item.subitens ? (
+          <>
+            <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-800">
+              <IconeSecao chave={item.icon} className="h-[18px] w-[18px] shrink-0" />
+              {item.label}
+            </div>
+            <ul className="ml-4 flex flex-col gap-0.5 border-l border-gray-200 pl-4">
+              {item.subitens.map((sub) => (
+                <li key={sub.href}>
+                  <Link
+                    href={sub.href}
+                    className={`block rounded px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                      subitemAtivo(sub, item.subitens!)
+                        ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
+                        : "text-gray-600"
+                    }`}
+                  >
+                    {sub.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <Link
+            href={item.href}
+            className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-gray-50 ${
+              ativo(item.href) ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]" : "text-gray-700"
+            }`}
+          >
+            <IconeSecao chave={item.icon} className="h-[18px] w-[18px] shrink-0" />
+            {item.label}
+          </Link>
+        )}
+      </li>
+    );
+  }
 
   return (
     <nav
@@ -109,56 +192,45 @@ export default function AppSidebar({
         </button>
       </div>
 
-      <ul className={`flex flex-1 flex-col gap-1 overflow-y-auto py-3 ${aberto ? "px-3" : "items-center px-2"}`}>
-        {itens.map((item) => (
-          <li key={item.href} className="w-full">
-            {!aberto ? (
+      {!aberto ? (
+        <ul className="flex flex-1 flex-col items-center gap-1 overflow-y-auto px-2 py-3">
+          {itens.map((item) => (
+            <li key={item.href}>
               <Link
                 href={item.href}
                 title={item.label}
-                className={`flex h-10 w-10 items-center justify-center rounded text-xl hover:bg-gray-100 ${
+                className={`flex h-10 w-10 items-center justify-center rounded hover:bg-gray-100 ${
                   ativo(item.href) ? "bg-[var(--color-sixxis-navy)]/10 text-[var(--color-sixxis-navy)]" : "text-gray-500"
                 }`}
               >
-                {item.icon}
+                <IconeSecao chave={item.icon} className="h-5 w-5" />
               </Link>
-            ) : item.subitens ? (
-              <>
-                <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-800">
-                  <span className="text-lg">{item.icon}</span>
-                  {item.label}
-                </div>
-                <ul className="ml-4 flex flex-col gap-0.5 border-l border-gray-200 pl-4">
-                  {item.subitens.map((sub) => (
-                    <li key={sub.href}>
-                      <Link
-                        href={sub.href}
-                        className={`block rounded px-3 py-1.5 text-sm hover:bg-gray-50 ${
-                          subitemAtivo(sub, item.subitens!)
-                            ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
-                            : "text-gray-600"
-                        }`}
-                      >
-                        {sub.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <Link
-                href={item.href}
-                className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-gray-50 ${
-                  ativo(item.href) ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]" : "text-gray-700"
-                }`}
-              >
-                <span className="text-lg">{item.icon}</span>
-                {item.label}
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
+          {itensSoltos.map(renderItem)}
+
+          {GRUPOS_SIDEBAR.filter((g) => (itensPorGrupo.get(g.codigo)?.length ?? 0) > 0).map((grupo) => {
+            const itensDoGrupo = itensPorGrupo.get(grupo.codigo)!;
+            const grupoAberto = gruposAbertos.has(grupo.codigo);
+            return (
+              <div key={grupo.codigo} className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => alternarGrupo(grupo.codigo)}
+                  className="flex w-full items-center justify-between rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600"
+                >
+                  {grupo.label}
+                  {grupoAberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+                {grupoAberto && <ul className="flex flex-col gap-1">{itensDoGrupo.map(renderItem)}</ul>}
+              </div>
+            );
+          })}
+        </ul>
+      )}
     </nav>
   );
 }
