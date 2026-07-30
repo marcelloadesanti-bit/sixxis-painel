@@ -23,15 +23,69 @@
 // um painel com o detalhe (quais contas venderam, quais produtos/SKUs).
 
 import { useMemo, useState } from "react";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 
 export type ItemPedidoView = { sku: string | null; titulo: string; quantidade: number };
 export type PedidoHorarioView = { contaId: string; dataCriacao: string; itens: ItemPedidoView[] };
 export type ContaFiltroView = { id: string; nome: string; cor: string };
 export type PontoEstadoView = { estado: string; quantidade: number };
-export type RankingSkuView = { sku: string; quantidade: number };
+export type RankingSkuView = { sku: string; quantidade: number; valor?: number };
 
 const COR_CONSOLIDADO = "#9D00FF";
 const COR_PADRAO_FALLBACK = "#64748b";
+
+// Paleta exclusiva para o grafico de participacao por SKU -- deliberadamente
+// diferente da paleta de cores de conta (PALETA_CORES_CONTA em
+// account-colors.ts), para nunca ser confundida com a cor de uma conta em
+// outro grafico do painel.
+const PALETA_SKU = [
+  "#0d9488", // teal-600
+  "#0369a1", // sky-700
+  "#7c3aed", // violet-600
+  "#be123c", // rose-700
+  "#a16207", // amber-700
+  "#4d7c0f", // lime-700
+  "#1e40af", // blue-800
+  "#701a75", // fuchsia-800
+  "#155e75", // cyan-800
+];
+const COR_OUTROS_SKU = "#94a3b8"; // slate-400, para o agrupamento "Outros"
+
+const formatarMoedaBRL = (valor: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
+
+// --- Curva ABC de horarios (Pareto) ---
+
+type ClasseAbc = "A" | "B" | "C";
+type PontoAbc = { hora: number; quantidade: number; pctIndividual: number; pctAcumulado: number; classe: ClasseAbc };
+
+const COR_CLASSE_ABC: Record<ClasseAbc, string> = {
+  A: "#15803d", // green-700 -- horas que mais concentram vendas
+  B: "#b45309", // amber-700
+  C: "#94a3b8", // slate-400
+};
+
+// Classificacao ABC classica (Pareto): ordena as horas do dia (0-23,
+// somando todos os dias do periodo/filtro) da mais vendida para a menos
+// vendida, calcula o percentual acumulado e classifica em A (ate 80% das
+// vendas), B (ate 95%) e C (o resto) -- mesma logica de curva ABC usada em
+// analise de estoque/SKU, aplicada aqui ao horario de compra.
+function classificarAbc(totalPorHora: number[]): PontoAbc[] {
+  const total = totalPorHora.reduce((s, q) => s + q, 0);
+  if (total === 0) return [];
+  const ordenado = totalPorHora
+    .map((quantidade, hora) => ({ hora, quantidade }))
+    .filter((p) => p.quantidade > 0)
+    .sort((a, b) => b.quantidade - a.quantidade);
+
+  let acumulado = 0;
+  return ordenado.map((item) => {
+    acumulado += item.quantidade;
+    const pctAcumulado = (acumulado / total) * 100;
+    const classe: ClasseAbc = pctAcumulado <= 80 ? "A" : pctAcumulado <= 95 ? "B" : "C";
+    return { ...item, pctIndividual: (item.quantidade / total) * 100, pctAcumulado, classe };
+  });
+}
 
 const DIAS_SEMANA = [
   "Domingo",
@@ -139,6 +193,46 @@ export default function MetricasVendasView({
 
   const matriz = useMemo(() => construirMatriz(pedidosFiltrados), [pedidosFiltrados]);
   const stats = useMemo(() => calcularStats(matriz), [matriz]);
+
+  // Curva ABC de horarios: reaproveita a mesma matriz (ja respeita o filtro
+  // de pilula por conta) somando os 7 dias para cada hora -- zero dado novo,
+  // so uma leitura diferente do mesmo grafico acima.
+  const totalPorHora = useMemo(() => {
+    const arr = new Array(24).fill(0);
+    for (let h = 0; h < 24; h++) for (let d = 0; d < 7; d++) arr[h] += matriz[d][h];
+    return arr;
+  }, [matriz]);
+  const curvaAbc = useMemo(() => classificarAbc(totalPorHora), [totalPorHora]);
+  const resumoAbc = useMemo(() => {
+    const grupos: Record<ClasseAbc, { horas: number; quantidade: number }> = {
+      A: { horas: 0, quantidade: 0 },
+      B: { horas: 0, quantidade: 0 },
+      C: { horas: 0, quantidade: 0 },
+    };
+    for (const p of curvaAbc) {
+      grupos[p.classe].horas++;
+      grupos[p.classe].quantidade += p.quantidade;
+    }
+    return grupos;
+  }, [curvaAbc]);
+
+  // Participacao por SKU no faturamento: mesmo ranking ja usado no card
+  // "Mais vendidos por SKU" (maisVendidosPorSku), so que ordenado por valor
+  // em vez de quantidade -- agrupa o restante (alem dos 8 maiores) em
+  // "Outros" para o grafico de pizza nao ficar ilegivel com dezenas de fatias.
+  const dadosPizzaSku = useMemo(() => {
+    const comValor = maisVendidosPorSku.filter((s) => (s.valor ?? 0) > 0);
+    if (comValor.length === 0) return [];
+    const ordenado = [...comValor].sort((a, b) => (b.valor ?? 0) - (a.valor ?? 0));
+    const top = ordenado.slice(0, 8);
+    const restante = ordenado.slice(8).reduce((s, r) => s + (r.valor ?? 0), 0);
+    const fatias = top.map((r, i) => ({ sku: r.sku, valor: r.valor ?? 0, cor: PALETA_SKU[i % PALETA_SKU.length] }));
+    if (restante > 0) fatias.push({ sku: "Outros", valor: restante, cor: COR_OUTROS_SKU });
+    return fatias;
+  }, [maisVendidosPorSku]);
+  const totalPizzaSku = dadosPizzaSku.reduce((s, f) => s + f.valor, 0);
+
+  const [detalheAberto, setDetalheAberto] = useState(true);
 
   const detalheCelula = useMemo(() => {
     if (!celulaSelecionada) return null;
@@ -357,48 +451,156 @@ export default function MetricasVendasView({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Vendas por estado</p>
-          {vendasPorEstado.length === 0 ? (
-            <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {vendasPorEstado.map((e) => (
-                <li key={e.estado} className="flex justify-between gap-2">
-                  <span className="truncate text-gray-600 dark:text-gray-300">{e.estado}</span>
-                  <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{e.quantidade}</span>
-                </li>
+      {/* Curva ABC de horarios (Pareto) -- reaproveita o mesmo filtro de conta acima */}
+      <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <p className="mb-1 text-sm font-semibold text-gray-700 dark:text-gray-300">Curva ABC de horários</p>
+        <p className="mb-3 text-xs text-gray-400">
+          Horas do dia ordenadas pelo volume de vendas (todos os dias somados) — classe A concentra até 80% das
+          vendas, B até 95%, C o restante.
+        </p>
+        {curvaAbc.length === 0 ? (
+          <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+        ) : (
+          <>
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              {(["A", "B", "C"] as ClasseAbc[]).map((classe) => (
+                <div key={classe} className="rounded border border-gray-100 p-2 dark:border-gray-700">
+                  <span
+                    className="mb-1 inline-block rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                    style={{ backgroundColor: COR_CLASSE_ABC[classe] }}
+                  >
+                    Classe {classe}
+                  </span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {resumoAbc[classe].horas} hora(s) · {resumoAbc[classe].quantidade} pedido(s)
+                  </p>
+                </div>
               ))}
-            </ul>
-          )}
-          {estadoTotalPeriodo > 0 && (
-            <p className="mt-2 text-xs text-gray-400">
-              Endereço resolvido para {estadoResolvidoTotal} de {estadoTotalPeriodo} pedidos do período.
-            </p>
-          )}
-          {estadoAmostraParcial && (
-            <p className="mt-1 text-xs text-amber-600">
-              Os demais serão resolvidos automaticamente nas próximas visitas a esta página.
-            </p>
-          )}
-        </div>
+            </div>
+            <div className="space-y-1">
+              {curvaAbc.map((p) => (
+                <div key={p.hora} className="flex items-center gap-2">
+                  <span className="w-10 shrink-0 text-xs text-gray-500 dark:text-gray-400">{p.hora}h</span>
+                  <div className="h-3.5 flex-1 overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-700">
+                    <div
+                      className="h-full rounded-sm"
+                      style={{ width: `${p.pctIndividual}%`, backgroundColor: COR_CLASSE_ABC[p.classe] }}
+                    />
+                  </div>
+                  <span className="w-8 shrink-0 text-right text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {p.quantidade}
+                  </span>
+                  <span className="w-12 shrink-0 text-right text-[10px] text-gray-400">
+                    {p.pctAcumulado.toFixed(0)}% ac.
+                  </span>
+                  <span
+                    className="w-5 shrink-0 rounded text-center text-[10px] font-bold text-white"
+                    style={{ backgroundColor: COR_CLASSE_ABC[p.classe] }}
+                  >
+                    {p.classe}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
+      {/* Participacao por SKU no faturamento -- mesmo padrao do grafico "por conta" do Resumo */}
+      {dadosPizzaSku.length > 0 && (
         <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Mais vendidos por SKU</p>
-          {maisVendidosPorSku.length === 0 ? (
-            <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {maisVendidosPorSku.slice(0, 8).map((s) => (
-                <li key={s.sku} className="flex justify-between gap-2">
-                  <span className="truncate text-gray-600 dark:text-gray-300">{s.sku}</span>
-                  <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{s.quantidade} un.</span>
-                </li>
-              ))}
+          <p className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Participação por SKU no faturamento
+          </p>
+          <div className="flex flex-col items-center gap-4 sm:flex-row">
+            <ResponsiveContainer width="100%" height={220} className="sm:max-w-[220px]">
+              <PieChart>
+                <Pie data={dadosPizzaSku} dataKey="valor" nameKey="sku" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                  {dadosPizzaSku.map((f) => (
+                    <Cell key={f.sku} fill={f.cor} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatarMoedaBRL(Number(value) || 0)} />
+              </PieChart>
+            </ResponsiveContainer>
+            <ul className="flex flex-1 flex-col gap-2">
+              {dadosPizzaSku.map((f) => {
+                const pct = totalPizzaSku > 0 ? (f.valor / totalPizzaSku) * 100 : 0;
+                return (
+                  <li key={f.sku} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: f.cor }} />
+                      <span className="truncate text-gray-700 dark:text-gray-300">{f.sku}</span>
+                    </span>
+                    <span className="shrink-0 text-gray-600 dark:text-gray-400">
+                      {formatarMoedaBRL(f.valor)} · {pct.toFixed(1)}%
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
-          )}
+          </div>
         </div>
+      )}
+
+      {/* Vendas por estado + Mais vendidos por SKU -- recolhivel para nao ocupar
+          espaco fixo na pagina quando o usuario ja tiver visto o detalhe */}
+      <div className="rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <button
+          type="button"
+          onClick={() => setDetalheAberto((v) => !v)}
+          className="flex w-full items-center justify-between p-4 text-left"
+        >
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Detalhamento por estado e SKU
+          </span>
+          <span className="text-xs text-gray-400">{detalheAberto ? "Recolher ▴" : "Expandir ▾"}</span>
+        </button>
+        {detalheAberto && (
+          <div className="grid grid-cols-1 gap-4 border-t border-gray-100 p-4 dark:border-gray-700 sm:grid-cols-2">
+            <div>
+              <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Vendas por estado</p>
+              {vendasPorEstado.length === 0 ? (
+                <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {vendasPorEstado.map((e) => (
+                    <li key={e.estado} className="flex justify-between gap-2">
+                      <span className="truncate text-gray-600 dark:text-gray-300">{e.estado}</span>
+                      <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{e.quantidade}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {estadoTotalPeriodo > 0 && (
+                <p className="mt-2 text-xs text-gray-400">
+                  Endereço resolvido para {estadoResolvidoTotal} de {estadoTotalPeriodo} pedidos do período.
+                </p>
+              )}
+              {estadoAmostraParcial && (
+                <p className="mt-1 text-xs text-amber-600">
+                  Os demais serão resolvidos automaticamente nas próximas visitas a esta página.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Mais vendidos por SKU</p>
+              {maisVendidosPorSku.length === 0 ? (
+                <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {maisVendidosPorSku.slice(0, 8).map((s) => (
+                    <li key={s.sku} className="flex justify-between gap-2">
+                      <span className="truncate text-gray-600 dark:text-gray-300">{s.sku}</span>
+                      <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{s.quantidade} un.</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
