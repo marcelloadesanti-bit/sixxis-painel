@@ -664,44 +664,43 @@ export function agruparPorHorario(pedidos: { dataCriacao: string }[]): PontoHora
 }
 
 export type PontoEstado = { estado: string; quantidade: number };
+export type EstadoResolvido = { pedidoId: number; estado: string; cidade: string | null };
 
-// Teto de chamadas de shipment por carregamento para o agregado de estado --
-// o endereco do comprador NAO vem no /orders/search, exige 1 chamada de
-// shipment por pedido (mesmo endpoint usado em getEnvioPedido). Isso e bem
-// mais caro que o resto das metricas de Vendas (que reaproveitam dados ja
-// buscados) -- por isso o teto e o aviso de amostra parcial abaixo.
-// 30/07/2026: alinhado ao novo CAP_ENDERECOS_GLOBAL (400) de vendas/page.tsx,
-// agora que o projeto roda com maxDuration=300 (Fluid Compute ja habilitado
-// no plano Hobby, sem custo). Esse teto aqui e por conta (o corte real que
-// importa e o global, feito antes de agrupar por conta em vendas/page.tsx).
-const TETO_ENDERECOS = 400;
-
-// Agrega pedidos por estado do endereco de entrega. Quando o periodo tem mais
-// pedidos que TETO_ENDERECOS, o resultado e uma amostra dos pedidos mais
-// recentes (nao o total exato) -- sinalizado em amostraParcial, no mesmo
-// espirito do "cortado"/"amostraParcial" ja usado em Vendas/Faturamento.
-export async function getVendasPorEstado(
+// 30/07/2026: substituido por um cache permanente (tabela
+// pedido_envio_cache no Supabase, ver src/lib/mercadolivre/estado-cache.ts).
+// Esta funcao agora e so a camada de API pura -- resolve estado/cidade de
+// uma lista de pedidos (1 chamada de shipment por pedido, o endereco NAO vem
+// no /orders/search). So deve ser chamada com pedidos que AINDA NAO estao no
+// cache -- ver getVendasPorEstadoComCache no arquivo acima, que decide quais
+// pedidos precisam de fato passar por aqui. Concorrencia limitada (mesmo
+// padrao de buscarVisitas em items.ts) para nao disparar rate-limit do ML
+// quando o cache ainda esta "frio" (ex: primeira vez que um periodo grande e
+// aberto).
+export async function resolverEstadoPedidos(
   accessToken: string,
-  pedidos: { id: number }[]
-): Promise<{ porEstado: PontoEstado[]; amostraParcial: boolean; amostraTamanho: number }> {
-  const amostra = pedidos.slice(0, TETO_ENDERECOS);
-  const contagem = new Map<string, number>();
+  pedidos: { id: number }[],
+  concorrencia = 10
+): Promise<EstadoResolvido[]> {
+  const resultados: EstadoResolvido[] = [];
 
-  await Promise.all(
-    amostra.map(async (p) => {
-      try {
-        const envio = await getEnvioPedido(accessToken, p.id);
-        const estado = envio?.estado ?? "Não informado";
-        contagem.set(estado, (contagem.get(estado) ?? 0) + 1);
-      } catch {
-        // um pedido sem endereco/erro pontual nao deve derrubar o agregado inteiro
-      }
-    })
-  );
+  for (let i = 0; i < pedidos.length; i += concorrencia) {
+    const lote = pedidos.slice(i, i + concorrencia);
+    const resolvidos = await Promise.all(
+      lote.map(async (p) => {
+        try {
+          const envio = await getEnvioPedido(accessToken, p.id);
+          return {
+            pedidoId: p.id,
+            estado: envio?.estado ?? "Não informado",
+            cidade: envio?.cidade ?? null,
+          } as EstadoResolvido;
+        } catch {
+          return null;
+        }
+      })
+    );
+    for (const r of resolvidos) if (r) resultados.push(r);
+  }
 
-  const porEstado = Array.from(contagem.entries())
-    .map(([estado, quantidade]) => ({ estado, quantidade }))
-    .sort((a, b) => b.quantidade - a.quantidade);
-
-  return { porEstado, amostraParcial: pedidos.length > TETO_ENDERECOS, amostraTamanho: amostra.length };
+  return resultados;
 }
