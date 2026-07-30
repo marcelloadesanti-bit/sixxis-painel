@@ -113,7 +113,13 @@ const TIPOS_RELATORIO: { key: string; label: string; disponivel: boolean }[] = [
 ];
 
 export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
-  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set(contas.map((c) => c.id)));
+  // Por padrao, so contas Mercado Livre e Amazon ja integradas vem
+  // selecionadas. Canais manuais (ex: Netshoes/Magalu, Shopee, TikTok Shop)
+  // ficam visiveis na lista, mas fora de selecao, ate ganharem integracao
+  // propria -- evita relatorio "sujo" com canais ainda sem dado real.
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(
+    () => new Set(contas.filter((c) => c.id.startsWith("ml:") || c.id.startsWith("amazon:")).map((c) => c.id))
+  );
   const [preset, setPreset] = useState<PresetKey>("7dias");
   const [deCustom, setDeCustom] = useState(formatarData(new Date(Date.now() - 6 * 86400000)));
   const [ateCustom, setAteCustom] = useState(formatarData(new Date()));
@@ -260,29 +266,26 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
             </div>
 
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Contas</p>
-            <div className="mb-4 flex flex-wrap gap-2">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
               <button
                 onClick={alternarTodas}
-                className={`rounded-full px-3 py-1.5 text-sm ${
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
                   todasSelecionadas
                     ? "bg-[var(--color-sixxis-navy)] text-white"
                     : "border border-gray-300 text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                Todas
+                Consolidado (todas)
               </button>
               {contas.map((c) => (
-                <button
+                <label
                   key={c.id}
-                  onClick={() => alternarConta(c.id)}
-                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
-                    selecionadas.has(c.id) ? "border-transparent text-white" : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                  }`}
-                  style={selecionadas.has(c.id) ? { backgroundColor: c.cor } : undefined}
+                  className="flex items-center gap-1.5 rounded-full border border-gray-300 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200"
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
+                  <input type="checkbox" checked={selecionadas.has(c.id)} onChange={() => alternarConta(c.id)} />
+                  <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
                   {c.nome}
-                </button>
+                </label>
               ))}
               {contas.length === 0 && <p className="text-sm text-gray-400">Nenhuma conta disponível.</p>}
             </div>
