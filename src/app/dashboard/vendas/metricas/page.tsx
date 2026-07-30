@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getVendas, agruparPorHorario, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
+import { getVendas, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
 import { getVendasPorEstadoComCache } from "@/lib/mercadolivre/estado-cache";
 import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
@@ -14,6 +14,12 @@ import MetricasVendasView from "../metricas-vendas-view";
 // para crescer (mais graficos/quebras) sem lotar o Resumo. Reaproveita o
 // mesmo componente de apresentacao (MetricasVendasView) e a mesma logica de
 // cache de estado (getVendasPorEstadoComCache) do Resumo.
+//
+// 30/07/2026 (Fase 7): "Horario de compra" virou "Concentracao de vendas por
+// dia e horario" (matriz dia x hora + filtro de pilula por conta), entao
+// agora passamos pedidosHorario (contaId + dataCriacao) e a lista de contas
+// em vez do array ja agregado por hora -- a agregacao e o filtro ficam
+// dentro do proprio MetricasVendasView (client component).
 export const maxDuration = 300;
 
 function formatarData(d: Date) {
@@ -81,7 +87,12 @@ export default async function MetricasVendasPage({
     .flatMap((r) => r.vendas?.pedidos ?? [])
     .sort((a, b) => new Date(b.dataCriacao).getTime() - new Date(a.dataCriacao).getTime());
 
-  const horario = agruparPorHorario(todosPedidos);
+  const pedidosHorario = todosPedidos.map((p) => ({ contaId: p.contaId, dataCriacao: p.dataCriacao }));
+  const contasFiltroHorario = contasParaBuscar.map((c) => ({
+    id: c.id,
+    nome: nomeConta(c),
+    cor: (c.cor as string | null) ?? COR_PADRAO,
+  }));
 
   const pedidosPorContaTodos = new Map<string, { id: number; dataCriacao: string }[]>();
   for (const p of todosPedidos) {
@@ -215,7 +226,8 @@ export default async function MetricasVendasPage({
       </p>
 
       <MetricasVendasView
-        horario={horario}
+        pedidosHorario={pedidosHorario}
+        contas={contasFiltroHorario}
         vendasPorEstado={vendasPorEstado}
         estadoAmostraParcial={estadoAmostraParcial}
         estadoResolvidoTotal={estadoResolvidoTotal}
