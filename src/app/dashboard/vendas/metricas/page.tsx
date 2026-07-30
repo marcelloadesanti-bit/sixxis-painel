@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getVendas, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
 import { getVendasPorEstadoComCache } from "@/lib/mercadolivre/estado-cache";
-import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
+import { getMaisVendidosPorSkuComMapa, type RankingSku } from "@/lib/mercadolivre/items";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import MetricasVendasView from "../metricas-vendas-view";
@@ -87,7 +87,6 @@ export default async function MetricasVendasPage({
     .flatMap((r) => r.vendas?.pedidos ?? [])
     .sort((a, b) => new Date(b.dataCriacao).getTime() - new Date(a.dataCriacao).getTime());
 
-  const pedidosHorario = todosPedidos.map((p) => ({ contaId: p.contaId, dataCriacao: p.dataCriacao }));
   const contasFiltroHorario = contasParaBuscar.map((c) => ({
     id: c.id,
     nome: nomeConta(c),
@@ -111,12 +110,15 @@ export default async function MetricasVendasPage({
     console.error("Erro ao agregar vendas por estado (Metricas):", err);
   }
 
+  const skuPorItemIdGlobal = new Map<string, string>();
   const rankingPorSkuPorConta = await Promise.all(
     resultados.map(async (r) => {
       if (!r.accessToken || !r.vendas?.porProduto?.length) return [] as RankingSku[];
       const produtosConta = [...r.vendas.porProduto].sort((a, b) => b.quantidade - a.quantidade).slice(0, 30);
       try {
-        return await getMaisVendidosPorSku(r.accessToken, produtosConta);
+        const { ranking, skuPorItemId } = await getMaisVendidosPorSkuComMapa(r.accessToken, produtosConta);
+        for (const [itemId, sku] of skuPorItemId) skuPorItemIdGlobal.set(itemId, sku);
+        return ranking;
       } catch (err) {
         console.error(`Erro ao buscar SKU dos produtos vendidos de ${r.nome} (Metricas):`, err);
         return [] as RankingSku[];
@@ -136,6 +138,16 @@ export default async function MetricasVendasPage({
     }
   }
   const maisVendidosPorSku = Array.from(porSkuConsolidado.values()).sort((a, b) => b.quantidade - a.quantidade);
+
+  const pedidosHorario = todosPedidos.map((p) => ({
+    contaId: p.contaId,
+    dataCriacao: p.dataCriacao,
+    itens: p.itens.map((it) => ({
+      sku: skuPorItemIdGlobal.get(it.itemId) ?? null,
+      titulo: it.titulo,
+      quantidade: it.quantidade,
+    })),
+  }));
 
   const presets: { label: string; de: string; ate: string }[] = [
     { label: "Hoje", de: formatarData(hoje), ate: formatarData(hoje) },
