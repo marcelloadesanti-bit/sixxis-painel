@@ -28,7 +28,12 @@ import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
 // chamada de shipment por pedido, ate um teto global (CAP_ENDERECOS_GLOBAL
 // abaixo) -- por isso o cuidado com o timeout continua valendo, e ate mais
 // importante agora.
-export const maxDuration = 60;
+//
+// 30/07/2026 (correcao): confirmado que o projeto ja tem Fluid Compute
+// habilitado na Vercel, o que permite maxDuration ate 300s MESMO no plano
+// Hobby (sem custo) -- nao e mais soft-limitado a 60s como antes. Subindo
+// para 300 para dar bem mais folga ao teto de enderecos abaixo.
+export const maxDuration = 300;
 
 const PEDIDOS_POR_PAGINA = 15;
 // Teto GLOBAL (somando todas as contas) de chamadas de shipment para o
@@ -37,7 +42,8 @@ const PEDIDOS_POR_PAGINA = 15;
 // estourar o tempo de carregamento da pagina com muitas contas/pedidos.
 // Quando o periodo tem mais pedidos que isso, o card mostra um aviso de
 // amostra parcial (mesma logica ja usada em "cortado"/"amostraParcial").
-const CAP_ENDERECOS_GLOBAL = 120;
+// Com maxDuration=300 (ver acima) da para subir esse teto com folga.
+const CAP_ENDERECOS_GLOBAL = 400;
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
