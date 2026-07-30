@@ -670,7 +670,11 @@ export type PontoEstado = { estado: string; quantidade: number };
 // shipment por pedido (mesmo endpoint usado em getEnvioPedido). Isso e bem
 // mais caro que o resto das metricas de Vendas (que reaproveitam dados ja
 // buscados) -- por isso o teto e o aviso de amostra parcial abaixo.
-const TETO_ENDERECOS = 150;
+// 30/07/2026: alinhado ao novo CAP_ENDERECOS_GLOBAL (400) de vendas/page.tsx,
+// agora que o projeto roda com maxDuration=300 (Fluid Compute ja habilitado
+// no plano Hobby, sem custo). Esse teto aqui e por conta (o corte real que
+// importa e o global, feito antes de agrupar por conta em vendas/page.tsx).
+const TETO_ENDERECOS = 400;
 
 // Agrega pedidos por estado do endereco de entrega. Quando o periodo tem mais
 // pedidos que TETO_ENDERECOS, o resultado e uma amostra dos pedidos mais
