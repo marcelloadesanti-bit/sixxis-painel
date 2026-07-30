@@ -20,6 +20,12 @@ import MetricasVendasView from "../metricas-vendas-view";
 // agora passamos pedidosHorario (contaId + dataCriacao) e a lista de contas
 // em vez do array ja agregado por hora -- a agregacao e o filtro ficam
 // dentro do proprio MetricasVendasView (client component).
+//
+// 30/07/2026 (Fase 10): mesma agregacao por estado (pedidos, clientes,
+// valor, SKU) do Resumo, para alimentar o mapa do Brasil -- reaproveita o
+// mapa pedidoId -> estado ja resolvido por getVendasPorEstadoComCache e o
+// mapa itemId -> sku ja resolvido para "Mais vendidos por SKU", sem
+// nenhuma chamada nova ao Mercado Livre.
 export const maxDuration = 300;
 
 function formatarData(d: Date) {
@@ -101,11 +107,13 @@ export default async function MetricasVendasPage({
   let vendasPorEstado: { estado: string; quantidade: number }[] = [];
   let estadoAmostraParcial = false;
   let estadoResolvidoTotal = 0;
+  let estadoPorPedidoMapa = new Map<number, string>();
   try {
     const resultadoEstado = await getVendasPorEstadoComCache(supabase, pedidosPorContaTodos, tokensPorConta);
     vendasPorEstado = resultadoEstado.porEstado;
     estadoAmostraParcial = resultadoEstado.amostraParcial;
     estadoResolvidoTotal = resultadoEstado.totalResolvidos;
+    estadoPorPedidoMapa = resultadoEstado.estadoPorPedido;
   } catch (err) {
     console.error("Erro ao agregar vendas por estado (Metricas):", err);
   }
@@ -147,6 +155,48 @@ export default async function MetricasVendasPage({
       titulo: it.titulo,
       quantidade: it.quantidade,
     })),
+  }));
+
+  // Mapa de vendas por estado (Fase 10) -- mesma agregacao do Resumo.
+  const porEstadoAgregado = new Map<
+    string,
+    {
+      pedidos: number;
+      valor: number;
+      clientes: Set<number>;
+      porSku: Map<string, { titulo: string; quantidade: number; valor: number }>;
+    }
+  >();
+  for (const p of todosPedidos) {
+    const estado = estadoPorPedidoMapa.get(p.id);
+    if (!estado) continue;
+    if (!porEstadoAgregado.has(estado)) {
+      porEstadoAgregado.set(estado, { pedidos: 0, valor: 0, clientes: new Set(), porSku: new Map() });
+    }
+    const e = porEstadoAgregado.get(estado)!;
+    e.pedidos += 1;
+    e.valor += p.valor;
+    if (p.compradorId) e.clientes.add(p.compradorId);
+    for (const it of p.itens) {
+      const sku = skuPorItemIdGlobal.get(it.itemId) ?? it.titulo;
+      const atual = e.porSku.get(sku);
+      if (atual) {
+        atual.quantidade += it.quantidade;
+        atual.valor += it.valor;
+      } else {
+        e.porSku.set(sku, { titulo: it.titulo, quantidade: it.quantidade, valor: it.valor });
+      }
+    }
+  }
+  const porEstadoDetalhado = Array.from(porEstadoAgregado.entries()).map(([estado, dados]) => ({
+    estado,
+    pedidos: dados.pedidos,
+    clientes: dados.clientes.size,
+    valor: dados.valor,
+    porSku: Array.from(dados.porSku.entries())
+      .map(([sku, v]) => ({ sku, titulo: v.titulo, quantidade: v.quantidade, valor: v.valor }))
+      .sort((a, b) => b.valor - a.valor)
+      .slice(0, 10),
   }));
 
   const presets: { label: string; de: string; ate: string }[] = [
@@ -245,6 +295,7 @@ export default async function MetricasVendasPage({
         estadoResolvidoTotal={estadoResolvidoTotal}
         estadoTotalPeriodo={todosPedidos.length}
         maisVendidosPorSku={maisVendidosPorSku}
+        porEstadoDetalhado={porEstadoDetalhado}
       />
     </main>
   );
