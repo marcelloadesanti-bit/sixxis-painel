@@ -21,6 +21,12 @@
 // altas/visiveis, cores por conta (consolidado = roxo #9D00FF, conta
 // filtrada = cor da propria conta) e clique numa celula dia x hora abrindo
 // um painel com o detalhe (quais contas venderam, quais produtos/SKUs).
+//
+// 30/07/2026 (v3): reordenado a pedido do usuario -- logo abaixo do
+// grafico de horario vem a participacao por SKU no faturamento (estatico,
+// sem filtro proprio), depois a Curva ABC de horarios (agora tambem
+// recolhivel, mesmo padrao de botao "Recolher/Expandir" do detalhamento
+// por estado/SKU), e por ultimo o detalhamento por estado e SKU.
 
 import { useMemo, useState } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
@@ -220,6 +226,8 @@ export default function MetricasVendasView({
   // "Mais vendidos por SKU" (maisVendidosPorSku), so que ordenado por valor
   // em vez de quantidade -- agrupa o restante (alem dos 8 maiores) em
   // "Outros" para o grafico de pizza nao ficar ilegivel com dezenas de fatias.
+  // Estatico (nao usa o filtro de pilula por conta acima -- sempre mostra o
+  // consolidado do periodo, a pedido do usuario).
   const dadosPizzaSku = useMemo(() => {
     const comValor = maisVendidosPorSku.filter((s) => (s.valor ?? 0) > 0);
     if (comValor.length === 0) return [];
@@ -232,6 +240,7 @@ export default function MetricasVendasView({
   }, [maisVendidosPorSku]);
   const totalPizzaSku = dadosPizzaSku.reduce((s, f) => s + f.valor, 0);
 
+  const [abcAberto, setAbcAberto] = useState(true);
   const [detalheAberto, setDetalheAberto] = useState(true);
 
   const detalheCelula = useMemo(() => {
@@ -451,62 +460,9 @@ export default function MetricasVendasView({
         )}
       </div>
 
-      {/* Curva ABC de horarios (Pareto) -- reaproveita o mesmo filtro de conta acima */}
-      <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <p className="mb-1 text-sm font-semibold text-gray-700 dark:text-gray-300">Curva ABC de horários</p>
-        <p className="mb-3 text-xs text-gray-400">
-          Horas do dia ordenadas pelo volume de vendas (todos os dias somados) — classe A concentra até 80% das
-          vendas, B até 95%, C o restante.
-        </p>
-        {curvaAbc.length === 0 ? (
-          <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
-        ) : (
-          <>
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              {(["A", "B", "C"] as ClasseAbc[]).map((classe) => (
-                <div key={classe} className="rounded border border-gray-100 p-2 dark:border-gray-700">
-                  <span
-                    className="mb-1 inline-block rounded px-1.5 py-0.5 text-xs font-bold text-white"
-                    style={{ backgroundColor: COR_CLASSE_ABC[classe] }}
-                  >
-                    Classe {classe}
-                  </span>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {resumoAbc[classe].horas} hora(s) · {resumoAbc[classe].quantidade} pedido(s)
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-1">
-              {curvaAbc.map((p) => (
-                <div key={p.hora} className="flex items-center gap-2">
-                  <span className="w-10 shrink-0 text-xs text-gray-500 dark:text-gray-400">{p.hora}h</span>
-                  <div className="h-3.5 flex-1 overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-700">
-                    <div
-                      className="h-full rounded-sm"
-                      style={{ width: `${p.pctIndividual}%`, backgroundColor: COR_CLASSE_ABC[p.classe] }}
-                    />
-                  </div>
-                  <span className="w-8 shrink-0 text-right text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {p.quantidade}
-                  </span>
-                  <span className="w-12 shrink-0 text-right text-[10px] text-gray-400">
-                    {p.pctAcumulado.toFixed(0)}% ac.
-                  </span>
-                  <span
-                    className="w-5 shrink-0 rounded text-center text-[10px] font-bold text-white"
-                    style={{ backgroundColor: COR_CLASSE_ABC[p.classe] }}
-                  >
-                    {p.classe}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Participacao por SKU no faturamento -- mesmo padrao do grafico "por conta" do Resumo */}
+      {/* Participacao por SKU no faturamento -- mesmo padrao do grafico "por
+      conta" do Resumo. Estatico (sem filtro proprio), logo abaixo do
+      grafico de horario a pedido do usuario. */}
       {dadosPizzaSku.length > 0 && (
         <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <p className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -543,8 +499,76 @@ export default function MetricasVendasView({
         </div>
       )}
 
+      {/* Curva ABC de horarios (Pareto) -- reaproveita o mesmo filtro de conta
+      acima. Recolhivel (mesmo padrao de botao do detalhamento por estado/SKU
+      abaixo), a pedido do usuario. */}
+      <div className="rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <button
+          type="button"
+          onClick={() => setAbcAberto((v) => !v)}
+          className="flex w-full items-center justify-between p-4 text-left"
+        >
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Curva ABC de horários</span>
+          <span className="text-xs text-gray-400">{abcAberto ? "Recolher ▴" : "Expandir ▾"}</span>
+        </button>
+        {abcAberto && (
+          <div className="border-t border-gray-100 p-4 dark:border-gray-700">
+            <p className="mb-3 text-xs text-gray-400">
+              Horas do dia ordenadas pelo volume de vendas (todos os dias somados) — classe A concentra até 80% das
+              vendas, B até 95%, C o restante.
+            </p>
+            {curvaAbc.length === 0 ? (
+              <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+            ) : (
+              <>
+                <div className="mb-3 grid grid-cols-3 gap-3">
+                  {(["A", "B", "C"] as ClasseAbc[]).map((classe) => (
+                    <div key={classe} className="rounded border border-gray-100 p-2 dark:border-gray-700">
+                      <span
+                        className="mb-1 inline-block rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                        style={{ backgroundColor: COR_CLASSE_ABC[classe] }}
+                      >
+                        Classe {classe}
+                      </span>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {resumoAbc[classe].horas} hora(s) · {resumoAbc[classe].quantidade} pedido(s)
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  {curvaAbc.map((p) => (
+                    <div key={p.hora} className="flex items-center gap-2">
+                      <span className="w-10 shrink-0 text-xs text-gray-500 dark:text-gray-400">{p.hora}h</span>
+                      <div className="h-3.5 flex-1 overflow-hidden rounded-sm bg-gray-100 dark:bg-gray-700">
+                        <div
+                          className="h-full rounded-sm"
+                          style={{ width: `${p.pctIndividual}%`, backgroundColor: COR_CLASSE_ABC[p.classe] }}
+                        />
+                      </div>
+                      <span className="w-8 shrink-0 text-right text-xs font-medium text-gray-700 dark:text-gray-300">
+                        {p.quantidade}
+                      </span>
+                      <span className="w-12 shrink-0 text-right text-[10px] text-gray-400">
+                        {p.pctAcumulado.toFixed(0)}% ac.
+                      </span>
+                      <span
+                        className="w-5 shrink-0 rounded text-center text-[10px] font-bold text-white"
+                        style={{ backgroundColor: COR_CLASSE_ABC[p.classe] }}
+                      >
+                        {p.classe}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Vendas por estado + Mais vendidos por SKU -- recolhivel para nao ocupar
-          espaco fixo na pagina quando o usuario ja tiver visto o detalhe */}
+      espaco fixo na pagina quando o usuario ja tiver visto o detalhe */}
       <div className="rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <button
           type="button"
