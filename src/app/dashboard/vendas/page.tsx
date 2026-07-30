@@ -6,7 +6,6 @@ import {
   getVendas,
   getCanceladosClassificados,
   getEnvioPedido,
-  agruparPorHorario,
   periodoDeDatas,
   type Pedido,
 } from "@/lib/mercadolivre/orders";
@@ -250,12 +249,19 @@ export default async function VendasPage({
     };
   });
 
-  // --- Fase 5: sessao de Metricas (horario, estado, SKU) ---
+  // --- Fase 5/7: sessao de Metricas (horario x dia, estado, SKU) ---
 
-  // Horario de compra: reaproveita todosPedidos (dataCriacao ja buscado),
-  // zero chamada extra a API. Pico/altura das barras calculados dentro de
-  // MetricasVendasView (compartilhado com a subpagina /vendas/metricas).
-  const horario = agruparPorHorario(todosPedidos);
+  // Horario de compra: reaproveita todosPedidos (contaId + dataCriacao ja
+  // buscados), zero chamada extra a API. A matriz dia-da-semana x hora, o
+  // filtro de pilula por conta e os calculos de pico ficam dentro de
+  // MetricasVendasView (client component, compartilhado com a subpagina
+  // /vendas/metricas).
+  const pedidosHorario = todosPedidos.map((p) => ({ contaId: p.contaId, dataCriacao: p.dataCriacao }));
+  const contasFiltroHorario = contasParaBuscar.map((c) => ({
+    id: c.id,
+    nome: nomeConta(c),
+    cor: (c.cor as string | null) ?? COR_PADRAO,
+  }));
 
   // Vendas por estado: precisa de 1 chamada de shipment por pedido (o
   // endereco nao vem no /orders/search) -- agora resolvido via cache
@@ -511,7 +517,8 @@ export default async function VendasPage({
           </Link>
         </div>
         <MetricasVendasView
-          horario={horario}
+          pedidosHorario={pedidosHorario}
+          contas={contasFiltroHorario}
           vendasPorEstado={vendasPorEstado}
           estadoAmostraParcial={estadoAmostraParcial}
           estadoResolvidoTotal={estadoResolvidoTotal}
