@@ -1,6 +1,6 @@
 // Funcoes de acesso a API de Itens (Anuncios) do Mercado Livre.
 
-import { getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
+import { getProdutosMaisVendidos, periodoDeDatas, type ProdutoRanking } from "@/lib/mercadolivre/orders";
 
 export type AnuncioResumo = {
   id: string;
@@ -87,7 +87,9 @@ async function buscarIdsConta(
 }
 
 // Busca detalhe "bulk" de varios itens de uma vez (endpoint aceita ate ~20 ids por chamada).
-async function buscarItensBulk(accessToken: string, ids: string[]): Promise<any[]> {
+// Exportada (Fase 5) para reuso em getMaisVendidosPorSku -- mesmo endpoint
+// publico, so muda o que fazemos com o resultado.
+export async function buscarItensBulk(accessToken: string, ids: string[]): Promise<any[]> {
   const itens: any[] = [];
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20);
@@ -377,4 +379,49 @@ export async function getAnuncioDetalhe(accessToken: string, itemId: string): Pr
     })),
     categoriaId: item.category_id,
   };
+}
+
+// --- Fase 5: mais vendidos por SKU (nao por anuncio) ---
+
+export type RankingSku = { sku: string; titulo: string; quantidade: number; valor: number };
+
+// Agrupa um ranking de produtos (por item/anuncio, vindo de getVendas ou
+// getProdutosMaisVendidos, ja mesclado entre contas) por SKU -- ja que o
+// mesmo SKU pode estar publicado em anuncios/contas diferentes. Busca o SKU
+// de cada item via o bulk de itens (mesmo endpoint publico ja usado acima),
+// limitado ao numero de itens distintos vendidos no periodo -- catalogo
+// pequeno (poucos produtos/variacoes), custo baixo mesmo somando essa
+// chamada extra.
+export async function getMaisVendidosPorSku(
+  accessToken: string,
+  ranking: ProdutoRanking[]
+): Promise<RankingSku[]> {
+  const ids = ranking.map((r) => r.itemId).filter((id) => id !== "sem-id");
+  if (ids.length === 0) return [];
+
+  const itens = await buscarItensBulk(accessToken, ids);
+  const skuPorId = new Map<string, string>();
+  for (const item of itens) {
+    const sku: string | null =
+      item.seller_custom_field ??
+      item.attributes?.find((a: any) => a.id === "SELLER_SKU")?.value_name ??
+      null;
+    if (sku) skuPorId.set(item.id, sku);
+  }
+
+  const porSku = new Map<string, RankingSku>();
+  for (const r of ranking) {
+    // Quando o anuncio nao tem SKU cadastrado, usa o proprio titulo como
+    // chave (nao agrupa com nada, mas tambem nao some da lista).
+    const sku = skuPorId.get(r.itemId) ?? `(sem SKU) ${r.titulo}`;
+    const atual = porSku.get(sku);
+    if (atual) {
+      atual.quantidade += r.quantidade;
+      atual.valor += r.valor;
+    } else {
+      porSku.set(sku, { sku, titulo: r.titulo, quantidade: r.quantidade, valor: r.valor });
+    }
+  }
+
+  return Array.from(porSku.values()).sort((a, b) => b.quantidade - a.quantidade);
 }

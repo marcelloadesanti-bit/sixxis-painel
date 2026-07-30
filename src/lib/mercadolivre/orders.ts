@@ -12,10 +12,18 @@ export type Pedido = {
   valor: number;
   moeda: string;
   comprador: string;
+  compradorId: number | null;
   produto: string;
   packId: string;
   contaId: string;
   contaNickname: string;
+  // Fase 5: soma do sale_fee (comissao do Mercado Livre) de cada item do
+  // pedido, ja vinda do proprio /orders/search -- sem chamada extra a API.
+  // Precisa verificacao ao vivo: o campo sale_fee normalmente vem por item
+  // ja como valor total daquele item (nao por unidade), mas isso pode variar
+  // por categoria/conta -- conferir contra o extrato oficial do ML antes de
+  // confiar 100% neste numero em decisao financeira.
+  taxaPlataforma: number;
 };
 
 export type ResumoVendas = {
@@ -49,13 +57,37 @@ type PedidoApi = {
   paid_amount?: number;
   currency_id: string;
   pack_id?: number | null;
-  buyer?: { nickname?: string };
-  order_items?: { item?: { title?: string }; quantity?: number }[];
+  buyer?: { nickname?: string; id?: number; first_name?: string; last_name?: string };
+  order_items?: { item?: { id?: string; title?: string }; quantity?: number; sale_fee?: number; unit_price?: number }[];
 };
+
+export type ProdutoRanking = {
+  itemId: string;
+  titulo: string;
+  quantidade: number;
+  valor: number;
+};
+
+// Monta o nome de exibicao do comprador: prefere nome completo (first_name +
+// last_name) quando a API devolve esse dado, caindo para o nickname quando
+// nao devolve. O Mercado Livre restringe dados pessoais do comprador por
+// LGPD em alguns casos (ex: apos uma janela de tempo da entrega) -- por
+// isso o fallback para nickname (ou "-") e obrigatorio, nao cosmetico.
+function nomeComprador(buyer: PedidoApi["buyer"]): string {
+  const nomeCompleto = [buyer?.first_name, buyer?.last_name].filter(Boolean).join(" ").trim();
+  if (nomeCompleto) return nomeCompleto;
+  return buyer?.nickname ?? "—";
+}
+
+function somarTaxaPlataforma(itens: PedidoApi["order_items"]): number {
+  return (itens ?? []).reduce((soma, oi) => soma + (oi.sale_fee ?? 0), 0);
+}
 
 // Busca TODOS os pedidos pagos de uma conta dentro do periodo informado,
 // paginando ate cobrir o total (ou ate o teto pratico da API). Retorna a
-// lista de pedidos (para extrato/tabela) e os totais consolidados.
+// lista de pedidos (para extrato/tabela), os totais consolidados, e (Fase 5)
+// um ranking de produtos vendidos por item -- calculado a partir dos MESMOS
+// pedidos ja buscados aqui, sem nenhuma chamada extra a API.
 export async function getVendas(
   accessToken: string,
   mlUserId: number,
@@ -69,11 +101,13 @@ export async function getVendas(
   unidadesVendidas: number;
   cortado: boolean;
   moeda: string | null;
+  porProduto: ProdutoRanking[];
 }> {
   let offset = 0;
   let totalNaApi = 0;
   let unidadesVendidas = 0;
   const pedidos: Pedido[] = [];
+  const porProdutoMapa = new Map<string, ProdutoRanking>();
 
   while (true) {
     const params = new URLSearchParams({
@@ -104,6 +138,23 @@ export async function getVendas(
       // (ver flag "cortado" abaixo).
       unidadesVendidas += (p.order_items ?? []).reduce((soma, oi) => soma + (oi.quantity ?? 0), 0);
 
+      // Fase 5: agrega por item (mesmo criterio de getProdutosMaisVendidos)
+      // aproveitando o loop que ja esta rodando aqui -- alimenta a sessao
+      // "Mais vendidos por SKU" de Vendas sem nenhuma chamada extra.
+      for (const oi of p.order_items ?? []) {
+        const itemId = oi.item?.id ?? "sem-id";
+        const titulo = oi.item?.title ?? "Produto sem título";
+        const quantidade = oi.quantity ?? 0;
+        const valorItem = (oi.unit_price ?? 0) * quantidade;
+        const atual = porProdutoMapa.get(itemId);
+        if (atual) {
+          atual.quantidade += quantidade;
+          atual.valor += valorItem;
+        } else {
+          porProdutoMapa.set(itemId, { itemId, titulo, quantidade, valor: valorItem });
+        }
+      }
+
       pedidos.push({
         id: p.id,
         dataCriacao: p.date_created,
@@ -116,7 +167,8 @@ export async function getVendas(
         // conta o frete pago pelo comprador). Decisao explicita do usuario.
         valor: p.total_amount ?? 0,
         moeda: p.currency_id,
-        comprador: p.buyer?.nickname ?? "—",
+        comprador: nomeComprador(p.buyer),
+        compradorId: p.buyer?.id ?? null,
         produto: p.order_items?.[0]?.item?.title
           ? p.order_items.length > 1
             ? `${p.order_items[0].item?.title} +${p.order_items.length - 1}`
@@ -125,6 +177,7 @@ export async function getVendas(
         packId: p.pack_id ? String(p.pack_id) : String(p.id),
         contaId,
         contaNickname,
+        taxaPlataforma: somarTaxaPlataforma(p.order_items),
       });
     }
 
@@ -144,6 +197,7 @@ export async function getVendas(
     unidadesVendidas,
     cortado: totalNaApi > pedidos.length,
     moeda,
+    porProduto: Array.from(porProdutoMapa.values()).sort((a, b) => b.quantidade - a.quantidade),
   };
 }
 
@@ -227,9 +281,9 @@ export async function getTotaisPorStatus(
 }
 
 export type ClassificacaoCancelados = {
-    canceladosPuros: { quantidade: number; valor: number };
-    devolvidos: { quantidade: number; valor: number };
-    moeda: string | null;
+  canceladosPuros: { quantidade: number; valor: number };
+  devolvidos: { quantidade: number; valor: number };
+  moeda: string | null;
 };
 
 // Classifica os pedidos CANCELADOS do periodo em duas categorias, no mesmo
@@ -237,81 +291,68 @@ export type ClassificacaoCancelados = {
 // testando ao vivo em 27/07/2026, comparando pedido a pedido com o que o
 // usuario via na plataforma):
 // - "Cancelados": pedido cancelado sem que um envio tenha sido despachado
-//   (sem registro de shipment, ou o registro nunca saiu do vendedor).
+// (sem registro de shipment, ou o registro nunca saiu do vendedor).
 // - "Devolvidos": pedido cujo envio chegou a ser despachado mas nao foi
-//   entregue e voltou ao remetente (shipment.status === "not_delivered" --
-//   cobre substatus como "returned", "stolen", "lost", etc).
-// Antes disso, a metrica de "devolvidos" em Vendas usava o rastreamento por
-// reclamacao (post-purchase claims) igual ao de Pos-venda, mas isso so
-// capturava por coincidencia 1 dos 9 casos reais testados (a maioria das
-// devolucoes por envio nao gera uma reclamacao formal) e era uma checagem
-// cara (reclamacao por reclamacao). O criterio por status de envio bateu
-// exatamente com os valores que o usuario reportou da plataforma.
+// entregue e voltou ao remetente (shipment.status === "not_delivered" --
+// cobre substatus como "returned", "stolen", "lost", etc).
 export async function getCanceladosClassificados(
-    accessToken: string,
-    mlUserId: number,
-    periodo: PeriodoISO
-  ): Promise<ClassificacaoCancelados> {
-    let offset = 0;
-    let totalNaApi = 0;
-    const pedidos: { id: number; valor: number }[] = [];
-    let moeda: string | null = null;
-  
-    while (true) {
-          const params = new URLSearchParams({
-                  seller: String(mlUserId),
-                  "order.status": "cancelled",
-                  "order.date_created.from": periodo.desde,
-                  "order.date_created.to": periodo.ate,
-                  limit: String(LIMITE_POR_PAGINA),
-                  offset: String(offset),
-          });
-          const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
-                  headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (!res.ok) throw new Error(`Falha ao buscar cancelados: ${res.status}`);
-          const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
-          totalNaApi = data.paging.total;
-          for (const p of data.results) {
-                  pedidos.push({ id: p.id, valor: p.total_amount ?? 0 });
-                  if (!moeda) moeda = p.currency_id;
-          }
-          offset += LIMITE_POR_PAGINA;
-          if (offset >= totalNaApi || data.results.length === 0) break;
-    }
-  
-    let canceladosPuros = { quantidade: 0, valor: 0 };
-    let devolvidos = { quantidade: 0, valor: 0 };
-  
-    const classificacoes = await Promise.all(
-          pedidos.map(async (p) => {
-                  try {
-                            const envio = await getEnvioPedido(accessToken, p.id);
-                            const foiDevolvido = envio?.status === "not_delivered";
-                            return { valor: p.valor, foiDevolvido };
-                  } catch {
-                            return { valor: p.valor, foiDevolvido: false };
-                  }
-          })
-        );
-  
-    for (const c of classificacoes) {
-          if (c.foiDevolvido) {
-                  devolvidos = { quantidade: devolvidos.quantidade + 1, valor: devolvidos.valor + c.valor };
-          } else {
-                  canceladosPuros = { quantidade: canceladosPuros.quantidade + 1, valor: canceladosPuros.valor + c.valor };
-          }
-    }
-  
-    return { canceladosPuros, devolvidos, moeda };
-}
+  accessToken: string,
+  mlUserId: number,
+  periodo: PeriodoISO
+): Promise<ClassificacaoCancelados> {
+  let offset = 0;
+  let totalNaApi = 0;
+  const pedidos: { id: number; valor: number }[] = [];
+  let moeda: string | null = null;
 
-export type ProdutoRanking = {
-  itemId: string;
-  titulo: string;
-  quantidade: number;
-  valor: number;
-};
+  while (true) {
+    const params = new URLSearchParams({
+      seller: String(mlUserId),
+      "order.status": "cancelled",
+      "order.date_created.from": periodo.desde,
+      "order.date_created.to": periodo.ate,
+      limit: String(LIMITE_POR_PAGINA),
+      offset: String(offset),
+    });
+    const res = await fetch(`${ML_API}/orders/search?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Falha ao buscar cancelados: ${res.status}`);
+    const data = (await res.json()) as { paging: { total: number }; results: PedidoApi[] };
+    totalNaApi = data.paging.total;
+    for (const p of data.results) {
+      pedidos.push({ id: p.id, valor: p.total_amount ?? 0 });
+      if (!moeda) moeda = p.currency_id;
+    }
+    offset += LIMITE_POR_PAGINA;
+    if (offset >= totalNaApi || data.results.length === 0) break;
+  }
+
+  let canceladosPuros = { quantidade: 0, valor: 0 };
+  let devolvidos = { quantidade: 0, valor: 0 };
+
+  const classificacoes = await Promise.all(
+    pedidos.map(async (p) => {
+      try {
+        const envio = await getEnvioPedido(accessToken, p.id);
+        const foiDevolvido = envio?.status === "not_delivered";
+        return { valor: p.valor, foiDevolvido };
+      } catch {
+        return { valor: p.valor, foiDevolvido: false };
+      }
+    })
+  );
+
+  for (const c of classificacoes) {
+    if (c.foiDevolvido) {
+      devolvidos = { quantidade: devolvidos.quantidade + 1, valor: devolvidos.valor + c.valor };
+    } else {
+      canceladosPuros = { quantidade: canceladosPuros.quantidade + 1, valor: canceladosPuros.valor + c.valor };
+    }
+  }
+
+  return { canceladosPuros, devolvidos, moeda };
+}
 
 type PedidoApiCompleto = PedidoApi & {
   order_items?: {
@@ -323,6 +364,9 @@ type PedidoApiCompleto = PedidoApi & {
 
 // Agrega os itens vendidos (pedidos pagos) no periodo, somando quantidade e
 // valor por produto, para montar o ranking de produtos mais vendidos.
+// Mantida para o Resumo (que nao busca a lista completa de pedidos, so
+// totais); em Vendas, prefira o campo "porProduto" que ja vem de getVendas
+// (evita duplicar a mesma busca de pedidos).
 export async function getProdutosMaisVendidos(
   accessToken: string,
   mlUserId: number,
@@ -435,6 +479,17 @@ export type EnvioPedido = {
   substatus: string | null;
   trackingNumber: string | null;
   trackingUrl: string | null;
+  // Fase 5 -- campos adicionados para o extrato enriquecido e a sessao de
+  // Metricas de Vendas. IMPORTANTE: os nomes exatos desses campos no recurso
+  // de shipment do ML (estimated_delivery_time, receiver_address, custo do
+  // envio) precisam ser confirmados ao vivo com um pedido real -- o codigo
+  // abaixo tenta os caminhos mais comuns da documentacao, com fallback para
+  // null quando o campo nao existe, para nunca quebrar a pagina por causa
+  // disso (so deixa de mostrar aquele dado especifico).
+  previsaoEntrega: string | null;
+  estado: string | null;
+  cidade: string | null;
+  custoFrete: number | null;
 };
 
 export async function getEnvioPedido(accessToken: string, orderId: number): Promise<EnvioPedido | null> {
@@ -451,7 +506,28 @@ export async function getEnvioPedido(accessToken: string, orderId: number): Prom
     substatus: string | null;
     tracking_number: string | null;
     tracking_url?: string | null;
+    shipping_option?: { estimated_delivery_time?: { date?: string } | null; cost?: number } | null;
+    estimated_delivery_time?: { date?: string } | null;
+    receiver_address?: { state?: { name?: string } | null; city?: { name?: string } | null } | null;
   };
+
+  // Custo do envio: tenta o endpoint dedicado de custos primeiro (mais
+  // confiavel para o valor efetivamente debitado do vendedor); se falhar
+  // (conta sem permissao, formato diferente, etc.), cai para o campo de
+  // custo que pode vir embutido no proprio shipment.
+  let custoFrete: number | null = s.shipping_option?.cost ?? null;
+  try {
+    const resCustos = await fetch(`${ML_API}/shipments/${s.id}/costs`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (resCustos.ok) {
+      const custos = (await resCustos.json()) as { senders?: { cost?: number }[] };
+      const custoSenders = custos.senders?.[0]?.cost;
+      if (typeof custoSenders === "number") custoFrete = custoSenders;
+    }
+  } catch {
+    // mantem o valor de shipping_option?.cost (ou null) buscado acima
+  }
 
   return {
     shipmentId: s.id,
@@ -460,6 +536,10 @@ export async function getEnvioPedido(accessToken: string, orderId: number): Prom
     substatus: s.substatus,
     trackingNumber: s.tracking_number,
     trackingUrl: s.tracking_url ?? null,
+    previsaoEntrega: s.estimated_delivery_time?.date ?? s.shipping_option?.estimated_delivery_time?.date ?? null,
+    estado: s.receiver_address?.state?.name ?? null,
+    cidade: s.receiver_address?.city?.name ?? null,
+    custoFrete,
   };
 }
 
@@ -490,7 +570,6 @@ export async function notificarStatusEnvioME1(
     throw new Error(`Falha ao notificar status do envio ${shipmentId}: ${res.status} ${corpo}`);
   }
 }
-
 
 export type PontoSerieDiaria = { data: string; quantidade: number; valor: number };
 
@@ -560,4 +639,65 @@ export async function getSerieDiariaVendas(
   return Array.from(porDia.entries())
     .map(([data, v]) => ({ data, quantidade: v.quantidade, valor: Math.round(v.valor * 100) / 100 }))
     .sort((a, b) => a.data.localeCompare(b.data));
+}
+
+// --- Fase 5: Metricas de Vendas (horario de compra + geolocalizacao) ---
+
+export type PontoHorario = { hora: number; quantidade: number };
+
+// Distribuicao de pedidos por hora do dia (0-23), a partir da lista de
+// pedidos ja buscada (dataCriacao) -- NAO faz nenhuma chamada extra a API,
+// reaproveita os dados de getVendas.
+export function agruparPorHorario(pedidos: { dataCriacao: string }[]): PontoHorario[] {
+  const contagem = new Array(24).fill(0);
+  for (const p of pedidos) {
+    // O ISO ja vem com o offset do vendedor embutido (geralmente -03:00),
+    // entao extraimos a hora direto da string em vez de usar
+    // Date.getHours() (que converteria para o fuso do servidor, UTC na
+    // Vercel, dando a hora errada). Mesmo cuidado ja usado em diaBrasilia
+    // acima para o dia.
+    const match = p.dataCriacao.match(/T(\d{2}):/);
+    const hora = match ? Number(match[1]) : new Date(p.dataCriacao).getUTCHours();
+    contagem[hora]++;
+  }
+  return contagem.map((quantidade, hora) => ({ hora, quantidade }));
+}
+
+export type PontoEstado = { estado: string; quantidade: number };
+
+// Teto de chamadas de shipment por carregamento para o agregado de estado --
+// o endereco do comprador NAO vem no /orders/search, exige 1 chamada de
+// shipment por pedido (mesmo endpoint usado em getEnvioPedido). Isso e bem
+// mais caro que o resto das metricas de Vendas (que reaproveitam dados ja
+// buscados) -- por isso o teto e o aviso de amostra parcial abaixo.
+const TETO_ENDERECOS = 150;
+
+// Agrega pedidos por estado do endereco de entrega. Quando o periodo tem mais
+// pedidos que TETO_ENDERECOS, o resultado e uma amostra dos pedidos mais
+// recentes (nao o total exato) -- sinalizado em amostraParcial, no mesmo
+// espirito do "cortado"/"amostraParcial" ja usado em Vendas/Faturamento.
+export async function getVendasPorEstado(
+  accessToken: string,
+  pedidos: { id: number }[]
+): Promise<{ porEstado: PontoEstado[]; amostraParcial: boolean; amostraTamanho: number }> {
+  const amostra = pedidos.slice(0, TETO_ENDERECOS);
+  const contagem = new Map<string, number>();
+
+  await Promise.all(
+    amostra.map(async (p) => {
+      try {
+        const envio = await getEnvioPedido(accessToken, p.id);
+        const estado = envio?.estado ?? "Não informado";
+        contagem.set(estado, (contagem.get(estado) ?? 0) + 1);
+      } catch {
+        // um pedido sem endereco/erro pontual nao deve derrubar o agregado inteiro
+      }
+    })
+  );
+
+  const porEstado = Array.from(contagem.entries())
+    .map(([estado, quantidade]) => ({ estado, quantidade }))
+    .sort((a, b) => b.quantidade - a.quantidade);
+
+  return { porEstado, amostraParcial: pedidos.length > TETO_ENDERECOS, amostraTamanho: amostra.length };
 }
