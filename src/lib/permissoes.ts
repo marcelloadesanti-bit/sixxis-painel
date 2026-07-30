@@ -16,6 +16,7 @@
 export type NivelAcesso = "leitura" | "edicao";
 
 export type SubsecaoPosVenda = "perguntas" | "mensagens" | "reclamacoes";
+export type SubsecaoVendas = "resumo_vendas" | "metricas_vendas" | "historico_vendas";
 export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar" | "tendencias_busca";
 export type SubsecaoAmazon =
   | "amz_vendas"
@@ -105,7 +106,18 @@ export const GRUPOS_SIDEBAR: { codigo: CodigoGrupoSidebar; label: string }[] = [
 // ela apareca automaticamente na tela de Configuracoes.
 export const SECOES: DefinicaoSecao[] = [
   { codigo: "resumo", label: "Resumo", href: "/dashboard", icon: "Home" },
-  { codigo: "vendas", label: "Vendas", href: "/dashboard/vendas", icon: "Receipt", grupo: "vendas_anuncios" },
+  {
+    codigo: "vendas",
+    label: "Vendas",
+    href: "/dashboard/vendas",
+    icon: "Receipt",
+    grupo: "vendas_anuncios",
+    subsecoes: [
+      { codigo: "resumo_vendas", label: "Resumo", href: "/dashboard/vendas" },
+      { codigo: "metricas_vendas", label: "Métricas", href: "/dashboard/vendas/metricas" },
+      { codigo: "historico_vendas", label: "Histórico", href: "/dashboard/vendas/historico" },
+    ],
+  },
   {
     codigo: "anuncios",
     label: "Anúncios",
