@@ -19,6 +19,10 @@ export async function enviarMensagemCompradorAction(formData: FormData) {
   await enviarMensagemPack(accessToken, packId, mlUserId, buyerId, mensagem);
 
   revalidatePath(`/dashboard/vendas/${orderId}`);
+  // Fase 5: mensagem tambem pode ser enviada direto do extrato na lista de
+  // Vendas (nao so na pagina de detalhe do pedido) -- revalida a lista
+  // tambem para o botao "Mensagem" la refletir o envio.
+  revalidatePath(`/dashboard/vendas`);
 }
 
 export async function atualizarStatusEnvioAction(formData: FormData) {

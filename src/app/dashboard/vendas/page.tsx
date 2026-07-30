@@ -2,20 +2,43 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getVendas, getCanceladosClassificados, periodoDeDatas, type Pedido } from "@/lib/mercadolivre/orders";
+import {
+  getVendas,
+  getCanceladosClassificados,
+  getEnvioPedido,
+  getVendasPorEstado,
+  agruparPorHorario,
+  periodoDeDatas,
+  type Pedido,
+  type ProdutoRanking,
+} from "@/lib/mercadolivre/orders";
+import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
+import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
 
 // 27/07/2026: com as novas metricas por conta (visitas, cancelados,
 // devolucoes), o carregamento da pagina passou a fazer bem mais chamadas a
 // API do ML por conta do que antes (principalmente devolucoes, que verifica
 // reclamacao por reclamacao). Aumenta o timeout padrao da Vercel (Hobby)
 // para dar folga -- mesma licao aprendida em Faturamento.
+//
+// Fase 5 (30/07/2026): a sessao de Metricas (vendas por estado) tambem faz 1
+// chamada de shipment por pedido, ate um teto global (CAP_ENDERECOS_GLOBAL
+// abaixo) -- por isso o cuidado com o timeout continua valendo, e ate mais
+// importante agora.
 export const maxDuration = 60;
 
 const PEDIDOS_POR_PAGINA = 15;
+// Teto GLOBAL (somando todas as contas) de chamadas de shipment para o
+// agregado "Vendas por estado". O endereco do comprador nao vem no
+// /orders/search, exige 1 chamada por pedido -- por isso o teto, para nao
+// estourar o tempo de carregamento da pagina com muitas contas/pedidos.
+// Quando o periodo tem mais pedidos que isso, o card mostra um aviso de
+// amostra parcial (mesma logica ja usada em "cortado"/"amostraParcial").
+const CAP_ENDERECOS_GLOBAL = 120;
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -109,7 +132,16 @@ export default async function VendasPage({
           buscarSeguro(() => getCanceladosClassificados(accessToken, conta.ml_user_id, periodo)),
           buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
         ]);
-        return { conta, nome, cor, vendas, canceladosClassificados, visitas, erro: null as string | null };
+        return {
+          conta,
+          nome,
+          cor,
+          vendas,
+          canceladosClassificados,
+          visitas,
+          accessToken,
+          erro: null as string | null,
+        };
       } catch (err) {
         console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
         return {
@@ -119,11 +151,19 @@ export default async function VendasPage({
           vendas: null,
           canceladosClassificados: null,
           visitas: null,
+          accessToken: null as string | null,
           erro: "Falha ao buscar vendas desta conta.",
         };
       }
     })
   );
+
+  // Mapa contaId -> accessToken, reaproveitado pelas sessoes novas da Fase 5
+  // (enriquecimento do extrato e Metricas) sem precisar autenticar de novo.
+  const tokensPorConta = new Map<string, string>();
+  for (const r of resultados) {
+    if (r.accessToken) tokensPorConta.set(r.conta.id, r.accessToken);
+  }
 
   const todosPedidos: Pedido[] = resultados
     .flatMap((r) => r.vendas?.pedidos ?? [])
@@ -205,12 +245,120 @@ export default async function VendasPage({
     };
   });
 
+  // --- Fase 5: sessao de Metricas (horario, estado, SKU) ---
+
+  // Horario de compra: reaproveita todosPedidos (dataCriacao ja buscado),
+  // zero chamada extra a API.
+  const horario = agruparPorHorario(todosPedidos);
+  const picoHorario = horario.reduce((max, h) => (h.quantidade > max.quantidade ? h : max), horario[0]);
+
+  // Vendas por estado: precisa de 1 chamada de shipment por pedido (o
+  // endereco nao vem no /orders/search). Limitado a CAP_ENDERECOS_GLOBAL
+  // pedidos no total (nao por conta), pegando os mais recentes primeiro.
+  const amostraEndereco = todosPedidos.slice(0, CAP_ENDERECOS_GLOBAL);
+  const pedidosPorContaAmostra = new Map<string, { id: number }[]>();
+  for (const p of amostraEndereco) {
+    if (!pedidosPorContaAmostra.has(p.contaId)) pedidosPorContaAmostra.set(p.contaId, []);
+    pedidosPorContaAmostra.get(p.contaId)!.push({ id: p.id });
+  }
+  let vendasPorEstado: { estado: string; quantidade: number }[] = [];
+  const estadoAmostraParcial = todosPedidos.length > CAP_ENDERECOS_GLOBAL;
+  try {
+    const porConta = await Promise.all(
+      Array.from(pedidosPorContaAmostra.entries()).map(async ([contaId, lista]) => {
+        const token = tokensPorConta.get(contaId);
+        if (!token) return { porEstado: [] as { estado: string; quantidade: number }[] };
+        return getVendasPorEstado(token, lista);
+      })
+    );
+    const mapaEstado = new Map<string, number>();
+    for (const r of porConta) {
+      for (const e of r.porEstado) mapaEstado.set(e.estado, (mapaEstado.get(e.estado) ?? 0) + e.quantidade);
+    }
+    vendasPorEstado = Array.from(mapaEstado.entries())
+      .map(([estado, quantidade]) => ({ estado, quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade)
+      .slice(0, 10);
+  } catch (err) {
+    console.error("Erro ao agregar vendas por estado:", err);
+  }
+
+  // Mais vendidos por SKU: junta o "porProduto" que ja vem de graca de
+  // getVendas (mesmos pedidos ja buscados) entre todas as contas, depois
+  // busca o SKU de cada item (bulk, catalogo pequeno) e reagrupa.
+  const produtosConsolidadosMapa = new Map<string, ProdutoRanking>();
+  for (const r of resultados) {
+    for (const p of r.vendas?.porProduto ?? []) {
+      const atual = produtosConsolidadosMapa.get(p.itemId);
+      if (atual) {
+        atual.quantidade += p.quantidade;
+        atual.valor += p.valor;
+      } else {
+        produtosConsolidadosMapa.set(p.itemId, { ...p });
+      }
+    }
+  }
+  const produtosConsolidados = Array.from(produtosConsolidadosMapa.values())
+    .sort((a, b) => b.quantidade - a.quantidade)
+    .slice(0, 30); // teto antes da busca de SKU, cobre folgado o catalogo pequeno do usuario
+
+  let maisVendidosPorSku: RankingSku[] = [];
+  const primeiroToken = resultados.find((r) => r.accessToken)?.accessToken ?? null;
+  if (primeiroToken && produtosConsolidados.length > 0) {
+    try {
+      maisVendidosPorSku = await getMaisVendidosPorSku(primeiroToken, produtosConsolidados);
+    } catch (err) {
+      console.error("Erro ao buscar SKU dos produtos vendidos:", err);
+    }
+  }
+
   // --- Paginacao do extrato (15 em 15) ---
   const totalPaginasExtrato = Math.max(1, Math.ceil(todosPedidos.length / PEDIDOS_POR_PAGINA));
   const paginaAtual = Math.min(paginaSolicitada, totalPaginasExtrato);
   const pedidosPagina = todosPedidos.slice(
     (paginaAtual - 1) * PEDIDOS_POR_PAGINA,
     paginaAtual * PEDIDOS_POR_PAGINA
+  );
+
+  // Enriquecimento do extrato (Fase 5): so os pedidos VISIVEIS nesta pagina
+  // (15) recebem a chamada extra de shipment, para frete/previsao/rastreio.
+  // A taxa da plataforma ja vem de graca em cada Pedido (taxaPlataforma).
+  const linhasExtrato: LinhaExtrato[] = await Promise.all(
+    pedidosPagina.map(async (pedido) => {
+      const token = tokensPorConta.get(pedido.contaId);
+      let envio: Awaited<ReturnType<typeof getEnvioPedido>> = null;
+      if (token) {
+        try {
+          envio = await getEnvioPedido(token, pedido.id);
+        } catch {
+          envio = null;
+        }
+      }
+      const contaInfo = contasParaBuscar.find((c) => c.id === pedido.contaId);
+      const mlUserId = contaInfo ? Number(contaInfo.ml_user_id) : 0;
+      const liquido = pedido.valor - (envio?.custoFrete ?? 0) - pedido.taxaPlataforma;
+
+      return {
+        id: pedido.id,
+        dataHoraLabel: formatarDataHora(pedido.dataCriacao),
+        contaId: pedido.contaId,
+        contaNickname: pedido.contaNickname,
+        mlUserId,
+        comprador: pedido.comprador,
+        compradorId: pedido.compradorId,
+        produto: pedido.produto,
+        vendaBrutaLabel: formatarMoeda(pedido.valor, pedido.moeda),
+        freteLabel: envio?.custoFrete != null ? formatarMoeda(envio.custoFrete, pedido.moeda) : null,
+        taxaLabel: formatarMoeda(pedido.taxaPlataforma, pedido.moeda),
+        liquidoLabel: formatarMoeda(liquido, pedido.moeda),
+        statusBadge: envio?.status ?? null,
+        previsaoLabel: envio?.previsaoEntrega
+          ? new Date(envio.previsaoEntrega).toLocaleDateString("pt-BR")
+          : null,
+        trackingUrl: envio?.trackingUrl ?? null,
+        packId: pedido.packId,
+      };
+    })
   );
 
   function hrefComPagina(p: number) {
@@ -236,6 +384,8 @@ export default async function VendasPage({
       ate: formatarData(ultimoDiaDoMesAnterior(hoje)),
     },
   ];
+
+  const maxHorario = Math.max(...horario.map((h) => h.quantidade), 1);
 
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-6">
@@ -346,6 +496,65 @@ export default async function VendasPage({
         <VendasPorConta contas={contasFormatadas} />
       </div>
 
+      <div className="mb-8">
+        <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Métricas</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Horário de compra</p>
+            <div className="flex items-end gap-0.5" style={{ height: 60 }}>
+              {horario.map((h) => (
+                <div
+                  key={h.hora}
+                  title={`${h.hora}h: ${h.quantidade} pedido(s)`}
+                  className="flex-1 rounded-t bg-[var(--color-sixxis-navy)]/70"
+                  style={{ height: `${Math.max((h.quantidade / maxHorario) * 100, 2)}%` }}
+                />
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              0h a 23h (fuso de Brasília) · pico às {picoHorario?.hora ?? "—"}h
+            </p>
+          </div>
+
+          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Vendas por estado</p>
+            {vendasPorEstado.length === 0 ? (
+              <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {vendasPorEstado.map((e) => (
+                  <li key={e.estado} className="flex justify-between gap-2">
+                    <span className="truncate text-gray-600 dark:text-gray-300">{e.estado}</span>
+                    <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{e.quantidade}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {estadoAmostraParcial && (
+              <p className="mt-2 text-xs text-amber-600">
+                Amostra dos {CAP_ENDERECOS_GLOBAL} pedidos mais recentes (o período tem mais pedidos do que isso).
+              </p>
+            )}
+          </div>
+
+          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Mais vendidos por SKU</p>
+            {maisVendidosPorSku.length === 0 ? (
+              <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {maisVendidosPorSku.slice(0, 8).map((s) => (
+                  <li key={s.sku} className="flex justify-between gap-2">
+                    <span className="truncate text-gray-600 dark:text-gray-300">{s.sku}</span>
+                    <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{s.quantidade} un.</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
       {algumCortado && (
         <p className="mb-4 text-xs text-amber-600">
           Período com muitos pedidos: o total de pedidos e o faturamento estão corretos, mas o
@@ -360,38 +569,10 @@ export default async function VendasPage({
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded border border-gray-200 dark:border-gray-700">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                <tr>
-                  <th className="p-3">Data</th>
-                  <th className="p-3">Conta</th>
-                  <th className="p-3">Comprador</th>
-                  <th className="p-3">Produto</th>
-                  <th className="p-3 text-right">Valor</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {pedidosPagina.map((pedido) => (
-                  <tr key={pedido.id} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                    <td className="p-0">
-                      <Link
-                        href={`/dashboard/vendas/${pedido.id}?conta=${pedido.contaId}`}
-                        className="block p-3 text-gray-600 dark:text-gray-300"
-                      >
-                        {formatarDataHora(pedido.dataCriacao)}
-                      </Link>
-                    </td>
-                    <td className="p-3 text-gray-600 dark:text-gray-300">{pedido.contaNickname}</td>
-                    <td className="p-3 text-gray-600 dark:text-gray-300">{pedido.comprador}</td>
-                    <td className="p-3 text-gray-600 dark:text-gray-300">{pedido.produto}</td>
-                    <td className="p-3 text-right font-medium text-gray-900 dark:text-gray-100">
-                      {formatarMoeda(pedido.valor, pedido.moeda)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="overflow-hidden rounded border border-gray-200 dark:border-gray-700">
+            {linhasExtrato.map((linha) => (
+              <ExtratoLinha key={linha.id} linha={linha} />
+            ))}
           </div>
 
           {totalPaginasExtrato > 1 && (
