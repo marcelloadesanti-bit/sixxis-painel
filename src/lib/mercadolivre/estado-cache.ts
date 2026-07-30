@@ -20,6 +20,13 @@ export type ResultadoEstadoPeriodo = {
   totalResolvidos: number;
   totalPeriodo: number;
   amostraParcial: boolean;
+  // Fase 10 (30/07/2026): mapa pedidoId -> nome do estado, restrito aos
+  // pedidos passados nesta chamada (pedidosPorConta) -- permite ao chamador
+  // (paginas de Vendas/Metricas) cruzar com todosPedidos (que ja tem valor,
+  // compradorId e itens) e montar agregados por estado (clientes, valor,
+  // SKU) sem nenhuma chamada nova a API do ML nem ao banco. porEstado acima
+  // continua so com a contagem (usado pela lista de texto existente).
+  estadoPorPedido: Map<number, string>;
 };
 
 // Teto de NOVAS resolucoes (pedidos ainda nao cacheados) por carregamento de
@@ -101,11 +108,13 @@ export async function getVendasPorEstadoComCache(
 
   const mapaEstado = new Map<string, number>();
   let totalResolvidos = 0;
+  const estadoPorPedido = new Map<number, string>();
   for (const p of todosPedidos) {
     const resolvido = cacheMap.get(p.id);
     if (resolvido) {
       mapaEstado.set(resolvido.estado, (mapaEstado.get(resolvido.estado) ?? 0) + 1);
       totalResolvidos++;
+      estadoPorPedido.set(p.id, resolvido.estado);
     }
   }
 
@@ -119,6 +128,7 @@ export async function getVendasPorEstadoComCache(
     totalResolvidos,
     totalPeriodo: todosPedidos.length,
     amostraParcial: naoCacheados.length > tetoNovasBuscas,
+    estadoPorPedido,
   };
 }
 

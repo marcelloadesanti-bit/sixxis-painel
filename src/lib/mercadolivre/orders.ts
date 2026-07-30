@@ -30,7 +30,12 @@ export type Pedido = {
   // do card "Concentracao de vendas por dia e horario" em Metricas de
   // Vendas (mostra quais produtos foram vendidos numa celula dia x hora
   // especifica).
-  itens: { itemId: string; titulo: string; quantidade: number }[];
+  // Fase 10 (30/07/2026): adicionado "valor" (unit_price * quantidade) por
+  // item -- mesmo calculo ja usado em getVendas para "porProduto", so que
+  // agora tambem por pedido individual. Alimenta o detalhamento por SKU do
+  // mapa de vendas por estado (clique num estado mostra valor por SKU
+  // daquele estado), sem nenhuma chamada extra a API.
+  itens: { itemId: string; titulo: string; quantidade: number; valor: number }[];
 };
 
 export type ResumoVendas = {
@@ -189,6 +194,7 @@ export async function getVendas(
           itemId: oi.item?.id ?? "sem-id",
           titulo: oi.item?.title ?? "Produto sem título",
           quantidade: oi.quantity ?? 0,
+          valor: (oi.unit_price ?? 0) * (oi.quantity ?? 0),
         })),
       });
     }
