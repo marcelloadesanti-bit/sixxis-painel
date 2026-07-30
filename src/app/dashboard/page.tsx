@@ -21,6 +21,7 @@ import {
 import ResumoInterativo from "./resumo-interativo";
 import ResumoFiltros from "./resumo-filtros";
 import MetaWidget from "./meta-widget";
+import EstatisticasExtra from "./estatisticas-extra";
 import { AoVivoProvider } from "./ao-vivo-context";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
@@ -468,6 +469,16 @@ export default async function ResumoPage({
           contas={contasParaGrafico}
           seriesPorConta={seriesPorConta}
           pizza={pizza}
+        />
+
+        {/* Fase 5: cards de comparativo "hoje/ontem" e "semana/semana
+            anterior" + perguntas, carregados a parte (ver comentario no
+            componente e na rota de API) para nao competir com o tempo de
+            carregamento do resto desta pagina. */}
+        <EstatisticasExtra
+          visitas={{ valor: visitasTotais, variacaoPct: variacaoPercentual(visitasTotais, visitasAnteriores) }}
+          conversao={{ valor: conversao, variacaoPct: variacaoPercentual(conversao, conversaoAnterior) }}
+          contasParam={idsSelecionados.join(",")}
         />
       </AoVivoProvider>
 
