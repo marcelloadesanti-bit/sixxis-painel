@@ -5,6 +5,7 @@ import { getValidAccessToken } from "@/lib/amazon/token";
 import { getVendas, periodoDeDatas, classificarCancelados, type PedidoAmazon } from "@/lib/amazon/orders";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
+import AmazonContasFiltro from "../amazon-contas-filtro";
 
 // Rate limit da Orders API da Amazon e bem mais apertado que o do ML (ver
 // nota em lib/amazon/orders.ts), entao esta pagina pode demorar mais para
@@ -50,7 +51,7 @@ const formatarDataHora = (iso: string) =>
 export default async function AmazonVendasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ de?: string; ate?: string; conta?: string; pagina?: string }>;
+  searchParams: Promise<{ de?: string; ate?: string; contas?: string; pagina?: string }>;
 }) {
   await exigirAcessoSecao("amazon", "amz_vendas");
   const params = await searchParams;
@@ -67,7 +68,6 @@ export default async function AmazonVendasPage({
   const hoje = new Date();
   const de = params.de ?? formatarData(primeiroDiaDoMes(hoje));
   const ate = params.ate ?? formatarData(hoje);
-  const filtroConta = params.conta ?? "todas";
   const paginaSolicitada = Math.max(1, Number(params.pagina) || 1);
 
   const periodo = periodoDeDatas(de, ate);
@@ -77,9 +77,15 @@ export default async function AmazonVendasPage({
     .select("id, seller_id, marketplace_id, nickname, apelido, cor")
     .order("nickname", { ascending: true });
 
-  const contasParaBuscar = (contasBase ?? []).filter(
-    (c) => filtroConta === "todas" || c.id === filtroConta
-  );
+  const todasContas = (contasBase ?? []).map((c) => ({
+    id: c.id as string,
+    nome: nomeConta(c),
+    cor: (c.cor as string | null) ?? COR_PADRAO,
+  }));
+
+  const idsSelecionados = params.contas ? params.contas.split(",").filter(Boolean) : todasContas.map((c) => c.id);
+
+  const contasParaBuscar = (contasBase ?? []).filter((c) => idsSelecionados.includes(c.id as string));
 
   const resultados = await Promise.all(
     contasParaBuscar.map(async (conta) => {
@@ -131,7 +137,7 @@ export default async function AmazonVendasPage({
   );
 
   function hrefComPagina(p: number) {
-    return `/dashboard/amazon/vendas?de=${de}&ate=${ate}&conta=${filtroConta}&pagina=${p}`;
+    return `/dashboard/amazon/vendas?de=${de}&ate=${ate}&contas=${idsSelecionados.join(",")}&pagina=${p}`;
   }
 
   const presets: { label: string; de: string; ate: string }[] = [
@@ -171,7 +177,10 @@ export default async function AmazonVendasPage({
         feita direto no Seller Central.
       </p>
 
+      <AmazonContasFiltro contas={todasContas} contasSelecionadas={idsSelecionados} baseHref="/dashboard/amazon/vendas" />
+
       <form className="mb-4 flex flex-wrap items-end gap-3 rounded border border-gray-200 p-4 dark:border-gray-700">
+        <input type="hidden" name="contas" value={idsSelecionados.join(",")} />
         <div>
           <label className="mb-1 block text-xs text-gray-500">De</label>
           <input
@@ -190,21 +199,6 @@ export default async function AmazonVendasPage({
             className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
           />
         </div>
-        <div>
-          <label className="mb-1 block text-xs text-gray-500">Conta</label>
-          <select
-            name="conta"
-            defaultValue={filtroConta}
-            className="rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-          >
-            <option value="todas">Todas as contas</option>
-            {(contasBase ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {nomeConta(c)}
-              </option>
-            ))}
-          </select>
-        </div>
         <button
           type="submit"
           className="rounded bg-[var(--color-sixxis-navy)] px-4 py-1.5 text-sm font-medium text-white"
@@ -214,15 +208,22 @@ export default async function AmazonVendasPage({
       </form>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        {presets.map((p) => (
-          <Link
-            key={p.label}
-            href={`/dashboard/amazon/vendas?de=${p.de}&ate=${p.ate}&conta=${filtroConta}`}
-            className="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            {p.label}
-          </Link>
-        ))}
+        {presets.map((p) => {
+          const ativo = p.de === de && p.ate === ate;
+          return (
+            <Link
+              key={p.label}
+              href={`/dashboard/amazon/vendas?de=${p.de}&ate=${p.ate}&contas=${idsSelecionados.join(",")}`}
+              className={`rounded-full px-3 py-1.5 text-sm ${
+                ativo
+                  ? "bg-[var(--color-sixxis-navy)] text-white"
+                  : "border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              {p.label}
+            </Link>
+          );
+        })}
       </div>
 
       <p className="mb-4 text-xs text-gray-400">
