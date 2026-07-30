@@ -28,14 +28,28 @@
 // recolhivel, mesmo padrao de botao "Recolher/Expandir" do detalhamento
 // por estado/SKU), e por ultimo o detalhamento por estado e SKU.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
+import { ESTADOS_BRASIL, BRASIL_MAPA_VIEWBOX } from "@/lib/brazil-map-paths";
 
 export type ItemPedidoView = { sku: string | null; titulo: string; quantidade: number };
 export type PedidoHorarioView = { contaId: string; dataCriacao: string; itens: ItemPedidoView[] };
 export type ContaFiltroView = { id: string; nome: string; cor: string };
 export type PontoEstadoView = { estado: string; quantidade: number };
 export type RankingSkuView = { sku: string; quantidade: number; valor?: number };
+// Fase 10 (30/07/2026): detalhamento por estado para o mapa do Brasil --
+// pedidos, clientes distintos, valor e o top-10 de SKU vendidos direto
+// naquele estado, tudo ja agregado no servidor (ver vendas/page.tsx e
+// vendas/metricas/page.tsx) a partir de dados ja buscados (zero chamada
+// nova ao Mercado Livre).
+export type SkuEstadoView = { sku: string; titulo: string; quantidade: number; valor: number };
+export type EstadoVendaDetalheView = {
+  estado: string; // nome como o Mercado Livre devolve (ex: "São Paulo")
+  pedidos: number;
+  clientes: number;
+  valor: number;
+  porSku: SkuEstadoView[];
+};
 
 const COR_CONSOLIDADO = "#9D00FF";
 const COR_PADRAO_FALLBACK = "#64748b";
@@ -164,6 +178,41 @@ function calcularStats(matriz: number[][]) {
 
 const ALTURA_LINHA = 44; // px -- barras mais altas/visiveis (era 28px na v1)
 
+// --- Mapa de vendas por estado (Fase 10) ---
+
+// Remove acentos e normaliza caixa para casar o nome do estado que vem do
+// Mercado Livre (receiver_address.state.name) com o nome usado no dataset
+// de contornos (brazil-map-paths.ts) -- ambos devem bater exatamente na
+// pratica, mas essa normalizacao protege contra pequenas divergencias de
+// grafia/acentuacao entre as duas fontes.
+const REGEX_DIACRITICOS = new RegExp(String.fromCharCode(91, 92, 117, 48, 51, 48, 48, 45, 92, 117, 48, 51, 54, 102, 93), "g");
+function normalizarNomeEstado(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(REGEX_DIACRITICOS, "")
+    .toLowerCase()
+    .trim();
+}
+
+// Duas escalas de verde (clara/escura) -- interpolacao linear em RGB entre
+// um tom baixo (poucas vendas) e um tom alto (muitas vendas). No modo claro
+// vai de um verde bem claro ate um verde grama escuro; no modo escuro vai
+// de um verde escuro discreto (nao "estoura" contra o fundo) ate um verde
+// vivo/claro, para continuar legivel nos dois temas.
+const VERDE_CLARO = { min: [234, 250, 224], max: [21, 87, 36] } as const; // #eafae0 -> #155724
+const VERDE_ESCURO = { min: [31, 61, 36], max: [134, 239, 172] } as const; // #1f3d24 -> #86efac
+const CINZA_SEM_DADOS = { claro: "#e5e7eb", escuro: "#374151" };
+
+function corEstado(t: number, escuro: boolean): string {
+  const esc = escuro ? VERDE_ESCURO : VERDE_CLARO;
+  const [r0, g0, b0] = esc.min;
+  const [r1, g1, b1] = esc.max;
+  const r = Math.round(r0 + (r1 - r0) * t);
+  const g = Math.round(g0 + (g1 - g0) * t);
+  const b = Math.round(b0 + (b1 - b0) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
 export default function MetricasVendasView({
   pedidosHorario,
   contas,
@@ -172,6 +221,7 @@ export default function MetricasVendasView({
   estadoResolvidoTotal,
   estadoTotalPeriodo,
   maisVendidosPorSku,
+  porEstadoDetalhado,
 }: {
   pedidosHorario: PedidoHorarioView[];
   contas: ContaFiltroView[];
@@ -180,6 +230,7 @@ export default function MetricasVendasView({
   estadoResolvidoTotal: number;
   estadoTotalPeriodo: number;
   maisVendidosPorSku: RankingSkuView[];
+  porEstadoDetalhado: EstadoVendaDetalheView[];
 }) {
   const [contaSelecionada, setContaSelecionada] = useState<string>("todas");
   const [celulaSelecionada, setCelulaSelecionada] = useState<{ dia: number; hora: number } | null>(null);
@@ -242,6 +293,35 @@ export default function MetricasVendasView({
 
   const [abcAberto, setAbcAberto] = useState(true);
   const [detalheAberto, setDetalheAberto] = useState(true);
+
+  // --- Mapa de vendas por estado (Fase 10) ---
+  // Deteccao de modo escuro: o painel alterna a classe "dark" na <html> (ver
+  // toggle em Configuracoes), entao observamos essa classe diretamente em
+  // vez de so ler prefers-color-scheme uma vez -- assim o mapa reage na
+  // hora se o usuario trocar de tema sem recarregar a pagina.
+  const [modoEscuro, setModoEscuro] = useState(false);
+  useEffect(() => {
+    const atualizar = () => setModoEscuro(document.documentElement.classList.contains("dark"));
+    atualizar();
+    const obs = new MutationObserver(atualizar);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
+  const mapaRef = useRef<HTMLDivElement>(null);
+  const [hoverEstado, setHoverEstado] = useState<{ nome: string; x: number; y: number } | null>(null);
+  const [estadoSelecionado, setEstadoSelecionado] = useState<string | null>(null);
+
+  const detalhePorEstadoNormalizado = useMemo(() => {
+    const mapa = new Map<string, EstadoVendaDetalheView>();
+    for (const e of porEstadoDetalhado) mapa.set(normalizarNomeEstado(e.estado), e);
+    return mapa;
+  }, [porEstadoDetalhado]);
+
+  const maxValorEstado = useMemo(
+    () => Math.max(...porEstadoDetalhado.map((e) => e.valor), 1),
+    [porEstadoDetalhado]
+  );
 
   const detalheCelula = useMemo(() => {
     if (!celulaSelecionada) return null;
@@ -566,6 +646,124 @@ export default function MetricasVendasView({
           </div>
         )}
       </div>
+
+      {/* Mapa de vendas por estado (Fase 10) -- verde claro/escuro conforme o
+      tema, hover mostra clientes/pedidos/valor, clique abre o detalhamento
+      por SKU daquele estado. Usa o mesmo cache de estado do card "Vendas
+      por estado" abaixo, so que com a agregacao completa (valor, clientes
+      distintos, SKU) feita no servidor a partir de dados ja buscados. */}
+      {porEstadoDetalhado.length > 0 && (
+        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="mb-1 text-sm font-semibold text-gray-700 dark:text-gray-300">Mapa de vendas por estado</p>
+          <p className="mb-3 text-xs text-gray-400">
+            Passe o mouse para ver clientes, pedidos e valor · clique num estado para ver o detalhamento por SKU.
+          </p>
+          <div ref={mapaRef} className="relative mx-auto max-w-[280px]">
+            <svg
+              viewBox={`0 0 ${BRASIL_MAPA_VIEWBOX.w} ${BRASIL_MAPA_VIEWBOX.h}`}
+              className="w-full"
+              onMouseLeave={() => setHoverEstado(null)}
+            >
+              {ESTADOS_BRASIL.map((est) => {
+                const chave = normalizarNomeEstado(est.nome);
+                const detalhe = detalhePorEstadoNormalizado.get(chave) ?? null;
+                const temDados = !!detalhe && detalhe.valor > 0;
+                const t = temDados ? Math.sqrt(detalhe!.valor / maxValorEstado) : 0;
+                const preenchimento = temDados
+                  ? corEstado(t, modoEscuro)
+                  : modoEscuro
+                    ? CINZA_SEM_DADOS.escuro
+                    : CINZA_SEM_DADOS.claro;
+                const selecionado = estadoSelecionado === chave;
+                return (
+                  <path
+                    key={est.sigla}
+                    d={est.d}
+                    fill={preenchimento}
+                    stroke={selecionado ? (modoEscuro ? "#ffffff" : "#111827") : modoEscuro ? "#1f2937" : "#ffffff"}
+                    strokeWidth={selecionado ? 2.5 : 1}
+                    style={{ cursor: temDados ? "pointer" : "default", transition: "fill 0.15s" }}
+                    onMouseMove={(e) => {
+                      if (!temDados) return;
+                      const rect = mapaRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      setHoverEstado({ nome: est.nome, x: e.clientX - rect.left, y: e.clientY - rect.top });
+                    }}
+                    onMouseLeave={() => setHoverEstado(null)}
+                    onClick={() => temDados && setEstadoSelecionado((atual) => (atual === chave ? null : chave))}
+                  />
+                );
+              })}
+            </svg>
+            {hoverEstado &&
+              (() => {
+                const detalhe = detalhePorEstadoNormalizado.get(normalizarNomeEstado(hoverEstado.nome));
+                if (!detalhe) return null;
+                return (
+                  <div
+                    className="pointer-events-none absolute z-10 whitespace-nowrap rounded bg-gray-900 px-2 py-1.5 text-xs text-white shadow-lg dark:bg-gray-100 dark:text-gray-900"
+                    style={{ left: hoverEstado.x + 10, top: hoverEstado.y + 10 }}
+                  >
+                    <p className="font-semibold">{hoverEstado.nome}</p>
+                    <p>
+                      {detalhe.clientes} cliente(s) · {detalhe.pedidos} pedido(s)
+                    </p>
+                    <p>{formatarMoedaBRL(detalhe.valor)}</p>
+                  </div>
+                );
+              })()}
+          </div>
+
+          <div className="mx-auto mt-3 flex max-w-[280px] items-center gap-2 text-[10px] text-gray-400">
+            <span>Menos vendas</span>
+            <div
+              className="h-2 flex-1 rounded-full"
+              style={{ background: `linear-gradient(to right, ${corEstado(0, modoEscuro)}, ${corEstado(1, modoEscuro)})` }}
+            />
+            <span>Mais vendas</span>
+          </div>
+
+          {estadoSelecionado &&
+            (() => {
+              const est = ESTADOS_BRASIL.find((e) => normalizarNomeEstado(e.nome) === estadoSelecionado);
+              const detalhe = est ? detalhePorEstadoNormalizado.get(normalizarNomeEstado(est.nome)) : null;
+              if (!est || !detalhe) return null;
+              return (
+                <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="font-semibold text-gray-800 dark:text-gray-200">
+                      {est.nome} · {detalhe.pedidos} pedido(s) · {formatarMoedaBRL(detalhe.valor)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setEstadoSelecionado(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      Fechar ×
+                    </button>
+                  </div>
+                  <p className="mb-1 text-xs uppercase text-gray-400">Vendas diretas por SKU</p>
+                  {detalhe.porSku.length === 0 ? (
+                    <p className="text-xs text-gray-400">Sem detalhamento de SKU para este estado.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {detalhe.porSku.map((s) => (
+                        <li key={s.sku} className="flex justify-between gap-2">
+                          <span className="truncate text-gray-600 dark:text-gray-300">
+                            {s.sku} <span className="text-gray-400">×{s.quantidade}</span>
+                          </span>
+                          <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">
+                            {formatarMoedaBRL(s.valor)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
+        </div>
+      )}
 
       {/* Vendas por estado + Mais vendidos por SKU -- recolhivel para nao ocupar
       espaco fixo na pagina quando o usuario ja tiver visto o detalhe */}
