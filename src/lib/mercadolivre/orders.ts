@@ -24,6 +24,13 @@ export type Pedido = {
   // por categoria/conta -- conferir contra o extrato oficial do ML antes de
   // confiar 100% neste numero em decisao financeira.
   taxaPlataforma: number;
+  // Fase 7 (30/07/2026): itens do pedido (itemId + titulo + quantidade),
+  // sem nenhum custo extra de API -- vem do mesmo order_items ja usado para
+  // montar "produto" (titulo consolidado) acima. Alimenta o clique-detalhe
+  // do card "Concentracao de vendas por dia e horario" em Metricas de
+  // Vendas (mostra quais produtos foram vendidos numa celula dia x hora
+  // especifica).
+  itens: { itemId: string; titulo: string; quantidade: number }[];
 };
 
 export type ResumoVendas = {
@@ -178,6 +185,11 @@ export async function getVendas(
         contaId,
         contaNickname,
         taxaPlataforma: somarTaxaPlataforma(p.order_items),
+        itens: (p.order_items ?? []).map((oi) => ({
+          itemId: oi.item?.id ?? "sem-id",
+          titulo: oi.item?.title ?? "Produto sem título",
+          quantidade: oi.quantity ?? 0,
+        })),
       });
     }
 

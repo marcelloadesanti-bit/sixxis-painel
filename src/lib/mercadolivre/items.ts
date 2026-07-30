@@ -385,31 +385,20 @@ export async function getAnuncioDetalhe(accessToken: string, itemId: string): Pr
 
 export type RankingSku = { sku: string; titulo: string; quantidade: number; valor: number };
 
-// Agrupa um ranking de produtos (por item/anuncio, vindo de getVendas ou
-// getProdutosMaisVendidos, ja mesclado entre contas) por SKU -- ja que o
-// mesmo SKU pode estar publicado em anuncios/contas diferentes. Busca o SKU
-// de cada item via o bulk de itens (mesmo endpoint publico ja usado acima),
-// limitado ao numero de itens distintos vendidos no periodo -- catalogo
-// pequeno (poucos produtos/variacoes), custo baixo mesmo somando essa
-// chamada extra.
-export async function getMaisVendidosPorSku(
-  accessToken: string,
-  ranking: ProdutoRanking[]
-): Promise<RankingSku[]> {
-  const ids = ranking.map((r) => r.itemId).filter((id) => id !== "sem-id");
-  if (ids.length === 0) return [];
-
-  // Fase 5 (correcao pos-verificacao ao vivo): o endpoint multiget
-  // (/items?ids=...) nao retornou de forma confiavel o campo de SKU
-  // (seller_custom_field / atributo SELLER_SKU) mesmo autenticado -- todos os
-  // itens apareciam como "(sem SKU)" no ranking, enquanto a pagina de
-  // detalhe do anuncio (que usa /items/{id} individual) mostrava o SKU
-  // corretamente na Ficha tecnica. Como o catalogo e pequeno (poucos
-  // produtos/variacoes), buscamos cada item individualmente em paralelo
-  // (mesma chamada ja usada em getAnuncioDetalhe) em vez do lote, o que
-  // garante que o SKU volte certo. Tambem verifica o SKU por variacao
-  // (cor/modelo), caso o anuncio nao tenha SKU no nivel principal.
+// Resolve o SKU (seller_custom_field / atributo SELLER_SKU) de uma lista de
+// itemIds, buscando cada item individualmente (mesmo endpoint usado em
+// getAnuncioDetalhe) -- o endpoint multiget (/items?ids=...) nao retorna
+// esse campo de forma confiavel (ver nota historica em
+// getMaisVendidosPorSku abaixo). Extraida como funcao propria (Fase 7,
+// 30/07/2026) para ser reaproveitada pelo clique-detalhe do card
+// "Concentracao de vendas por dia e horario" em Metricas de Vendas, sem
+// duplicar chamadas a API -- getMaisVendidosPorSkuComMapa chama esta funcao
+// uma unica vez e usa o resultado tanto para o ranking quanto para o mapa.
+export async function resolverSkuPorItens(accessToken: string, itemIds: string[]): Promise<Map<string, string>> {
+  const ids = itemIds.filter((id) => id !== "sem-id");
   const skuPorId = new Map<string, string>();
+  if (ids.length === 0) return skuPorId;
+
   await Promise.all(
     ids.map(async (id) => {
       try {
@@ -437,10 +426,40 @@ export async function getMaisVendidosPorSku(
           if (skuVar) skuPorId.set(id, skuVar);
         }
       } catch {
-        // ignora -- item entra como "(sem SKU)" no agrupamento abaixo
+        // ignora -- item entra sem SKU no agrupamento de quem chamou esta funcao
       }
     })
   );
+
+  return skuPorId;
+}
+
+// Agrupa um ranking de produtos (por item/anuncio, vindo de getVendas ou
+// getProdutosMaisVendidos, ja mesclado entre contas) por SKU -- ja que o
+// mesmo SKU pode estar publicado em anuncios/contas diferentes. Busca o SKU
+// de cada item via resolverSkuPorItens, limitado ao numero de itens
+// distintos vendidos no periodo -- catalogo pequeno (poucos
+// produtos/variacoes), custo baixo mesmo somando essa chamada extra.
+export async function getMaisVendidosPorSku(
+  accessToken: string,
+  ranking: ProdutoRanking[]
+): Promise<RankingSku[]> {
+  const { ranking: resultado } = await getMaisVendidosPorSkuComMapa(accessToken, ranking);
+  return resultado;
+}
+
+// Fase 7 (30/07/2026): mesma logica de getMaisVendidosPorSku, mas tambem
+// devolve o mapa itemId -> sku usado internamente -- reaproveitado pelo
+// clique-detalhe do card "Concentracao de vendas por dia e horario" em
+// Metricas de Vendas (mostrar quais produtos foram vendidos numa celula
+// dia x hora especifica), sem nenhuma chamada extra a API alem das que ja
+// aconteciam para montar o ranking por SKU.
+export async function getMaisVendidosPorSkuComMapa(
+  accessToken: string,
+  ranking: ProdutoRanking[]
+): Promise<{ ranking: RankingSku[]; skuPorItemId: Map<string, string> }> {
+  const ids = ranking.map((r) => r.itemId);
+  const skuPorId = await resolverSkuPorItens(accessToken, ids);
 
   const porSku = new Map<string, RankingSku>();
   for (const r of ranking) {
@@ -456,5 +475,8 @@ export async function getMaisVendidosPorSku(
     }
   }
 
-  return Array.from(porSku.values()).sort((a, b) => b.quantidade - a.quantidade);
+  return {
+    ranking: Array.from(porSku.values()).sort((a, b) => b.quantidade - a.quantidade),
+    skuPorItemId: skuPorId,
+  };
 }
