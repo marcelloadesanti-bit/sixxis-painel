@@ -10,7 +10,6 @@ import {
   agruparPorHorario,
   periodoDeDatas,
   type Pedido,
-  type ProdutoRanking,
 } from "@/lib/mercadolivre/orders";
 import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
@@ -284,33 +283,43 @@ export default async function VendasPage({
   }
 
   // Mais vendidos por SKU: junta o "porProduto" que ja vem de graca de
-  // getVendas (mesmos pedidos ja buscados) entre todas as contas, depois
-  // busca o SKU de cada item (bulk, catalogo pequeno) e reagrupa.
-  const produtosConsolidadosMapa = new Map<string, ProdutoRanking>();
-  for (const r of resultados) {
-    for (const p of r.vendas?.porProduto ?? []) {
-      const atual = produtosConsolidadosMapa.get(p.itemId);
+  // getVendas (mesmos pedidos ja buscados). Correcao importante (30/07/2026):
+  // o SKU (seller_custom_field / atributo SELLER_SKU) e um campo PRIVADO do
+  // anuncio -- o Mercado Livre so retorna esse campo quando a consulta ao
+  // item e autenticada com o token da PROPRIA conta dona daquele anuncio.
+  // Por isso a busca de SKU precisa ser feita por conta (cada uma com seu
+  // proprio accessToken), e so DEPOIS consolidada entre as contas -- usar um
+  // unico token para itens de contas diferentes fazia o campo de SKU voltar
+  // sempre vazio para os itens que nao pertenciam aquela conta.
+  const rankingPorSkuPorConta = await Promise.all(
+    resultados.map(async (r) => {
+      if (!r.accessToken || !r.vendas?.porProduto?.length) return [] as RankingSku[];
+      const produtosConta = [...r.vendas.porProduto]
+        .sort((a, b) => b.quantidade - a.quantidade)
+        .slice(0, 30); // teto antes da busca de SKU, cobre folgado o catalogo pequeno do usuario
+      try {
+        return await getMaisVendidosPorSku(r.accessToken, produtosConta);
+      } catch (err) {
+        console.error(`Erro ao buscar SKU dos produtos vendidos de ${r.nome}:`, err);
+        return [] as RankingSku[];
+      }
+    })
+  );
+  const porSkuConsolidado = new Map<string, RankingSku>();
+  for (const lista of rankingPorSkuPorConta) {
+    for (const item of lista) {
+      const atual = porSkuConsolidado.get(item.sku);
       if (atual) {
-        atual.quantidade += p.quantidade;
-        atual.valor += p.valor;
+        atual.quantidade += item.quantidade;
+        atual.valor += item.valor;
       } else {
-        produtosConsolidadosMapa.set(p.itemId, { ...p });
+        porSkuConsolidado.set(item.sku, { ...item });
       }
     }
   }
-  const produtosConsolidados = Array.from(produtosConsolidadosMapa.values())
-    .sort((a, b) => b.quantidade - a.quantidade)
-    .slice(0, 30); // teto antes da busca de SKU, cobre folgado o catalogo pequeno do usuario
-
-  let maisVendidosPorSku: RankingSku[] = [];
-  const primeiroToken = resultados.find((r) => r.accessToken)?.accessToken ?? null;
-  if (primeiroToken && produtosConsolidados.length > 0) {
-    try {
-      maisVendidosPorSku = await getMaisVendidosPorSku(primeiroToken, produtosConsolidados);
-    } catch (err) {
-      console.error("Erro ao buscar SKU dos produtos vendidos:", err);
-    }
-  }
+  const maisVendidosPorSku: RankingSku[] = Array.from(porSkuConsolidado.values()).sort(
+    (a, b) => b.quantidade - a.quantidade
+  );
 
   // --- Paginacao do extrato (15 em 15) ---
   const totalPaginasExtrato = Math.max(1, Math.ceil(todosPedidos.length / PEDIDOS_POR_PAGINA));
