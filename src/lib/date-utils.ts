@@ -52,6 +52,21 @@ export function periodoMesAnterior(de: string, ate: string): { de: string; ate: 
   return { de: subtrairUmMes(de), ate: subtrairUmMes(ate) };
 }
 
+// Subtrai N dias de uma data YYYY-MM-DD (tratada como data pura, sem fuso).
+function subtrairDias(dataStr: string, dias: number): string {
+  const [ano, mes, dia] = dataStr.split("-").map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
+
+// Mesma logica de periodoMesAnterior, mas voltando 7 dias -- usado no
+// comparativo "esta semana vs semana anterior" do card de Estatistica de
+// vendas do Resumo (Fase 5).
+export function periodoSemanaAnterior(de: string, ate: string): { de: string; ate: string } {
+  return { de: subtrairDias(de, 7), ate: subtrairDias(ate, 7) };
+}
+
 export function variacaoPercentual(atual: number, anterior: number): number | null {
   if (anterior === 0) return atual === 0 ? 0 : null;
   return ((atual - anterior) / anterior) * 100;
