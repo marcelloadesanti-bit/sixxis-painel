@@ -399,15 +399,48 @@ export async function getMaisVendidosPorSku(
   const ids = ranking.map((r) => r.itemId).filter((id) => id !== "sem-id");
   if (ids.length === 0) return [];
 
-  const itens = await buscarItensBulk(accessToken, ids);
+  // Fase 5 (correcao pos-verificacao ao vivo): o endpoint multiget
+  // (/items?ids=...) nao retornou de forma confiavel o campo de SKU
+  // (seller_custom_field / atributo SELLER_SKU) mesmo autenticado -- todos os
+  // itens apareciam como "(sem SKU)" no ranking, enquanto a pagina de
+  // detalhe do anuncio (que usa /items/{id} individual) mostrava o SKU
+  // corretamente na Ficha tecnica. Como o catalogo e pequeno (poucos
+  // produtos/variacoes), buscamos cada item individualmente em paralelo
+  // (mesma chamada ja usada em getAnuncioDetalhe) em vez do lote, o que
+  // garante que o SKU volte certo. Tambem verifica o SKU por variacao
+  // (cor/modelo), caso o anuncio nao tenha SKU no nivel principal.
   const skuPorId = new Map<string, string>();
-  for (const item of itens) {
-    const sku: string | null =
-      item.seller_custom_field ??
-      item.attributes?.find((a: any) => a.id === "SELLER_SKU")?.value_name ??
-      null;
-    if (sku) skuPorId.set(item.id, sku);
-  }
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const resp = await fetch(`https://api.mercadolibre.com/items/${id}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!resp.ok) return;
+        const item = await resp.json();
+        const skuItem: string | null =
+          item.seller_custom_field ??
+          item.attributes?.find((a: any) => a.id === "SELLER_SKU")?.value_name ??
+          null;
+        if (skuItem) {
+          skuPorId.set(id, skuItem);
+          return;
+        }
+        const variacaoComSku = (item.variations ?? []).find(
+          (v: any) => v.seller_custom_field || v.attributes?.some((a: any) => a.id === "SELLER_SKU")
+        );
+        if (variacaoComSku) {
+          const skuVar: string | null =
+            variacaoComSku.seller_custom_field ??
+            variacaoComSku.attributes?.find((a: any) => a.id === "SELLER_SKU")?.value_name ??
+            null;
+          if (skuVar) skuPorId.set(id, skuVar);
+        }
+      } catch {
+        // ignora -- item entra como "(sem SKU)" no agrupamento abaixo
+      }
+    })
+  );
 
   const porSku = new Map<string, RankingSku>();
   for (const r of ranking) {
