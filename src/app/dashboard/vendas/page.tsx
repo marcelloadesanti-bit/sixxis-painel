@@ -6,17 +6,18 @@ import {
   getVendas,
   getCanceladosClassificados,
   getEnvioPedido,
-  getVendasPorEstado,
   agruparPorHorario,
   periodoDeDatas,
   type Pedido,
 } from "@/lib/mercadolivre/orders";
+import { getVendasPorEstadoComCache } from "@/lib/mercadolivre/estado-cache";
 import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
 import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
+import MetricasVendasView from "./metricas-vendas-view";
 
 // 27/07/2026: com as novas metricas por conta (visitas, cancelados,
 // devolucoes), o carregamento da pagina passou a fazer bem mais chamadas a
@@ -32,18 +33,17 @@ import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
 // 30/07/2026 (correcao): confirmado que o projeto ja tem Fluid Compute
 // habilitado na Vercel, o que permite maxDuration ate 300s MESMO no plano
 // Hobby (sem custo) -- nao e mais soft-limitado a 60s como antes. Subindo
-// para 300 para dar bem mais folga ao teto de enderecos abaixo.
+// para 300 para dar bem mais folga.
+//
+// 30/07/2026 (v2): "Vendas por estado" agora usa um cache permanente
+// (tabela pedido_envio_cache no Supabase, via getVendasPorEstadoComCache) em
+// vez de um teto fixo por carregamento -- pedidos ja resolvidos nunca sao
+// buscados de novo, entao o card fica mais completo a cada visita. O teto
+// que resta e so para NOVAS resolucoes (pedidos ainda nao cacheados) na
+// mesma carga, protegendo a primeira visita a um periodo grande.
 export const maxDuration = 300;
 
 const PEDIDOS_POR_PAGINA = 15;
-// Teto GLOBAL (somando todas as contas) de chamadas de shipment para o
-// agregado "Vendas por estado". O endereco do comprador nao vem no
-// /orders/search, exige 1 chamada por pedido -- por isso o teto, para nao
-// estourar o tempo de carregamento da pagina com muitas contas/pedidos.
-// Quando o periodo tem mais pedidos que isso, o card mostra um aviso de
-// amostra parcial (mesma logica ja usada em "cortado"/"amostraParcial").
-// Com maxDuration=300 (ver acima) da para subir esse teto com folga.
-const CAP_ENDERECOS_GLOBAL = 400;
 
 function formatarData(d: Date) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -253,37 +253,28 @@ export default async function VendasPage({
   // --- Fase 5: sessao de Metricas (horario, estado, SKU) ---
 
   // Horario de compra: reaproveita todosPedidos (dataCriacao ja buscado),
-  // zero chamada extra a API.
+  // zero chamada extra a API. Pico/altura das barras calculados dentro de
+  // MetricasVendasView (compartilhado com a subpagina /vendas/metricas).
   const horario = agruparPorHorario(todosPedidos);
-  const picoHorario = horario.reduce((max, h) => (h.quantidade > max.quantidade ? h : max), horario[0]);
 
   // Vendas por estado: precisa de 1 chamada de shipment por pedido (o
-  // endereco nao vem no /orders/search). Limitado a CAP_ENDERECOS_GLOBAL
-  // pedidos no total (nao por conta), pegando os mais recentes primeiro.
-  const amostraEndereco = todosPedidos.slice(0, CAP_ENDERECOS_GLOBAL);
-  const pedidosPorContaAmostra = new Map<string, { id: number }[]>();
-  for (const p of amostraEndereco) {
-    if (!pedidosPorContaAmostra.has(p.contaId)) pedidosPorContaAmostra.set(p.contaId, []);
-    pedidosPorContaAmostra.get(p.contaId)!.push({ id: p.id });
+  // endereco nao vem no /orders/search) -- agora resolvido via cache
+  // permanente (pedido_envio_cache no Supabase). Pedidos ja vistos em
+  // qualquer visita anterior nao sao buscados de novo; so os novos entram no
+  // teto de seguranca desta carga (ver getVendasPorEstadoComCache).
+  const pedidosPorContaTodos = new Map<string, { id: number; dataCriacao: string }[]>();
+  for (const p of todosPedidos) {
+    if (!pedidosPorContaTodos.has(p.contaId)) pedidosPorContaTodos.set(p.contaId, []);
+    pedidosPorContaTodos.get(p.contaId)!.push({ id: p.id, dataCriacao: p.dataCriacao });
   }
   let vendasPorEstado: { estado: string; quantidade: number }[] = [];
-  const estadoAmostraParcial = todosPedidos.length > CAP_ENDERECOS_GLOBAL;
+  let estadoAmostraParcial = false;
+  let estadoResolvidoTotal = 0;
   try {
-    const porConta = await Promise.all(
-      Array.from(pedidosPorContaAmostra.entries()).map(async ([contaId, lista]) => {
-        const token = tokensPorConta.get(contaId);
-        if (!token) return { porEstado: [] as { estado: string; quantidade: number }[] };
-        return getVendasPorEstado(token, lista);
-      })
-    );
-    const mapaEstado = new Map<string, number>();
-    for (const r of porConta) {
-      for (const e of r.porEstado) mapaEstado.set(e.estado, (mapaEstado.get(e.estado) ?? 0) + e.quantidade);
-    }
-    vendasPorEstado = Array.from(mapaEstado.entries())
-      .map(([estado, quantidade]) => ({ estado, quantidade }))
-      .sort((a, b) => b.quantidade - a.quantidade)
-      .slice(0, 10);
+    const resultadoEstado = await getVendasPorEstadoComCache(supabase, pedidosPorContaTodos, tokensPorConta);
+    vendasPorEstado = resultadoEstado.porEstado;
+    estadoAmostraParcial = resultadoEstado.amostraParcial;
+    estadoResolvidoTotal = resultadoEstado.totalResolvidos;
   } catch (err) {
     console.error("Erro ao agregar vendas por estado:", err);
   }
@@ -400,8 +391,6 @@ export default async function VendasPage({
     },
   ];
 
-  const maxHorario = Math.max(...horario.map((h) => h.quantidade), 1);
-
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -512,62 +501,23 @@ export default async function VendasPage({
       </div>
 
       <div className="mb-8">
-        <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Métricas</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Horário de compra</p>
-            <div className="flex items-end gap-0.5" style={{ height: 60 }}>
-              {horario.map((h) => (
-                <div
-                  key={h.hora}
-                  title={`${h.hora}h: ${h.quantidade} pedido(s)`}
-                  className="flex-1 rounded-t bg-[var(--color-sixxis-navy)]/70"
-                  style={{ height: `${Math.max((h.quantidade / maxHorario) * 100, 2)}%` }}
-                />
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-400">
-              0h a 23h (fuso de Brasília) · pico às {picoHorario?.hora ?? "—"}h
-            </p>
-          </div>
-
-          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Vendas por estado</p>
-            {vendasPorEstado.length === 0 ? (
-              <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {vendasPorEstado.map((e) => (
-                  <li key={e.estado} className="flex justify-between gap-2">
-                    <span className="truncate text-gray-600 dark:text-gray-300">{e.estado}</span>
-                    <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{e.quantidade}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {estadoAmostraParcial && (
-              <p className="mt-2 text-xs text-amber-600">
-                Amostra dos {CAP_ENDERECOS_GLOBAL} pedidos mais recentes (o período tem mais pedidos do que isso).
-              </p>
-            )}
-          </div>
-
-          <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Mais vendidos por SKU</p>
-            {maisVendidosPorSku.length === 0 ? (
-              <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {maisVendidosPorSku.slice(0, 8).map((s) => (
-                  <li key={s.sku} className="flex justify-between gap-2">
-                    <span className="truncate text-gray-600 dark:text-gray-300">{s.sku}</span>
-                    <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">{s.quantidade} un.</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Métricas</h2>
+          <Link
+            href="/dashboard/vendas/metricas"
+            className="text-xs text-[var(--color-sixxis-blue)] underline"
+          >
+            Ver mais →
+          </Link>
         </div>
+        <MetricasVendasView
+          horario={horario}
+          vendasPorEstado={vendasPorEstado}
+          estadoAmostraParcial={estadoAmostraParcial}
+          estadoResolvidoTotal={estadoResolvidoTotal}
+          estadoTotalPeriodo={todosPedidos.length}
+          maisVendidosPorSku={maisVendidosPorSku}
+        />
       </div>
 
       {algumCortado && (
