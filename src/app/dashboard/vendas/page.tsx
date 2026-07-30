@@ -98,32 +98,32 @@ export default async function VendasPage({
     (c) => filtroConta === "todas" || c.id === filtroConta
   );
 
-const resultados = await Promise.all(
-      contasParaBuscar.map(async (conta) => {
-              const nome = nomeConta(conta);
-              const cor = (conta.cor as string | null) ?? COR_PADRAO;
-              try {
-                        const accessToken = await getValidAccessToken(conta.id);
-                        const [vendas, canceladosClassificados, visitas] = await Promise.all([
-                                    getVendas(accessToken, conta.ml_user_id, periodo, conta.id, nome),
-                                    buscarSeguro(() => getCanceladosClassificados(accessToken, conta.ml_user_id, periodo)),
-                                    buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
-                                  ]);
-                        return { conta, nome, cor, vendas, canceladosClassificados, visitas, erro: null as string | null };
-              } catch (err) {
-                        console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
-                        return {
-                                    conta,
-                                    nome,
-                                    cor,
-                                    vendas: null,
-                                    canceladosClassificados: null,
-                                    visitas: null,
-                                    erro: "Falha ao buscar vendas desta conta.",
-                        };
-              }
-      })
-    );
+  const resultados = await Promise.all(
+    contasParaBuscar.map(async (conta) => {
+      const nome = nomeConta(conta);
+      const cor = (conta.cor as string | null) ?? COR_PADRAO;
+      try {
+        const accessToken = await getValidAccessToken(conta.id);
+        const [vendas, canceladosClassificados, visitas] = await Promise.all([
+          getVendas(accessToken, conta.ml_user_id, periodo, conta.id, nome),
+          buscarSeguro(() => getCanceladosClassificados(accessToken, conta.ml_user_id, periodo)),
+          buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
+        ]);
+        return { conta, nome, cor, vendas, canceladosClassificados, visitas, erro: null as string | null };
+      } catch (err) {
+        console.error(`Erro ao buscar vendas de ${conta.nickname}:`, err);
+        return {
+          conta,
+          nome,
+          cor,
+          vendas: null,
+          canceladosClassificados: null,
+          visitas: null,
+          erro: "Falha ao buscar vendas desta conta.",
+        };
+      }
+    })
+  );
 
   const todosPedidos: Pedido[] = resultados
     .flatMap((r) => r.vendas?.pedidos ?? [])
@@ -134,18 +134,18 @@ const resultados = await Promise.all(
   const algumCortado = resultados.some((r) => r.vendas?.cortado);
   const moeda = resultados.find((r) => r.vendas?.moeda)?.vendas?.moeda ?? "BRL";
 
-const totalCancelados = resultados.reduce(
-      (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.quantidade ?? 0), 0
-    );
-    const valorCancelado = resultados.reduce(
-          (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.valor ?? 0), 0
-        );
-    const totalDevolvidos = resultados.reduce(
-          (soma, r) => soma + (r.canceladosClassificados?.devolvidos.quantidade ?? 0), 0
-        );
-    const valorDevolvido = resultados.reduce(
-          (soma, r) => soma + (r.canceladosClassificados?.devolvidos.valor ?? 0), 0
-        );
+  const totalCancelados = resultados.reduce(
+    (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.quantidade ?? 0), 0
+  );
+  const valorCancelado = resultados.reduce(
+    (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.valor ?? 0), 0
+  );
+  const totalDevolvidos = resultados.reduce(
+    (soma, r) => soma + (r.canceladosClassificados?.devolvidos.quantidade ?? 0), 0
+  );
+  const valorDevolvido = resultados.reduce(
+    (soma, r) => soma + (r.canceladosClassificados?.devolvidos.valor ?? 0), 0
+  );
 
   // --- Formatacao por conta (texto ja pronto, evita mismatch de hidratacao) ---
   const contasFormatadas: ContaVendas[] = resultados.map((r) => {
@@ -187,21 +187,21 @@ const totalCancelados = resultados.reduce(
       quantidadeVendasLabel: formatarNumero(r.vendas.totalPedidos),
       conversaoLabel: conversao !== null ? `${conversao.toFixed(2).replace(".", ",")}%` : "—",
       canceladasLabel:
-                cc !== null
-                ? `${formatarNumero(cc.canceladosPuros.quantidade)} pedido${cc.canceladosPuros.quantidade === 1 ? "" : "s"}`
-                  : "-",
-            canceladasValorLabel:
-                      cc !== null && cc.canceladosPuros.quantidade > 0
-                ? formatarMoeda(cc.canceladosPuros.valor, cc.moeda ?? moedaConta)
-                        : "",
-            devolvidasLabel:
-                      cc !== null
-                ? `${formatarNumero(cc.devolvidos.quantidade)} pedido${cc.devolvidos.quantidade === 1 ? "" : "s"}`
-                        : "-",
-            devolvidasValorLabel:
-                      cc !== null && cc.devolvidos.quantidade > 0
-                ? formatarMoeda(cc.devolvidos.valor, cc.moeda ?? moedaConta)
-                        : "",
+        cc !== null
+          ? `${formatarNumero(cc.canceladosPuros.quantidade)} pedido${cc.canceladosPuros.quantidade === 1 ? "" : "s"}`
+          : "-",
+      canceladasValorLabel:
+        cc !== null && cc.canceladosPuros.quantidade > 0
+          ? formatarMoeda(cc.canceladosPuros.valor, cc.moeda ?? moedaConta)
+          : "",
+      devolvidasLabel:
+        cc !== null
+          ? `${formatarNumero(cc.devolvidos.quantidade)} pedido${cc.devolvidos.quantidade === 1 ? "" : "s"}`
+          : "-",
+      devolvidasValorLabel:
+        cc !== null && cc.devolvidos.quantidade > 0
+          ? formatarMoeda(cc.devolvidos.valor, cc.moeda ?? moedaConta)
+          : "",
     };
   });
 
@@ -293,15 +293,22 @@ const totalCancelados = resultados.reduce(
       </form>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        {presets.map((p) => (
-          <Link
-            key={p.label}
-            href={`/dashboard/vendas?de=${p.de}&ate=${p.ate}&conta=${filtroConta}`}
-            className="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            {p.label}
-          </Link>
-        ))}
+        {presets.map((p) => {
+          const ativo = p.de === de && p.ate === ate;
+          return (
+            <Link
+              key={p.label}
+              href={`/dashboard/vendas?de=${p.de}&ate=${p.ate}&conta=${filtroConta}`}
+              className={`rounded-full px-3 py-1.5 text-sm ${
+                ativo
+                  ? "bg-[var(--color-sixxis-navy)] text-white"
+                  : "border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              {p.label}
+            </Link>
+          );
+        })}
       </div>
 
       <p className="mb-4 text-xs text-gray-400">
@@ -329,9 +336,9 @@ const totalCancelados = resultados.reduce(
           <p className="text-xs uppercase text-gray-400">Devolvidos no período</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalDevolvidos)}</p>
           {valorDevolvido > 0 && (
-      <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
-      )}
-      </div>
+            <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
+          )}
+        </div>
       </div>
 
       <div className="mb-8">
