@@ -10,7 +10,7 @@ import {
   type Pedido,
 } from "@/lib/mercadolivre/orders";
 import { getVendasPorEstadoComCache } from "@/lib/mercadolivre/estado-cache";
-import { getMaisVendidosPorSku, type RankingSku } from "@/lib/mercadolivre/items";
+import { getMaisVendidosPorSkuComMapa, type RankingSku } from "@/lib/mercadolivre/items";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
@@ -251,12 +251,6 @@ export default async function VendasPage({
 
   // --- Fase 5/7: sessao de Metricas (horario x dia, estado, SKU) ---
 
-  // Horario de compra: reaproveita todosPedidos (contaId + dataCriacao ja
-  // buscados), zero chamada extra a API. A matriz dia-da-semana x hora, o
-  // filtro de pilula por conta e os calculos de pico ficam dentro de
-  // MetricasVendasView (client component, compartilhado com a subpagina
-  // /vendas/metricas).
-  const pedidosHorario = todosPedidos.map((p) => ({ contaId: p.contaId, dataCriacao: p.dataCriacao }));
   const contasFiltroHorario = contasParaBuscar.map((c) => ({
     id: c.id,
     nome: nomeConta(c),
@@ -294,6 +288,12 @@ export default async function VendasPage({
   // proprio accessToken), e so DEPOIS consolidada entre as contas -- usar um
   // unico token para itens de contas diferentes fazia o campo de SKU voltar
   // sempre vazio para os itens que nao pertenciam aquela conta.
+  //
+  // Fase 7 (30/07/2026): getMaisVendidosPorSkuComMapa tambem devolve o mapa
+  // itemId -> sku usado internamente, reaproveitado abaixo para enriquecer
+  // pedidosHorario (clique-detalhe do card de horario) sem nenhuma chamada
+  // extra a API.
+  const skuPorItemIdGlobal = new Map<string, string>();
   const rankingPorSkuPorConta = await Promise.all(
     resultados.map(async (r) => {
       if (!r.accessToken || !r.vendas?.porProduto?.length) return [] as RankingSku[];
@@ -301,7 +301,9 @@ export default async function VendasPage({
         .sort((a, b) => b.quantidade - a.quantidade)
         .slice(0, 30); // teto antes da busca de SKU, cobre folgado o catalogo pequeno do usuario
       try {
-        return await getMaisVendidosPorSku(r.accessToken, produtosConta);
+        const { ranking, skuPorItemId } = await getMaisVendidosPorSkuComMapa(r.accessToken, produtosConta);
+        for (const [itemId, sku] of skuPorItemId) skuPorItemIdGlobal.set(itemId, sku);
+        return ranking;
       } catch (err) {
         console.error(`Erro ao buscar SKU dos produtos vendidos de ${r.nome}:`, err);
         return [] as RankingSku[];
@@ -323,6 +325,24 @@ export default async function VendasPage({
   const maisVendidosPorSku: RankingSku[] = Array.from(porSkuConsolidado.values()).sort(
     (a, b) => b.quantidade - a.quantidade
   );
+
+  // Horario de compra: reaproveita todosPedidos (contaId, dataCriacao e
+  // itens ja buscados em getVendas), zero chamada extra a API -- o sku de
+  // cada item vem do mapa montado acima (so cobre os itens que entraram no
+  // ranking por SKU, mesma limitacao ja existente no card "Mais vendidos
+  // por SKU"; os demais caem no titulo). A matriz dia-da-semana x hora, o
+  // filtro de pilula por conta e o clique-detalhe ficam dentro de
+  // MetricasVendasView (client component, compartilhado com a subpagina
+  // /vendas/metricas).
+  const pedidosHorario = todosPedidos.map((p) => ({
+    contaId: p.contaId,
+    dataCriacao: p.dataCriacao,
+    itens: p.itens.map((it) => ({
+      sku: skuPorItemIdGlobal.get(it.itemId) ?? null,
+      titulo: it.titulo,
+      quantidade: it.quantidade,
+    })),
+  }));
 
   // --- Paginacao do extrato (15 em 15) ---
   const totalPaginasExtrato = Math.max(1, Math.ceil(todosPedidos.length / PEDIDOS_POR_PAGINA));

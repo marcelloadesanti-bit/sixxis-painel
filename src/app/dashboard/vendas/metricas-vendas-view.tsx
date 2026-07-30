@@ -1,11 +1,11 @@
 "use client";
 
 // Componente de apresentacao (client component, por causa do filtro de
-// pilula interativo) da secao "Metricas" de Vendas -- horario de compra
-// (dia da semana x hora, no estilo do proprio painel do Mercado Livre mas
-// em barras em vez de bolinhas), vendas por estado e mais vendidos por SKU.
-// Reaproveitado tanto no Resumo de Vendas (/dashboard/vendas) quanto na
-// subpagina dedicada (/dashboard/vendas/metricas).
+// pilula e do clique-detalhe interativos) da secao "Metricas" de Vendas --
+// horario de compra (dia da semana x hora, no estilo do proprio painel do
+// Mercado Livre mas em barras em vez de bolinhas), vendas por estado e mais
+// vendidos por SKU. Reaproveitado tanto no Resumo de Vendas
+// (/dashboard/vendas) quanto na subpagina dedicada (/dashboard/vendas/metricas).
 //
 // 30/07/2026: o card de "Horario de compra" foi redesenhado a pedido do
 // usuario -- antes era so um grafico de barras por hora (0h-23h, agregado
@@ -16,13 +16,22 @@
 // grafico de bolinhas do ML (que o usuario achou confuso). O filtro de
 // conta usa o mesmo padrao de "pilula" (rounded-full) ja usado nos presets
 // de periodo do restante do painel.
+//
+// 30/07/2026 (v2): grade de horas fixa embaixo do grafico, barras mais
+// altas/visiveis, cores por conta (consolidado = roxo #9D00FF, conta
+// filtrada = cor da propria conta) e clique numa celula dia x hora abrindo
+// um painel com o detalhe (quais contas venderam, quais produtos/SKUs).
 
 import { useMemo, useState } from "react";
 
-export type PedidoHorarioView = { contaId: string; dataCriacao: string };
+export type ItemPedidoView = { sku: string | null; titulo: string; quantidade: number };
+export type PedidoHorarioView = { contaId: string; dataCriacao: string; itens: ItemPedidoView[] };
 export type ContaFiltroView = { id: string; nome: string; cor: string };
 export type PontoEstadoView = { estado: string; quantidade: number };
 export type RankingSkuView = { sku: string; quantidade: number };
+
+const COR_CONSOLIDADO = "#9D00FF";
+const COR_PADRAO_FALLBACK = "#64748b";
 
 const DIAS_SEMANA = [
   "Domingo",
@@ -93,6 +102,8 @@ function calcularStats(matriz: number[][]) {
   return { total, diaPico, diaPicoTotal, horaPico, horaPicoTotal, maxCelula };
 }
 
+const ALTURA_LINHA = 44; // px -- barras mais altas/visiveis (era 28px na v1)
+
 export default function MetricasVendasView({
   pedidosHorario,
   contas,
@@ -111,6 +122,12 @@ export default function MetricasVendasView({
   maisVendidosPorSku: RankingSkuView[];
 }) {
   const [contaSelecionada, setContaSelecionada] = useState<string>("todas");
+  const [celulaSelecionada, setCelulaSelecionada] = useState<{ dia: number; hora: number } | null>(null);
+
+  const corAtual =
+    contaSelecionada === "todas"
+      ? COR_CONSOLIDADO
+      : contas.find((c) => c.id === contaSelecionada)?.cor ?? COR_CONSOLIDADO;
 
   const pedidosFiltrados = useMemo(
     () =>
@@ -123,9 +140,45 @@ export default function MetricasVendasView({
   const matriz = useMemo(() => construirMatriz(pedidosFiltrados), [pedidosFiltrados]);
   const stats = useMemo(() => calcularStats(matriz), [matriz]);
 
+  const detalheCelula = useMemo(() => {
+    if (!celulaSelecionada) return null;
+    const pedidosCelula = pedidosFiltrados.filter((p) => {
+      const { dia, hora } = diaHoraBrasilia(p.dataCriacao);
+      return dia === celulaSelecionada.dia && hora === celulaSelecionada.hora;
+    });
+
+    const porConta = new Map<string, number>();
+    const porProduto = new Map<string, { label: string; quantidade: number }>();
+    for (const p of pedidosCelula) {
+      porConta.set(p.contaId, (porConta.get(p.contaId) ?? 0) + 1);
+      for (const item of p.itens) {
+        const chave = item.sku ?? `titulo:${item.titulo}`;
+        const label = item.sku ? `${item.sku} — ${item.titulo}` : item.titulo;
+        const atual = porProduto.get(chave);
+        if (atual) atual.quantidade += item.quantidade;
+        else porProduto.set(chave, { label, quantidade: item.quantidade });
+      }
+    }
+
+    return {
+      total: pedidosCelula.length,
+      porConta: Array.from(porConta.entries())
+        .map(([contaId, quantidade]) => {
+          const conta = contas.find((c) => c.id === contaId);
+          return { contaId, nome: conta?.nome ?? "Conta", cor: conta?.cor ?? COR_PADRAO_FALLBACK, quantidade };
+        })
+        .sort((a, b) => b.quantidade - a.quantidade),
+      porProduto: Array.from(porProduto.values()).sort((a, b) => b.quantidade - a.quantidade),
+    };
+  }, [celulaSelecionada, pedidosFiltrados, contas]);
+
   const pillBase = "rounded-full px-3 py-1.5 text-xs font-medium transition-colors";
   const pillInativa =
     "border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800";
+
+  function alternarCelula(dia: number, hora: number) {
+    setCelulaSelecionada((atual) => (atual && atual.dia === dia && atual.hora === hora ? null : { dia, hora }));
+  }
 
   return (
     <div className="space-y-4">
@@ -137,10 +190,12 @@ export default function MetricasVendasView({
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={() => setContaSelecionada("todas")}
-              className={`${pillBase} ${
-                contaSelecionada === "todas" ? "bg-[var(--color-sixxis-navy)] text-white" : pillInativa
-              }`}
+              onClick={() => {
+                setContaSelecionada("todas");
+                setCelulaSelecionada(null);
+              }}
+              className={`${pillBase} ${contaSelecionada === "todas" ? "text-white" : pillInativa}`}
+              style={contaSelecionada === "todas" ? { backgroundColor: COR_CONSOLIDADO } : undefined}
             >
               Consolidado
             </button>
@@ -148,10 +203,11 @@ export default function MetricasVendasView({
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setContaSelecionada(c.id)}
-                className={`${pillBase} ${
-                  contaSelecionada === c.id ? "text-white" : pillInativa
-                }`}
+                onClick={() => {
+                  setContaSelecionada(c.id);
+                  setCelulaSelecionada(null);
+                }}
+                className={`${pillBase} ${contaSelecionada === c.id ? "text-white" : pillInativa}`}
                 style={contaSelecionada === c.id ? { backgroundColor: c.cor } : undefined}
               >
                 <span
@@ -168,7 +224,7 @@ export default function MetricasVendasView({
           <p className="text-sm text-gray-400">Sem dados suficientes no período.</p>
         ) : (
           <div className="flex flex-col gap-4 lg:flex-row">
-            <div className="flex-1 space-y-1.5">
+            <div className="flex-1 space-y-1">
               {matriz.map((horas, d) => {
                 const totalDia = horas.reduce((s, q) => s + q, 0);
                 return (
@@ -176,15 +232,27 @@ export default function MetricasVendasView({
                     <span className="w-20 shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {DIAS_SEMANA_CURTO[d]}
                     </span>
-                    <div className="flex flex-1 items-end gap-[2px]" style={{ height: 28 }}>
-                      {horas.map((q, h) => (
-                        <div
-                          key={h}
-                          title={`${DIAS_SEMANA[d]}, ${h}h: ${q} pedido(s)`}
-                          className="flex-1 rounded-sm bg-[var(--color-sixxis-navy)]/70"
-                          style={{ height: `${q > 0 ? Math.max((q / stats.maxCelula) * 100, 8) : 2}%` }}
-                        />
-                      ))}
+                    <div className="flex flex-1 items-end gap-px" style={{ height: ALTURA_LINHA }}>
+                      {horas.map((q, h) => {
+                        const selecionada = celulaSelecionada?.dia === d && celulaSelecionada?.hora === h;
+                        return (
+                          <button
+                            key={h}
+                            type="button"
+                            title={`${DIAS_SEMANA[d]}, ${h}h: ${q} pedido(s)`}
+                            onClick={() => q > 0 && alternarCelula(d, h)}
+                            className="flex-1 rounded-[1px] transition-[filter]"
+                            style={{
+                              height: `${q > 0 ? Math.max((q / stats.maxCelula) * 100, 18) : 3}%`,
+                              backgroundColor: corAtual,
+                              opacity: q > 0 ? 0.85 : 0.25,
+                              outline: selecionada ? `2px solid ${corAtual}` : "none",
+                              outlineOffset: 1,
+                              cursor: q > 0 ? "pointer" : "default",
+                            }}
+                          />
+                        );
+                      })}
                     </div>
                     <span className="w-8 shrink-0 text-right text-xs font-medium text-gray-700 dark:text-gray-300">
                       {totalDia}
@@ -192,7 +260,79 @@ export default function MetricasVendasView({
                   </div>
                 );
               })}
-              <p className="pl-[88px] text-xs text-gray-400">0h às 23h (fuso de Brasília)</p>
+
+              {/* Grade de horas fixa (0h a 23h), alinhada com as colunas das barras acima */}
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="w-20 shrink-0" />
+                <div className="flex flex-1 gap-px">
+                  {Array.from({ length: 24 }).map((_, h) => (
+                    <span
+                      key={h}
+                      className="flex-1 text-center text-[8px] leading-none text-gray-400 dark:text-gray-500"
+                    >
+                      {h}
+                    </span>
+                  ))}
+                </div>
+                <span className="w-8 shrink-0" />
+              </div>
+              <p className="pl-[88px] text-xs text-gray-400">Fuso de Brasília · clique numa barra para ver o detalhe</p>
+
+              {detalheCelula && (
+                <div className="mt-2 rounded border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="font-semibold text-gray-800 dark:text-gray-200">
+                      {celulaSelecionada && DIAS_SEMANA[celulaSelecionada.dia]}, {celulaSelecionada?.hora}h ·{" "}
+                      {detalheCelula.total} pedido(s)
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCelulaSelecionada(null)}
+                      className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      Fechar ×
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-xs uppercase text-gray-400">Por conta</p>
+                      <ul className="space-y-1">
+                        {detalheCelula.porConta.map((c) => (
+                          <li key={c.contaId} className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5 truncate text-gray-600 dark:text-gray-300">
+                              <span
+                                className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: c.cor }}
+                              />
+                              {c.nome}
+                            </span>
+                            <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">
+                              {c.quantidade}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs uppercase text-gray-400">Produtos vendidos</p>
+                      {detalheCelula.porProduto.length === 0 ? (
+                        <p className="text-xs text-gray-400">—</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {detalheCelula.porProduto.slice(0, 6).map((p) => (
+                            <li key={p.label} className="flex justify-between gap-2">
+                              <span className="truncate text-gray-600 dark:text-gray-300">{p.label}</span>
+                              <span className="shrink-0 font-medium text-gray-900 dark:text-gray-100">
+                                {p.quantidade}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex shrink-0 flex-row gap-4 border-gray-100 pt-2 dark:border-gray-700 lg:w-44 lg:flex-col lg:border-l lg:pl-4 lg:pt-0">
