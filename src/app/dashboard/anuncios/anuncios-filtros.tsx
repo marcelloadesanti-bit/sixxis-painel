@@ -46,6 +46,8 @@ export default function AnunciosFiltros({
     atualizar({ contas: novas.join(",") });
   }
 
+  const todasMarcadas = contasSelecionadas.length === todasContas.length;
+
   return (
     <div className="flex flex-col gap-3 rounded border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -87,6 +89,16 @@ export default function AnunciosFiltros({
       {todasContas.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium uppercase text-gray-400">Contas</span>
+          <button
+            onClick={() => atualizar({ contas: todasContas.map((c) => c.id).join(",") })}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              todasMarcadas
+                ? "bg-[var(--color-sixxis-navy)] text-white"
+                : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            Consolidado (todas)
+          </button>
           {todasContas.map((c) => {
             const marcado = contasSelecionadas.includes(c.id);
             return (
