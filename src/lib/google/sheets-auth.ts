@@ -48,6 +48,8 @@ export async function getGoogleSheetsAccessToken(): Promise<string> {
   const privateKey = privateKeyRaw.replace(/\\n/g, "\n");
 
   const jwt = assinarJwt(clientEmail, privateKey);
+  // cache: "no-store" -- nunca deixar o Next.js reaproveitar (Data Cache) uma
+  // resposta antiga de autenticacao; sempre autenticar de verdade.
   const resp = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -55,6 +57,7 @@ export async function getGoogleSheetsAccessToken(): Promise<string> {
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: jwt,
     }),
+    cache: "no-store",
   });
 
   if (!resp.ok) {
