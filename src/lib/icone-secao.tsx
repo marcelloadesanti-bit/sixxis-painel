@@ -14,6 +14,7 @@ import {
   Link2,
   BarChart3,
   Target,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ const MAPA_ICONES: Record<string, LucideIcon> = {
   Link2,
   BarChart3,
   Target,
+  Boxes,
 };
 
 export function IconeSecao({ chave, className }: { chave: string; className?: string }) {
