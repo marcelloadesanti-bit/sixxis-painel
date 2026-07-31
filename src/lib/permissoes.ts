@@ -2,13 +2,13 @@
 // O admin sempre tem acesso total (nao passa por essas checagens).
 // Colaboradores tem um objeto `permissoes` (jsonb na tabela profiles) no formato:
 // {
-// resumo: { acesso: true, nivel: "edicao" },
-// vendas: { acesso: true, nivel: "leitura" },
-// publicidade: { acesso: false, nivel: "leitura" },
-// promocoes: { acesso: false, nivel: "leitura" },
-// amazon: { acesso: false, nivel: "leitura" },
-// pos_venda: { acesso: true, nivel: "edicao", subsecoes: ["mensagens"] },
-// faturamento: { acesso: false, nivel: "leitura" },
+//   resumo: { acesso: true, nivel: "edicao" },
+//   vendas: { acesso: true, nivel: "leitura" },
+//   publicidade: { acesso: false, nivel: "leitura" },
+//   promocoes: { acesso: false, nivel: "leitura" },
+//   amazon: { acesso: false, nivel: "leitura" },
+//   pos_venda: { acesso: true, nivel: "edicao", subsecoes: ["mensagens"] },
+//   faturamento: { acesso: false, nivel: "leitura" },
 // }
 // `subsecoes` (opcional): lista de sub-abas liberadas. Se omitido/undefined,
 // todas as sub-abas da secao ficam liberadas.
@@ -17,7 +17,9 @@ export type NivelAcesso = "leitura" | "edicao";
 
 export type SubsecaoPosVenda = "perguntas" | "mensagens" | "reclamacoes";
 export type SubsecaoVendas = "resumo_vendas" | "metricas_vendas" | "historico_vendas";
-export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar" | "tendencias_busca";
+// Fase 11 (31/07/2026): "qualidade" - Central de Qualidade (score oficial
+// do ML + status de catalogo), sub-aba de Anuncios.
+export type SubsecaoAnuncios = "resumo_anuncios" | "gestao" | "criar" | "tendencias_busca" | "qualidade";
 export type SubsecaoAmazon =
   | "amz_vendas"
   | "amz_faturamento"
@@ -128,6 +130,7 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "resumo_anuncios", label: "Resumo", href: "/dashboard/anuncios" },
       { codigo: "gestao", label: "Editar anúncios", href: "/dashboard/anuncios/gestao" },
       { codigo: "criar", label: "Criar anúncios", href: "/dashboard/anuncios/criar" },
+      { codigo: "qualidade", label: "Central de Qualidade", href: "/dashboard/anuncios/qualidade" },
       { codigo: "tendencias_busca", label: "Tendências de busca", href: "/dashboard/anuncios/tendencias" },
     ],
   },
