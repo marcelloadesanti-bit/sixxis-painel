@@ -48,6 +48,7 @@ export type CodigoSecao =
   | "pos_venda"
   | "faturamento"
   | "concorrencia"
+  | "estoque"
   // Secoes administrativas: nunca ficam disponiveis para colaboradores comuns.
   // So podem ser concedidas a usuarios com role "administrador" (ou ao admin
   // master, que sempre tem acesso total). Ver README de seguranca em
@@ -174,6 +175,10 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "mais_vendidos", label: "Mais Vendidos por Categoria" },
     ],
   },
+  // Fase 12 (31/07/2026): le a planilha "CONTROLE DE ESTOQUE SIXXIS"
+  // (Google Sheets, SOMENTE LEITURA) e cruza com a velocidade de venda por
+  // SKU (ultimos 60 dias) para projetar risco de ruptura.
+  { codigo: "estoque", label: "Estoque", href: "/dashboard/estoque", icon: "Boxes", grupo: "vendas_anuncios" },
 ];
 
 // Secoes administrativas: gestao de equipe, contas ML/Amazon conectadas,
