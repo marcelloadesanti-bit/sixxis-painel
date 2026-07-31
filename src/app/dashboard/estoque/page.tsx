@@ -11,6 +11,11 @@ import {
 } from "@/lib/estoque/metricas";
 import EstoquePainel, { type LinhaEstoque } from "./estoque-painel";
 
+// force-dynamic: a planilha e a velocidade de venda mudam a todo momento --
+// nunca deixar o Next.js servir um render em cache (Full Route Cache) desta
+// pagina.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const maxDuration = 300;
 
 export default async function EstoquePage() {
