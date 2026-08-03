@@ -4,11 +4,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { buscarVendasMlAmazon, buscarVendasManuais, type ItemVendas } from "@/lib/sige/vendas";
 import { buscarAdsMl, buscarAdsManuais, somarItensAds } from "@/lib/sige/ads";
 import { calcularComissao, calcularCanaisAutomaticos, type ConfigComissao } from "@/lib/sige/comissao";
+import { buscarComercial } from "@/lib/sige/comercial";
 
 // Recalcula a comissao do mes corrente "ate agora" (do dia 1 ate hoje) e
 // grava um snapshot (linha unica, id=1) em sige_comissao_snapshot -- fonte
 // rapida para o card de "resumo automatico" da tela de Metas & Comissao, sem
 // precisar bater nas APIs do ML/Amazon/Ads a cada carregamento de pagina.
+//
+// O valor Comercial do mes (lib/sige/comercial.ts -- vendas fechadas
+// manualmente pelo setor comercial por dentro do ML) e deduzido da base
+// nao-Amazon ANTES de calcular organico/pago, pois essas vendas nao entram
+// no comissionamento normal do gestor.
 //
 // Chamada por duas origens:
 // 1) Vercel Cron Job, 1x por dia as 23:30 BRT (ver vercel.json) -- autentica
@@ -63,24 +69,33 @@ export async function POST(request: Request) {
   const config = configRow as unknown as ConfigComissao;
   const metaTotal = metaRow ? Number(metaRow.valor) : 0;
 
-  const [vendasAuto, vendasManuais, adsMl, adsManuais] = await Promise.all([
+  const [vendasAuto, vendasManuais, adsMl, adsManuais, comercial] = await Promise.all([
     buscarVendasMlAmazon(de, ate, null),
     buscarVendasManuais(de, ate, null),
     buscarAdsMl(de, ate, null),
     buscarAdsManuais(de, ate),
+    buscarComercial(de, ate),
   ]);
 
   const itensVendas: ItemVendas[] = [...vendasAuto, ...vendasManuais];
-  const baseNaoAmazon = itensVendas
+  const baseNaoAmazonBruta = itensVendas
     .filter((i) => i.tipo !== "amazon")
     .reduce((s, i) => s + i.faturamentoLiquido, 0);
+  // Deducao do Comercial -- vendas fechadas por dentro do ML pelo setor
+  // comercial, fora do fluxo normal de contas, nao entram no comissionamento.
+  const baseNaoAmazon = Math.max(0, baseNaoAmazonBruta - comercial.valorTotal);
   const amazonBruto = itensVendas.filter((i) => i.tipo === "amazon").reduce((s, i) => s + i.faturamentoBruto, 0);
 
   const adsConsolidado = somarItensAds([...adsMl, ...adsManuais]);
   const adsRetorno = adsConsolidado.retorno;
 
   const { organico, pago } = calcularCanaisAutomaticos({ baseNaoAmazon, amazonBruto, adsRetorno });
-  const resultado = calcularComissao({ metaTotal, organico, pago, amazonBruto, config });
+  const resultadoBase = calcularComissao({ metaTotal, organico, pago, amazonBruto, config });
+  const resultado = {
+    ...resultadoBase,
+    comercialDeduzido: comercial.valorTotal,
+    comercialNumeroVendas: comercial.numeroVendas,
+  };
 
   const calculadoEm = new Date().toISOString();
   const { error } = await admin.from("sige_comissao_snapshot").upsert({
