@@ -114,14 +114,28 @@ function Variacao({ v }: { v: number | null }) {
 // mexe em nenhum cálculo ou dado do relatório.
 function BlocoAssinaturas() {
   return (
-    <div className="mt-16 hidden grid-cols-2 gap-16 print:grid">
-      <div className="text-center">
-        <div className="h-12" />
-        <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">Assinatura do Colaborador</div>
+    <div className="mt-16 hidden print:block">
+      <div className="grid grid-cols-2 gap-16">
+        <div className="text-center">
+          <div className="h-12" />
+          <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">
+            <p className="font-medium text-gray-800">Marcello A. de Santi Fagundes</p>
+            <p>Assinatura do Colaborador</p>
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="h-12" />
+          <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">
+            <p className="font-medium text-gray-800">Luccas Gorgone Nogueira</p>
+            <p>Assinatura do Patrão</p>
+          </div>
+        </div>
       </div>
-      <div className="text-center">
-        <div className="h-12" />
-        <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">Assinatura do Patrão</div>
+      <div className="mt-12 flex justify-center">
+        <div className="w-64 text-center">
+          <div className="h-12" />
+          <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">Financeiro</div>
+        </div>
       </div>
     </div>
   );
