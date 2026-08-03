@@ -6,6 +6,13 @@
 // resolvido nunca mais precisa ser buscado de novo -- cada visita a
 // Vendas/Metricas preenche um pouco mais o cache, ate cobrir 100% do
 // historico, sem nunca precisar escanear um periodo inteiro de uma vez so.
+//
+// 03/08/2026 (Margem Bruta): o mesmo shipment que resolve estado/cidade ja
+// trazia o custo do frete (EnvioPedido.custoFrete) -- so nao era persistido.
+// Agora a coluna custo_frete tambem e gravada/lida junto, e o resultado
+// devolve um mapa pedidoId -> custoFrete (custoFretePorPedido) para a nova
+// aba Financeiro > Margem Bruta reaproveitar exatamente esta mesma
+// infraestrutura de cache (sem tabela nova, sem chamada extra a API).
 
 import { resolverEstadoPedidos, type PontoEstado } from "./orders";
 
@@ -27,6 +34,12 @@ export type ResultadoEstadoPeriodo = {
   // SKU) sem nenhuma chamada nova a API do ML nem ao banco. porEstado acima
   // continua so com a contagem (usado pela lista de texto existente).
   estadoPorPedido: Map<number, string>;
+  // 03/08/2026: mesma ideia, mas para o custo de frete -- usado pela aba
+  // Financeiro > Margem Bruta. Pedidos ainda nao resolvidos (nem em cache
+  // nem buscados nesta carga, por causa do teto de novas buscas) ficam de
+  // fora do mapa -- o chamador decide como tratar a ausencia (normalmente:
+  // excluir do consolidado e sinalizar "amostra parcial").
+  custoFretePorPedido: Map<number, number | null>;
 };
 
 // Teto de NOVAS resolucoes (pedidos ainda nao cacheados) por carregamento de
@@ -47,13 +60,20 @@ export async function getVendasPorEstadoComCache(
   }
   const idsPeriodo = todosPedidos.map((p) => p.id);
 
-  const cacheMap = new Map<number, { estado: string; cidade: string | null }>();
+  const cacheMap = new Map<number, { estado: string; cidade: string | null; custoFrete: number | null }>();
   for (let i = 0; i < idsPeriodo.length; i += 500) {
     const lote = idsPeriodo.slice(i, i + 500);
     if (lote.length === 0) continue;
-    const { data } = await supabase.from("pedido_envio_cache").select("pedido_id, estado, cidade").in("pedido_id", lote);
+    const { data } = await supabase
+      .from("pedido_envio_cache")
+      .select("pedido_id, estado, cidade, custo_frete")
+      .in("pedido_id", lote);
     for (const row of data ?? []) {
-      cacheMap.set(row.pedido_id, { estado: row.estado, cidade: row.cidade });
+      cacheMap.set(row.pedido_id, {
+        estado: row.estado,
+        cidade: row.cidade,
+        custoFrete: row.custo_frete ?? null,
+      });
     }
   }
 
@@ -69,7 +89,7 @@ export async function getVendasPorEstadoComCache(
     porContaParaBuscar.get(p.contaId)!.push({ id: p.id });
   }
 
-  const novosResolvidos: { pedidoId: number; contaId: string; estado: string; cidade: string | null }[] = [];
+  const novosResolvidos: { pedidoId: number; contaId: string; estado: string; cidade: string | null; custoFrete: number | null }[] = [];
   await Promise.all(
     Array.from(porContaParaBuscar.entries()).map(async ([contaId, lista]) => {
       const token = tokensPorConta.get(contaId);
@@ -90,6 +110,7 @@ export async function getVendasPorEstadoComCache(
       conta_id: r.contaId,
       estado: r.estado,
       cidade: r.cidade,
+      custo_frete: r.custoFrete,
       data_pedido: (dataPorPedido.get(r.pedidoId) ?? "").slice(0, 10) || null,
     }));
     try {
@@ -103,18 +124,20 @@ export async function getVendasPorEstadoComCache(
       // motivo, nao derruba a pagina -- so nao acumula cache desta vez.
       console.error("Erro ao gravar cache de estado (pedido_envio_cache):", err);
     }
-    for (const r of novosResolvidos) cacheMap.set(r.pedidoId, { estado: r.estado, cidade: r.cidade });
+    for (const r of novosResolvidos) cacheMap.set(r.pedidoId, { estado: r.estado, cidade: r.cidade, custoFrete: r.custoFrete });
   }
 
   const mapaEstado = new Map<string, number>();
   let totalResolvidos = 0;
   const estadoPorPedido = new Map<number, string>();
+  const custoFretePorPedido = new Map<number, number | null>();
   for (const p of todosPedidos) {
     const resolvido = cacheMap.get(p.id);
     if (resolvido) {
       mapaEstado.set(resolvido.estado, (mapaEstado.get(resolvido.estado) ?? 0) + 1);
       totalResolvidos++;
       estadoPorPedido.set(p.id, resolvido.estado);
+      custoFretePorPedido.set(p.id, resolvido.custoFrete);
     }
   }
 
@@ -129,6 +152,7 @@ export async function getVendasPorEstadoComCache(
     totalPeriodo: todosPedidos.length,
     amostraParcial: naoCacheados.length > tetoNovasBuscas,
     estadoPorPedido,
+    custoFretePorPedido,
   };
 }
 

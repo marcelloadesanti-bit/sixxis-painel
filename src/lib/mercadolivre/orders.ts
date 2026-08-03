@@ -51,7 +51,11 @@ export type Pedido = {
   // agora tambem por pedido individual. Alimenta o detalhamento por SKU do
   // mapa de vendas por estado (clique num estado mostra valor por SKU
   // daquele estado), sem nenhuma chamada extra a API.
-  itens: { itemId: string; titulo: string; quantidade: number; valor: number }[];
+  // 03/08/2026 (Margem Bruta): adicionado "taxaPlataforma" por item -- o
+  // sale_fee ja vem por order_item na API (somarTaxaPlataforma so somava
+  // pro total do pedido); preservar por item permite ratear comissao real
+  // por SKU no calculo de margem, sem nenhuma chamada extra a API.
+  itens: { itemId: string; titulo: string; quantidade: number; valor: number; taxaPlataforma: number }[];
 };
 
 export type ResumoVendas = {
@@ -212,6 +216,7 @@ export async function getVendas(
           titulo: oi.item?.title ?? "Produto sem título",
           quantidade: oi.quantity ?? 0,
           valor: (oi.unit_price ?? 0) * (oi.quantity ?? 0),
+          taxaPlataforma: oi.sale_fee ?? 0,
         })),
       });
     }
@@ -707,7 +712,17 @@ export function agruparPorHorario(pedidos: { dataCriacao: string }[]): PontoHora
 }
 
 export type PontoEstado = { estado: string; quantidade: number };
-export type EstadoResolvido = { pedidoId: number; estado: string; cidade: string | null };
+export type EstadoResolvido = {
+  pedidoId: number;
+  estado: string;
+  cidade: string | null;
+  // 03/08/2026 (Margem Bruta): o custo de frete ja vinha sendo buscado aqui
+  // dentro (getEnvioPedido.custoFrete), so nao era propagado pro chamador --
+  // agora e, para o cache permanente (pedido_envio_cache) tambem guardar
+  // esse valor junto com estado/cidade, sem nenhuma chamada extra a API
+  // (mesmo shipment resolve os dois).
+  custoFrete: number | null;
+};
 
 // 30/07/2026: substituido por um cache permanente (tabela
 // pedido_envio_cache no Supabase, ver src/lib/mercadolivre/estado-cache.ts).
@@ -736,6 +751,7 @@ export async function resolverEstadoPedidos(
             pedidoId: p.id,
             estado: envio?.estado ?? "Não informado",
             cidade: envio?.cidade ?? null,
+            custoFrete: envio?.custoFrete ?? null,
           } as EstadoResolvido;
         } catch {
           return null;
