@@ -116,6 +116,15 @@ export async function GET(request: Request) {
   const de = searchParams.get("de");
   const ate = searchParams.get("ate");
   const contasParam = searchParams.get("contas");
+  // 03/08/2026: a deducao do Comercial no relatorio de Vendas passou a ser
+  // opcional por geracao (checkbox em relatorio-client.tsx), para o usuario
+  // poder gerar varias combinacoes de contas/periodo no mes sem precisar
+  // zerar o card toda vez -- o valor continua salvo no banco por mes
+  // (lib/sige/comercial.ts), so a aplicacao NESTE relatorio e que fica
+  // condicional. O Fechamento Mensal (fechamento-client.tsx) sempre manda
+  // aplicarComercial=1 na sua previa, preservando o comportamento anterior
+  // la (e o congelamento oficial em api/sige/fechamento nem passa por aqui).
+  const aplicarComercial = searchParams.get("aplicarComercial") === "1";
 
   if (!de || !ate) {
     return NextResponse.json({ erro: "Periodo (de/ate) obrigatorio." }, { status: 400 });
@@ -168,7 +177,7 @@ export async function GET(request: Request) {
   const [itensAuto, itensManuaisVendas, comercial] = await Promise.all([
     buscarVendasMlAmazon(de, ate, idsFiltro),
     buscarVendasManuais(de, ate, idsFiltro),
-    buscarComercial(de, ate),
+    aplicarComercial ? buscarComercial(de, ate) : Promise.resolve(undefined),
   ]);
 
   const itens = [...itensAuto, ...itensManuaisVendas].sort((a, b) => a.nome.localeCompare(b.nome));
