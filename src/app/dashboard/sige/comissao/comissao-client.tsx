@@ -64,6 +64,25 @@ function formatarDataHora(iso: string): string {
   });
 }
 
+// Campos de assinatura -- aparecem só na versão impressa/PDF (Imprimir /
+// Baixar PDF usa window.print(), não uma lib de PDF -- ver o bloco
+// @media print no topo do componente). Puramente cosmético/acréscimo: não
+// mexe em nenhum cálculo ou dado do relatório.
+function BlocoAssinaturas() {
+  return (
+    <div className="mt-16 hidden grid-cols-2 gap-16 print:grid">
+      <div className="text-center">
+        <div className="h-12" />
+        <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">Assinatura do Colaborador</div>
+      </div>
+      <div className="text-center">
+        <div className="h-12" />
+        <div className="border-t border-gray-500 pt-2 text-xs text-gray-600">Assinatura do Patrão</div>
+      </div>
+    </div>
+  );
+}
+
 export default function ComissaoClient({
   configInicial,
   metasMensais,
@@ -758,6 +777,8 @@ export default function ComissaoClient({
                   )}
                 </div>
               </div>
+
+              <BlocoAssinaturas />
             </div>
           )}
         </div>
