@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { buscarVendasMlAmazon, buscarVendasManuais } from "@/lib/sige/vendas";
 import { buscarAdsMl } from "@/lib/sige/ads";
+import { buscarComercial } from "@/lib/sige/comercial";
 
 // Fechamento Mensal do SIGE: acao manual e deliberada (o usuario escolhe o
 // periodo -- nao precisa ser o mes corrente nem ser feita em uma data
@@ -10,12 +11,16 @@ import { buscarAdsMl } from "@/lib/sige/ads";
 // 1) grava os lancamentos manuais informados (canais sem API + Ads sem API)
 // para o periodo escolhido, reaproveitaveis depois em Relatorios;
 // 2) busca os numeros "ao vivo" de ML + Amazon (vendas) e Mercado Ads (ML)
-// para o mesmo periodo;
+// para o mesmo periodo, alem do valor Comercial ja lancado (lib/sige/comercial.ts,
+// somando o(s) mes(es) calendario tocados pelo periodo);
 // 3) congela tudo (sige_fechamentos + sige_fechamento_itens +
 // sige_fechamento_ads_itens, essa ultima com as linhas automaticas do
 // Mercado Ads por loja E as manuais de Google/Meta Ads) -- e esse
 // congelamento que alimenta o Historico de Desempenho e o Relatorio de
-// Crescimento (ver lib/sige/historico.ts).
+// Crescimento (ver lib/sige/historico.ts). O Comercial fica gravado direto
+// em sige_fechamentos (comercial_numero_vendas/comercial_valor_total) para
+// preservar o valor exato usado naquele momento, mesmo que o lancamento
+// mensal seja editado depois.
 export const maxDuration = 60;
 
 export async function GET() {
@@ -24,7 +29,7 @@ export async function GET() {
   const admin = createAdminClient();
   const { data: fechamentos, error } = await admin
     .from("sige_fechamentos")
-    .select("id, rotulo, periodo_de, periodo_ate, fechado_em")
+    .select("id, rotulo, periodo_de, periodo_ate, fechado_em, comercial_numero_vendas, comercial_valor_total")
     .order("periodo_de", { ascending: false });
 
   if (error) {
@@ -131,19 +136,28 @@ export async function POST(request: Request) {
   }
 
   // 2) Busca os numeros "ao vivo" de ML + Amazon + os manuais recem-gravados
-  // (e quaisquer outros ja lancados que se sobreponham ao periodo), alem do
-  // Mercado Ads automatico por loja (para o Historico de Eficiencia de Ads).
-  const [itensAuto, itensManuaisTodos, itensAdsAuto] = await Promise.all([
+  // (e quaisquer outros ja lancados que se sobreponham ao periodo), o
+  // Mercado Ads automatico por loja (para o Historico de Eficiencia de Ads),
+  // e o valor Comercial ja lancado para o(s) mes(es) tocados pelo periodo.
+  const [itensAuto, itensManuaisTodos, itensAdsAuto, comercial] = await Promise.all([
     buscarVendasMlAmazon(periodoDe, periodoAte, null),
     buscarVendasManuais(periodoDe, periodoAte, null),
     buscarAdsMl(periodoDe, periodoAte, null),
+    buscarComercial(periodoDe, periodoAte),
   ]);
   const itens = [...itensAuto, ...itensManuaisTodos];
 
   // 3) Congela tudo.
   const { data: fechamento, error: erroFechamento } = await admin
     .from("sige_fechamentos")
-    .insert({ rotulo, periodo_de: periodoDe, periodo_ate: periodoAte, fechado_por: user.id })
+    .insert({
+      rotulo,
+      periodo_de: periodoDe,
+      periodo_ate: periodoAte,
+      fechado_por: user.id,
+      comercial_numero_vendas: comercial.numeroVendas,
+      comercial_valor_total: comercial.valorTotal,
+    })
     .select("id")
     .single();
 
@@ -198,5 +212,5 @@ export async function POST(request: Request) {
     await admin.from("sige_fechamento_ads_itens").insert(linhasAds);
   }
 
-  return NextResponse.json({ id: fechamento.id });
+  return NextResponse.json({ id: fechamento.id, comercial });
 }
