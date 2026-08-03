@@ -3,7 +3,7 @@ import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import RelatorioClient from "./relatorio-client";
 
 export default async function SigeRelatoriosPage() {
-  await exigirAcessoSecao("sige", "sige_relatorios");
+  const { podeEditar } = await exigirAcessoSecao("sige", "sige_relatorios");
 
   const admin = createAdminClient();
   const [{ data: contasMl }, { data: contasAmazon }, { data: canais }] = await Promise.all([
@@ -24,7 +24,7 @@ export default async function SigeRelatoriosPage() {
       <p className="mb-6 text-sm text-gray-500">
         Escolha as contas, o período e o tipo de relatório. Mostra o consolidado geral e o detalhamento por conta.
       </p>
-      <RelatorioClient contas={contas} />
+      <RelatorioClient contas={contas} podeEditar={podeEditar} />
     </main>
   );
 }

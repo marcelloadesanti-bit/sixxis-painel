@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PRESETS, periodoDoPreset, formatarData, type PresetKey } from "@/lib/date-utils";
 
 type ContaOpcao = { id: string; nome: string; cor: string };
@@ -54,11 +54,14 @@ type LinhaHistoricoResumo = {
   roas: number | null;
 };
 
+type ComercialInfo = { numeroVendas: number; valorTotal: number };
+
 type ResultadoVendas = {
   tipo: "vendas";
   periodo: { de: string; ate: string };
   consolidado: Omit<ItemVendasRel, "id" | "tipo" | "nome" | "cor" | "erro">;
   itens: ItemVendasRel[];
+  comercial?: ComercialInfo;
 };
 
 type ResultadoAds = {
@@ -112,7 +115,23 @@ const TIPOS_RELATORIO: { key: string; label: string; disponivel: boolean }[] = [
   { key: "visitas", label: "Visitas", disponivel: false },
 ];
 
-export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
+// Cor tiffany para distinguir o Comercial (vendas fechadas manualmente pelo
+// setor comercial por dentro do ML, deduzidas do faturamento -- nao entram
+// no comissionamento normal).
+const COR_COMERCIAL = "#44e2d9";
+const COR_COMERCIAL_TEXTO = "#0d7d76";
+
+function mesAtualYYYYMM(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function numero(v: string): number {
+  const n = Number(v.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+export default function RelatorioClient({ contas, podeEditar }: { contas: ContaOpcao[]; podeEditar: boolean }) {
   // Por padrao, so contas Mercado Livre e Amazon ja integradas vem
   // selecionadas. Canais manuais (ex: Netshoes/Magalu, Shopee, TikTok Shop)
   // ficam visiveis na lista, mas fora de selecao, ate ganharem integracao
@@ -127,6 +146,84 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+
+  // Card "Comercial" -- lancamento manual, um unico valor consolidado por
+  // mes calendario (ver lib/sige/comercial.ts). Independente do periodo do
+  // relatorio: o usuario escolhe o mes que esta lancando.
+  const [comercialMesSel, setComercialMesSel] = useState(mesAtualYYYYMM);
+  const [comercialNumeroVendas, setComercialNumeroVendas] = useState("");
+  const [comercialValorTotal, setComercialValorTotal] = useState("");
+  const [comercialCarregando, setComercialCarregando] = useState(false);
+  const [comercialSalvando, setComercialSalvando] = useState(false);
+  const [comercialErro, setComercialErro] = useState<string | null>(null);
+  const [comercialSalvoEm, setComercialSalvoEm] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tipo !== "vendas") return;
+    const [ano, mes] = comercialMesSel.split("-").map(Number);
+    if (!ano || !mes) return;
+
+    let cancelado = false;
+    setComercialCarregando(true);
+    setComercialErro(null);
+    fetch(`/api/sige/comercial?ano=${ano}&mes=${mes}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (cancelado) return;
+        if (!ok) {
+          setComercialErro(data.erro ?? "Falha ao carregar o Comercial deste mês.");
+          return;
+        }
+        setComercialNumeroVendas(data.numeroVendas ? String(data.numeroVendas) : "");
+        setComercialValorTotal(data.valorTotal ? String(data.valorTotal) : "");
+        setComercialSalvoEm(data.atualizadoEm ?? null);
+      })
+      .catch(() => {
+        if (!cancelado) setComercialErro("Falha ao carregar o Comercial deste mês.");
+      })
+      .finally(() => {
+        if (!cancelado) setComercialCarregando(false);
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [comercialMesSel, tipo]);
+
+  async function salvarComercial() {
+    const [ano, mes] = comercialMesSel.split("-").map(Number);
+    if (!ano || !mes) return;
+
+    setComercialSalvando(true);
+    setComercialErro(null);
+    try {
+      const res = await fetch("/api/sige/comercial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ano,
+          mes,
+          numeroVendas: numero(comercialNumeroVendas),
+          valorTotal: numero(comercialValorTotal),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setComercialErro(data.erro ?? "Falha ao salvar.");
+        return;
+      }
+      setComercialSalvoEm(new Date().toISOString());
+      // Se ja existe um relatorio de Vendas gerado na tela, atualiza para
+      // refletir o novo valor deduzido imediatamente.
+      if (resultado?.tipo === "vendas") {
+        gerar();
+      }
+    } catch {
+      setComercialErro("Falha ao salvar.");
+    } finally {
+      setComercialSalvando(false);
+    }
+  }
 
   function alternarConta(id: string) {
     setSelecionadas((prev) => {
@@ -205,14 +302,80 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
                 tipo === t.key
                   ? "bg-[var(--color-sixxis-navy)] text-white"
                   : t.disponivel
-                    ? "border border-gray-300 text-gray-600 hover:bg-gray-50"
-                    : "cursor-not-allowed border border-gray-200 text-gray-300"
+                  ? "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                  : "cursor-not-allowed border border-gray-200 text-gray-300"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
+
+        {tipo === "vendas" && (
+          <div className="mb-4 rounded border-2 p-3" style={{ borderColor: COR_COMERCIAL, backgroundColor: `${COR_COMERCIAL}14` }}>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase" style={{ color: COR_COMERCIAL_TEXTO }}>
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COR_COMERCIAL }} />
+                Comercial (vendas fechadas manualmente por dentro do ML)
+              </p>
+              <label className="flex items-center gap-2 text-xs text-gray-500">
+                Mês
+                <input
+                  type="month"
+                  value={comercialMesSel}
+                  onChange={(e) => setComercialMesSel(e.target.value)}
+                  className="rounded border border-gray-300 px-2 py-1 text-sm"
+                />
+              </label>
+            </div>
+            <p className="mb-2 text-xs text-gray-500">
+              Valor único consolidado da empresa para o mês selecionado — deduzido do faturamento neste relatório, no
+              Fechamento Mensal e no cálculo de Comissão do gestor.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col text-xs text-gray-500">
+                Nº de vendas
+                <input
+                  type="number"
+                  min={0}
+                  value={comercialNumeroVendas}
+                  onChange={(e) => setComercialNumeroVendas(e.target.value)}
+                  disabled={!podeEditar || comercialCarregando}
+                  className="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-100"
+                />
+              </label>
+              <label className="flex flex-col text-xs text-gray-500">
+                Valor total (R$)
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={comercialValorTotal}
+                  onChange={(e) => setComercialValorTotal(e.target.value)}
+                  disabled={!podeEditar || comercialCarregando}
+                  className="mt-1 w-40 rounded border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-100"
+                />
+              </label>
+              {podeEditar && (
+                <button
+                  onClick={salvarComercial}
+                  disabled={comercialSalvando || comercialCarregando}
+                  className="rounded px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: COR_COMERCIAL_TEXTO }}
+                >
+                  {comercialSalvando ? "Salvando..." : "Salvar"}
+                </button>
+              )}
+              {comercialCarregando && <span className="text-xs text-gray-400">Carregando...</span>}
+              {comercialSalvoEm && !comercialCarregando && (
+                <span className="text-xs text-gray-400">
+                  Salvo em {new Date(comercialSalvoEm).toLocaleString("pt-BR")}
+                </span>
+              )}
+            </div>
+            {comercialErro && <p className="mt-2 text-xs text-red-500">{comercialErro}</p>}
+          </div>
+        )}
 
         {tipo === "crescimento" ? (
           <p className="mb-4 text-xs text-gray-400">
@@ -332,7 +495,7 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
 
           {resultado.tipo === "vendas" ? (
             <>
-              <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
                   <p className="text-xs text-gray-500">Vendas brutas</p>
                   <p className="text-lg font-semibold text-gray-800 dark:text-white">{resultado.consolidado.vendasBrutas}</p>
@@ -348,9 +511,27 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
                   <p className="text-lg font-semibold text-gray-800 dark:text-white">{resultado.consolidado.vendasLiquidas}</p>
                 </div>
                 <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-                  <p className="text-xs text-gray-500">Faturamento líquido</p>
+                  <p className="text-xs text-gray-500">
+                    Faturamento líquido{(resultado.comercial?.valorTotal ?? 0) > 0 ? " (após Comercial)" : ""}
+                  </p>
                   <p className="text-lg font-semibold text-gray-800 dark:text-white">
-                    {formatarMoeda(resultado.consolidado.faturamentoLiquido)}
+                    {formatarMoeda(resultado.consolidado.faturamentoLiquido - (resultado.comercial?.valorTotal ?? 0))}
+                  </p>
+                  {(resultado.comercial?.valorTotal ?? 0) > 0 && (
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      Bruto (sem Comercial): {formatarMoeda(resultado.consolidado.faturamentoLiquido)}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded border p-4" style={{ borderColor: COR_COMERCIAL, backgroundColor: `${COR_COMERCIAL}14` }}>
+                  <p className="text-xs font-medium" style={{ color: COR_COMERCIAL_TEXTO }}>
+                    Comercial
+                  </p>
+                  <p className="text-lg font-semibold" style={{ color: COR_COMERCIAL_TEXTO }}>
+                    {formatarMoeda(resultado.comercial?.valorTotal ?? 0)}
+                  </p>
+                  <p className="mt-1 text-[11px]" style={{ color: COR_COMERCIAL_TEXTO }}>
+                    {resultado.comercial?.numeroVendas ?? 0} vendas · já deduzido acima
                   </p>
                 </div>
               </div>
@@ -388,6 +569,22 @@ export default function RelatorioClient({ contas }: { contas: ContaOpcao[] }) {
                         <td className="p-3 text-right font-medium">{formatarMoeda(i.faturamentoLiquido)}</td>
                       </tr>
                     ))}
+                    {(resultado.comercial?.valorTotal ?? 0) > 0 && (
+                      <tr className="border-b border-gray-100 last:border-0 dark:border-gray-700" style={{ backgroundColor: `${COR_COMERCIAL}14` }}>
+                        <td className="p-3">
+                          <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: COR_COMERCIAL }} />
+                          Comercial (dedução manual)
+                        </td>
+                        <td className="p-3 text-right">{resultado.comercial?.numeroVendas ?? 0}</td>
+                        <td className="p-3 text-right">—</td>
+                        <td className="p-3 text-right">—</td>
+                        <td className="p-3 text-right">—</td>
+                        <td className="p-3 text-right">—</td>
+                        <td className="p-3 text-right font-medium" style={{ color: COR_COMERCIAL_TEXTO }}>
+                          -{formatarMoeda(resultado.comercial?.valorTotal ?? 0)}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
