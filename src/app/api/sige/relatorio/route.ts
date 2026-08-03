@@ -3,6 +3,7 @@ import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { buscarVendasMlAmazon, buscarVendasManuais, somarItensVendas } from "@/lib/sige/vendas";
 import { buscarAdsMl, buscarAdsManuais, somarItensAds } from "@/lib/sige/ads";
 import { buscarHistoricoMensal, encontrarMesAnterior, encontrarMesmoMesAnoAnterior, variacao } from "@/lib/sige/historico";
+import { buscarComercial } from "@/lib/sige/comercial";
 
 // Relatorios do SIGE: agregacao sob demanda por conta (ML, Amazon ou canal
 // manual) e periodo livre escolhido pelo usuario -- equivalente automatizado
@@ -19,6 +20,12 @@ import { buscarHistoricoMensal, encontrarMesAnterior, encontrarMesmoMesAnoAnteri
 // mes do ano anterior, mais uma tendencia dos ultimos 12 meses. Visitas
 // continua desabilitado no seletor (relatorio-client.tsx) ate a proxima
 // iteracao -- reaproveitara lib/mercadolivre/visits.ts do mesmo jeito.
+//
+// "vendas" tambem inclui o valor Comercial (lib/sige/comercial.ts) -- vendas
+// fechadas manualmente por dentro do ML pelo setor comercial, que precisam
+// ser deduzidas do faturamento total (nao entram no comissionamento normal).
+// E um unico valor consolidado por mes calendario, independente do filtro de
+// contas selecionado.
 //
 // A logica de busca por conta mora em lib/sige/vendas.ts e lib/sige/ads.ts,
 // compartilhada com a rota de Fechamento Mensal (api/sige/fechamento) para
@@ -158,13 +165,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ tipo, periodo: { de, ate }, consolidado, itens: itensComMetricas });
   }
 
-  const [itensAuto, itensManuaisVendas] = await Promise.all([
+  const [itensAuto, itensManuaisVendas, comercial] = await Promise.all([
     buscarVendasMlAmazon(de, ate, idsFiltro),
     buscarVendasManuais(de, ate, idsFiltro),
+    buscarComercial(de, ate),
   ]);
 
   const itens = [...itensAuto, ...itensManuaisVendas].sort((a, b) => a.nome.localeCompare(b.nome));
   const consolidado = somarItensVendas(itens);
 
-  return NextResponse.json({ tipo, periodo: { de, ate }, consolidado, itens });
+  return NextResponse.json({ tipo, periodo: { de, ate }, consolidado, itens, comercial });
 }
