@@ -158,7 +158,14 @@ export default function FechamentoClient({
     setCarregandoPreview(true);
     setErro(null);
     try {
-      const res = await fetch(`/api/sige/relatorio?tipo=vendas&de=${periodoDe}&ate=${periodoAte}`);
+      // 03/08/2026: a rota de relatorio passou a so deduzir o Comercial
+      // quando aplicarComercial=1 (ver relatorio-client.tsx) -- aqui, na
+      // previa do Fechamento Mensal, sempre queremos o valor aplicado (e a
+      // sempre esse comportamento anterior), entao mandamos o parametro
+      // explicitamente.
+      const res = await fetch(
+        `/api/sige/relatorio?tipo=vendas&de=${periodoDe}&ate=${periodoAte}&aplicarComercial=1`
+      );
       const data = await res.json();
       if (!res.ok) {
         setErro(data.erro ?? "Falha ao buscar dados do periodo.");
