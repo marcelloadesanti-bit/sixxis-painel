@@ -4,6 +4,7 @@ import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { buscarVendasMlAmazon, buscarVendasManuais } from "@/lib/sige/vendas";
 import { buscarAdsMl } from "@/lib/sige/ads";
 import { buscarComercial } from "@/lib/sige/comercial";
+import { calcularComissao, calcularCanaisAutomaticos, type ConfigComissao } from "@/lib/sige/comissao";
 
 // Fechamento Mensal do SIGE: acao manual e deliberada (o usuario escolhe o
 // periodo -- nao precisa ser o mes corrente nem ser feita em uma data
@@ -21,6 +22,15 @@ import { buscarComercial } from "@/lib/sige/comercial";
 // em sige_fechamentos (comercial_numero_vendas/comercial_valor_total) para
 // preservar o valor exato usado naquele momento, mesmo que o lancamento
 // mensal seja editado depois.
+// 4) 03/08/2026: quando o periodo fechado corresponde a exatamente um mes
+// calendario (dia 1 ao ultimo dia do mesmo mes), calcula tambem a comissao
+// daquele mes (mesma formula/config usada na calculadora manual de Metas &
+// Comissao) e grava em sige_comissao_historico, ligada a este fechamento --
+// alimenta a aba "Historico" da tela de Comissao (controle do gestor
+// master, congela o valor calculado no momento do fechamento mesmo que a
+// config de comissao mude depois). Se nao houver meta configurada para o
+// mes, ainda assim grava o historico com metaTotal=0 (mesmo comportamento
+// de "sem meta" que a calculadora ja mostra).
 export const maxDuration = 60;
 
 export async function GET() {
@@ -57,6 +67,20 @@ type AdsManualInput = {
   impressoes: number;
   cliques: number;
 };
+
+// Retorna { ano, mes } se o periodo cobre exatamente um mes calendario
+// (dia 1 ao ultimo dia do mesmo mes/ano), ou null caso contrario -- mesmo
+// criterio ja usado em comissao-client.tsx (sugerirMeta) para decidir se um
+// periodo "e" um mes fechado, sem duplicar a logica com datas erradas de
+// fuso (compara so a parte YYYY-MM-DD).
+function mesCalendarioExato(periodoDe: string, periodoAte: string): { ano: number; mes: number } | null {
+  const [anoDe, mesDe, diaDe] = periodoDe.split("-").map(Number);
+  const [anoAte, mesAte, diaAte] = periodoAte.split("-").map(Number);
+  if (anoDe !== anoAte || mesDe !== mesAte || diaDe !== 1) return null;
+  const ultimoDia = new Date(anoDe, mesDe, 0).getDate();
+  if (diaAte !== ultimoDia) return null;
+  return { ano: anoDe, mes: mesDe };
+}
 
 export async function POST(request: Request) {
   const { user, podeEditar } = await exigirAcessoSecao("sige", "sige_fechamento");
@@ -212,5 +236,52 @@ export async function POST(request: Request) {
     await admin.from("sige_fechamento_ads_itens").insert(linhasAds);
   }
 
-  return NextResponse.json({ id: fechamento.id, comercial });
+  // 4) Se o periodo fechado e exatamente um mes calendario, calcula e grava
+  // a comissao daquele mes (Historico de Comissao -- controle do gestor
+  // master). Falhas aqui nao devem derrubar o fechamento em si (os dados
+  // principais ja foram gravados acima) -- envolve em try/catch e apenas
+  // registra no retorno se conseguiu ou nao.
+  let comissaoHistorico: { gravado: boolean; motivo?: string } = { gravado: false, motivo: "Periodo nao e um mes calendario exato." };
+  const mesExato = mesCalendarioExato(periodoDe, periodoAte);
+  if (mesExato) {
+    try {
+      const [{ data: configRow }, { data: metaRow }] = await Promise.all([
+        admin.from("sige_comissao_config").select("pesos, niveis, recebedores").eq("id", 1).maybeSingle(),
+        admin.from("metas_mensais").select("valor").eq("ano", mesExato.ano).eq("mes", mesExato.mes).maybeSingle(),
+      ]);
+
+      if (!configRow) {
+        comissaoHistorico = { gravado: false, motivo: "Configuracao de comissao nao encontrada." };
+      } else {
+        const config = configRow as unknown as ConfigComissao;
+        const metaTotal = metaRow ? Number(metaRow.valor) : 0;
+
+        const baseNaoAmazonBruta = itens
+          .filter((i) => i.tipo !== "amazon")
+          .reduce((s, i) => s + i.faturamentoLiquido, 0);
+        const baseNaoAmazon = Math.max(0, baseNaoAmazonBruta - comercial.valorTotal);
+        const amazonBruto = itens.filter((i) => i.tipo === "amazon").reduce((s, i) => s + i.faturamentoBruto, 0);
+
+        const adsRetornoAuto = itensAdsAuto.reduce((s, a) => s + a.retorno, 0);
+        const adsRetornoManual = adsManuais.reduce((s, a) => s + a.retorno, 0);
+        const adsRetorno = adsRetornoAuto + adsRetornoManual;
+
+        const { organico, pago } = calcularCanaisAutomaticos({ baseNaoAmazon, amazonBruto, adsRetorno });
+        const resultado = calcularComissao({ metaTotal, organico, pago, amazonBruto, config });
+
+        const { error: erroHistorico } = await admin.from("sige_comissao_historico").insert({
+          fechamento_id: fechamento.id,
+          meta_total: metaTotal,
+          resultado,
+        });
+        comissaoHistorico = erroHistorico
+          ? { gravado: false, motivo: "Falha ao gravar historico de comissao." }
+          : { gravado: true };
+      }
+    } catch {
+      comissaoHistorico = { gravado: false, motivo: "Falha ao calcular comissao do mes." };
+    }
+  }
+
+  return NextResponse.json({ id: fechamento.id, comercial, comissaoHistorico });
 }
