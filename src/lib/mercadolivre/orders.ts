@@ -5,6 +5,22 @@ const ML_API = "https://api.mercadolibre.com";
 const LIMITE_POR_PAGINA = 50;
 const TETO_PEDIDOS = 1000; // limite pratico de offset da API de busca do ML
 
+// 03/08/2026: TODOS os filtros de periodo abaixo (order.status "paid" e
+// "cancelled") passaram a usar order.date_closed (data de APROVACAO/
+// FECHAMENTO do pedido) em vez de order.date_created (data de CRIACAO).
+// Motivo: investigando uma divergencia de ~R$8.035 no bruto de julho/2026
+// da conta SIXXIS (GO) contra o "Vendas brutas" nativo do ML, descobrimos
+// que o proprio painel do vendedor do ML classifica o pedido no mes pela
+// data de aprovacao, nao de criacao -- um pedido criado no ultimo dia do
+// mes mas aprovado so no dia seguinte (comum em pagamentos que demoram a
+// compensar) cai no mes seguinte para o ML, mas ficava no mes anterior
+// para nos. Decisao explicita do usuario (03/08/2026): migrar para
+// date_closed dos proximos meses em diante, ja que ainda nao ha historico
+// de fechamentos fechados usando o criterio antigo -- julho/2026 e o
+// primeiro mes fechado e o pedido de fronteira (R$8.034,35, criado
+// 30/06 aprovado 01/07) precisa contar em julho para a comissao do gestor.
+const CAMPO_DATA_PERIODO = "date_closed";
+
 export type Pedido = {
   id: number;
   dataCriacao: string;
@@ -64,6 +80,7 @@ export function periodoDeDatas(de: string, ate: string): PeriodoISO {
 type PedidoApi = {
   id: number;
   date_created: string;
+  date_closed?: string | null;
   status: string;
   total_amount: number;
   paid_amount?: number;
@@ -125,8 +142,8 @@ export async function getVendas(
     const params = new URLSearchParams({
       seller: String(mlUserId),
       "order.status": "paid",
-      "order.date_created.from": periodo.desde,
-      "order.date_created.to": periodo.ate,
+      [`order.${CAMPO_DATA_PERIODO}.from`]: periodo.desde,
+      [`order.${CAMPO_DATA_PERIODO}.to`]: periodo.ate,
       sort: "date_desc",
       limit: String(LIMITE_POR_PAGINA),
       offset: String(offset),
@@ -261,8 +278,8 @@ export async function getTotaisPorStatus(
     const params = new URLSearchParams({
       seller: String(mlUserId),
       "order.status": status,
-      "order.date_created.from": periodo.desde,
-      "order.date_created.to": periodo.ate,
+      [`order.${CAMPO_DATA_PERIODO}.from`]: periodo.desde,
+      [`order.${CAMPO_DATA_PERIODO}.to`]: periodo.ate,
       limit: String(LIMITE_POR_PAGINA),
       offset: String(offset),
     });
@@ -327,8 +344,8 @@ export async function getCanceladosClassificados(
     const params = new URLSearchParams({
       seller: String(mlUserId),
       "order.status": "cancelled",
-      "order.date_created.from": periodo.desde,
-      "order.date_created.to": periodo.ate,
+      [`order.${CAMPO_DATA_PERIODO}.from`]: periodo.desde,
+      [`order.${CAMPO_DATA_PERIODO}.to`]: periodo.ate,
       limit: String(LIMITE_POR_PAGINA),
       offset: String(offset),
     });
@@ -398,8 +415,8 @@ export async function getProdutosMaisVendidos(
     const params = new URLSearchParams({
       seller: String(mlUserId),
       "order.status": "paid",
-      "order.date_created.from": periodo.desde,
-      "order.date_created.to": periodo.ate,
+      [`order.${CAMPO_DATA_PERIODO}.from`]: periodo.desde,
+      [`order.${CAMPO_DATA_PERIODO}.to`]: periodo.ate,
       limit: String(LIMITE_POR_PAGINA),
       offset: String(offset),
     });
@@ -593,8 +610,10 @@ export type PontoSerieDiaria = { data: string; quantidade: number; valor: number
 
 // Serie diaria de "vendas brutas" (pagos + cancelados, mesma definicao usada
 // no Resumo) para alimentar o grafico comparativo. Busca a lista completa de
-// pedidos (pagos e cancelados) do periodo e agrupa por dia (data de criacao,
-// no fuso de Brasilia, ja que periodo.desde/ate vem com offset -03:00).
+// pedidos (pagos e cancelados) do periodo e agrupa por dia (data de
+// FECHAMENTO/aprovacao -- CAMPO_DATA_PERIODO -- no fuso de Brasilia, ja que
+// periodo.desde/ate vem com offset -03:00), mesmo criterio usado no filtro
+// de periodo acima para bater com o dia que o proprio ML mostra a venda.
 export async function getSerieDiariaVendas(
   accessToken: string,
   mlUserId: number,
@@ -608,8 +627,8 @@ export async function getSerieDiariaVendas(
       const params = new URLSearchParams({
         seller: String(mlUserId),
         "order.status": status,
-        "order.date_created.from": periodo.desde,
-        "order.date_created.to": periodo.ate,
+        [`order.${CAMPO_DATA_PERIODO}.from`]: periodo.desde,
+        [`order.${CAMPO_DATA_PERIODO}.to`]: periodo.ate,
         limit: String(LIMITE_POR_PAGINA),
         offset: String(offset),
       });
@@ -630,15 +649,17 @@ export async function getSerieDiariaVendas(
 
   const porDia = new Map<string, { quantidade: number; valor: number }>();
 
-  function diaBrasilia(iso: string): string {
-    // date_created vem com o offset do vendedor (geralmente -03:00 ja
-    // embutido); pegamos so a parte YYYY-MM-DD, que e o que importa para
-    // agrupar por dia no grafico.
+  function diaBrasilia(p: PedidoApi): string {
+    // Agrupa pelo mesmo campo usado no filtro de periodo (date_closed, com
+    // fallback para date_created caso o pedido nao tenha data de fechamento
+    // por algum motivo) -- pegamos so a parte YYYY-MM-DD, que e o que
+    // importa para agrupar por dia no grafico.
+    const iso = p.date_closed ?? p.date_created;
     return iso.slice(0, 10);
   }
 
   for (const p of pagos) {
-    const dia = diaBrasilia(p.date_created);
+    const dia = diaBrasilia(p);
     const atual = porDia.get(dia) ?? { quantidade: 0, valor: 0 };
     atual.quantidade += 1;
     // total_amount (sem frete pago pelo comprador) -- mesma definicao usada
@@ -647,7 +668,7 @@ export async function getSerieDiariaVendas(
     porDia.set(dia, atual);
   }
   for (const p of cancelados) {
-    const dia = diaBrasilia(p.date_created);
+    const dia = diaBrasilia(p);
     const atual = porDia.get(dia) ?? { quantidade: 0, valor: 0 };
     atual.quantidade += 1;
     atual.valor += p.total_amount ?? 0;
@@ -665,7 +686,11 @@ export type PontoHorario = { hora: number; quantidade: number };
 
 // Distribuicao de pedidos por hora do dia (0-23), a partir da lista de
 // pedidos ja buscada (dataCriacao) -- NAO faz nenhuma chamada extra a API,
-// reaproveita os dados de getVendas.
+// reaproveita os dados de getVendas. Mantido por CRIACAO (nao por
+// fechamento/CAMPO_DATA_PERIODO) de proposito: aqui o que importa e o
+// comportamento de compra do cliente (a que horas ele finaliza o pedido),
+// nao a classificacao contabil do pedido -- os dois criterios respondem
+// perguntas diferentes.
 export function agruparPorHorario(pedidos: { dataCriacao: string }[]): PontoHorario[] {
   const contagem = new Array(24).fill(0);
   for (const p of pedidos) {
