@@ -77,7 +77,7 @@ export default async function FaturamentoPage({
 }: {
   searchParams: Promise<{ atualizar?: string; mes?: string }>;
 }) {
-  await exigirAcessoSecao("faturamento");
+  await exigirAcessoSecao("faturamento", "fat_faturamento");
   const { atualizar, mes } = await searchParams;
   const forcar = atualizar === "1";
 
