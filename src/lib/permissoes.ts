@@ -60,6 +60,10 @@ export type CodigoSecao =
   | "faturamento"
   | "concorrencia"
   | "estoque"
+  // Fase 14 (03/08/2026): cadastro de fornecedores (independente de
+  // Estoque), usado tambem para popular o seletor de fornecedor na aba
+  // Containers.
+  | "fornecedores"
   // Secoes administrativas: nunca ficam disponiveis para colaboradores comuns.
   // So podem ser concedidas a usuarios com role "administrador" (ou ao admin
   // master, que sempre tem acesso total). Ver README de seguranca em
@@ -219,6 +223,16 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "estoque_metricas", label: "Métricas de estoque", href: "/dashboard/estoque/metricas" },
       { codigo: "estoque_containers", label: "Containers", href: "/dashboard/estoque/containers" },
     ],
+  },
+  // Fase 14 (03/08/2026): cadastro de fornecedores, independente de
+  // Estoque. Fornecedores ativos ficam selecionaveis no formulario de
+  // Containers (em vez de digitar o nome manualmente a cada pedido).
+  {
+    codigo: "fornecedores",
+    label: "Fornecedores",
+    href: "/dashboard/fornecedores",
+    icon: "Truck",
+    grupo: "vendas_anuncios",
   },
 ];
 
