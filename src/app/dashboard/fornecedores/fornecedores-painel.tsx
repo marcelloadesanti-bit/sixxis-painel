@@ -7,7 +7,8 @@ import {
   alternarAtivoFornecedorAction,
   excluirFornecedorAction,
 } from "./actions";
-import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor, type Fornecedor } from "@/lib/fornecedores";
+import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor } from "@/lib/fornecedores-categorias";
+import type { Fornecedor } from "@/lib/fornecedores";
 
 export default function FornecedoresPainel({
   grupos,
