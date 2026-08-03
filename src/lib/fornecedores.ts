@@ -2,11 +2,21 @@
 // public.fornecedores (Supabase). Independente da secao Estoque -- usado
 // tambem para popular o seletor de fornecedor no formulario de Containers
 // (em vez de digitar o nome manualmente a cada pedido).
+//
+// As categorias fixas (CATEGORIAS_FORNECEDOR / CategoriaFornecedor) moraram
+// aqui inicialmente, mas foram extraidas para fornecedores-categorias.ts:
+// este arquivo importa createClient() de "@/lib/supabase/server" (depende
+// de next/headers, so roda em Server Components/Server Actions), e o
+// Client Component fornecedores-painel.tsx precisa do valor das categorias
+// em runtime -- importar qualquer valor daqui pelo browser quebraria o
+// build. Reexportamos os dois abaixo para nao quebrar quem ja importava
+// daqui.
 
 import { createClient } from "@/lib/supabase/server";
+import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor } from "@/lib/fornecedores-categorias";
 
-export const CATEGORIAS_FORNECEDOR = ["Ar e ventilação", "Fitness", "Outros"] as const;
-export type CategoriaFornecedor = (typeof CATEGORIAS_FORNECEDOR)[number];
+export { CATEGORIAS_FORNECEDOR };
+export type { CategoriaFornecedor };
 
 export type Fornecedor = {
   id: string;
