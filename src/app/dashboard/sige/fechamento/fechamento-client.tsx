@@ -5,7 +5,15 @@ import Link from "next/link";
 import { formatarData } from "@/lib/date-utils";
 
 type Canal = { id: string; nome: string; cor: string };
-type FechamentoResumo = { id: string; rotulo: string; periodo_de: string; periodo_ate: string; fechado_em: string };
+type FechamentoResumo = {
+  id: string;
+  rotulo: string;
+  periodo_de: string;
+  periodo_ate: string;
+  fechado_em: string;
+  comercial_numero_vendas?: number;
+  comercial_valor_total?: number;
+};
 
 type ItemVendas = {
   id: string;
@@ -22,6 +30,8 @@ type ItemVendas = {
   faturamentoLiquido: number;
   erro?: string;
 };
+
+type ComercialInfo = { numeroVendas: number; valorTotal: number };
 
 type CanalForm = {
   vendasBrutas: string;
@@ -95,6 +105,7 @@ export default function FechamentoClient({
 
   const [carregandoPreview, setCarregandoPreview] = useState(false);
   const [itensAuto, setItensAuto] = useState<ItemVendas[] | null>(null);
+  const [comercial, setComercial] = useState<ComercialInfo | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [fechando, setFechando] = useState(false);
   const [fechamentoConcluido, setFechamentoConcluido] = useState<string | null>(null);
@@ -107,6 +118,7 @@ export default function FechamentoClient({
     setPeriodoAte(ateStr);
     setRotulo(sugerirRotulo(deStr, ateStr));
     setItensAuto(null);
+    setComercial(null);
     setFechamentoConcluido(null);
   }
 
@@ -125,6 +137,7 @@ export default function FechamentoClient({
         return;
       }
       setItensAuto(data.itens);
+      setComercial(data.comercial ?? null);
     } catch {
       setErro("Falha ao buscar dados do periodo.");
     } finally {
@@ -172,7 +185,18 @@ export default function FechamentoClient({
         return;
       }
       setFechamentoConcluido(data.id);
-      setHistorico((prev) => [{ id: data.id, rotulo, periodo_de: periodoDe, periodo_ate: periodoAte, fechado_em: new Date().toISOString() }, ...prev]);
+      setHistorico((prev) => [
+        {
+          id: data.id,
+          rotulo,
+          periodo_de: periodoDe,
+          periodo_ate: periodoAte,
+          fechado_em: new Date().toISOString(),
+          comercial_numero_vendas: data.comercial?.numeroVendas ?? 0,
+          comercial_valor_total: data.comercial?.valorTotal ?? 0,
+        },
+        ...prev,
+      ]);
     } catch {
       setErro("Falha ao fechar o periodo.");
     } finally {
@@ -218,6 +242,7 @@ export default function FechamentoClient({
                 setPeriodoDe(e.target.value);
                 setRotulo(sugerirRotulo(e.target.value, periodoAte));
                 setItensAuto(null);
+                setComercial(null);
                 setFechamentoConcluido(null);
               }}
               className="rounded border border-gray-300 px-2 py-1 text-sm"
@@ -232,6 +257,7 @@ export default function FechamentoClient({
                 setPeriodoAte(e.target.value);
                 setRotulo(sugerirRotulo(periodoDe, e.target.value));
                 setItensAuto(null);
+                setComercial(null);
                 setFechamentoConcluido(null);
               }}
               className="rounded border border-gray-300 px-2 py-1 text-sm"
@@ -366,6 +392,17 @@ export default function FechamentoClient({
               ))}
             </tbody>
           </table>
+          {comercial && comercial.valorTotal > 0 && (
+            <div className="flex items-center justify-between border-t border-gray-100 p-3 text-sm dark:border-gray-700">
+              <span className="flex items-center gap-2 font-medium" style={{ color: "#0d9488" }}>
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#44e2d9" }} />
+                Comercial (deduzido do faturamento — lançado em Relatórios)
+              </span>
+              <span className="font-medium" style={{ color: "#0d9488" }}>
+                {comercial.numeroVendas} vendas · -{formatarMoeda(comercial.valorTotal)}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -400,7 +437,10 @@ export default function FechamentoClient({
             {historico.map((f) => (
               <li key={f.id} className="flex items-center justify-between p-3 text-sm">
                 <span className="font-medium text-gray-700 dark:text-gray-200">{f.rotulo}</span>
-                <span className="text-xs text-gray-400">
+                <span className="flex items-center gap-3 text-xs text-gray-400">
+                  {!!f.comercial_valor_total && (
+                    <span style={{ color: "#0d9488" }}>Comercial: -{formatarMoeda(f.comercial_valor_total)}</span>
+                  )}
                   {f.periodo_de} a {f.periodo_ate}
                 </span>
               </li>
