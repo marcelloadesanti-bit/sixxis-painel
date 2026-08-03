@@ -20,6 +20,17 @@ type SnapshotResumo = {
   calculadoEm: string;
   disparadoPor: "cron" | "manual";
 };
+// Um registro por mes fechado (ver api/sige/fechamento/route.ts) -- controle
+// proprio do gestor master, nao editavel por aqui.
+type RegistroHistorico = {
+  id: string;
+  rotulo: string;
+  periodoDe: string;
+  periodoAte: string;
+  metaTotal: number;
+  resultado: ResultadoComissao;
+  calculadoEm: string;
+};
 
 const CONFIG_PADRAO: Config = {
   pesos: { organico: 65, pago: 35, amazon: 0 },
@@ -97,16 +108,146 @@ function BlocoAssinaturas() {
   );
 }
 
+function formatarPeriodoCurto(periodoDe: string, periodoAte: string): string {
+  const [anoDe, mesDe, diaDe] = periodoDe.split("-");
+  const [anoAte, mesAte, diaAte] = periodoAte.split("-");
+  return `${diaDe}/${mesDe}/${anoDe} a ${diaAte}/${mesAte}/${anoAte}`;
+}
+
+// Aba "Histórico" -- controle próprio do gestor master: uma linha por mês
+// fechado (gravada automaticamente pelo Fechamento Mensal, ver
+// api/sige/fechamento/route.ts), com o mesmo cálculo/config de comissão
+// congelado no momento do fechamento. Cada linha expande para mostrar o
+// mesmo detalhamento (canais + recebedores) da calculadora manual.
+function HistoricoComissao({ historico }: { historico: RegistroHistorico[] }) {
+  const [abertos, setAbertos] = useState<Set<string>>(new Set());
+
+  function alternar(id: string) {
+    setAbertos((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  if (historico.length === 0) {
+    return (
+      <p className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400 dark:border-gray-600">
+        Nenhum mês fechado ainda gerou histórico de comissão. Assim que um mês for fechado em{" "}
+        <a href="/dashboard/sige/fechamento" className="underline">
+          Fechamento Mensal
+        </a>
+        , a comissão calculada daquele mês aparece aqui automaticamente.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {historico.map((h) => {
+        const aberto = abertos.has(h.id);
+        return (
+          <div key={h.id} className="rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <button
+              onClick={() => alternar(h.id)}
+              className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left"
+            >
+              <div>
+                <p className="text-sm font-semibold text-gray-800 dark:text-white">{h.rotulo}</p>
+                <p className="text-xs text-gray-400">{formatarPeriodoCurto(h.periodoDe, h.periodoAte)}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="text-xs text-gray-400">Comissão total</p>
+                  <p className="text-sm font-semibold text-green-600">{formatarMoeda(h.resultado.comissaoTotal)}</p>
+                </div>
+                <span className="text-gray-400">{aberto ? "▲" : "▼"}</span>
+              </div>
+            </button>
+
+            {aberto && (
+              <div className="border-t border-gray-100 p-4 dark:border-gray-700">
+                {h.metaTotal <= 0 ? (
+                  <p className="mb-3 text-xs text-amber-600">
+                    Sem meta configurada para este mês no momento do fechamento -- comissão calculada como zero.
+                  </p>
+                ) : null}
+                <div className="mb-4 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-gray-700">
+                        <th className="p-2">Canal</th>
+                        <th className="p-2 text-right">Meta (R$)</th>
+                        <th className="p-2 text-right">Resultado (R$)</th>
+                        <th className="p-2 text-right">% da meta</th>
+                        <th className="p-2 text-right">Nível</th>
+                        <th className="p-2 text-right">Comissão (R$)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {h.resultado.canais.map((c) => (
+                        <tr key={c.nome} className="border-b border-gray-100 last:border-0 dark:border-gray-700">
+                          <td className="p-2">{c.nome}</td>
+                          <td className="p-2 text-right">{formatarMoeda(c.meta)}</td>
+                          <td className="p-2 text-right">{formatarMoeda(c.valor)}</td>
+                          <td className="p-2 text-right">{c.percentual !== null ? `${c.percentual.toFixed(1)}%` : "—"}</td>
+                          <td className="p-2 text-right">
+                            {c.nivel ? `Nível ${c.nivel.nivel} (${c.nivel.minima}%–${c.nivel.maxima}%)` : "—"}
+                          </td>
+                          <td className="p-2 text-right font-medium">{formatarMoeda(c.comissao)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-50 font-semibold dark:bg-gray-700/40">
+                        <td className="p-2">Total</td>
+                        <td className="p-2 text-right">{formatarMoeda(h.resultado.metaTotal)}</td>
+                        <td className="p-2 text-right">{formatarMoeda(h.resultado.faturamentoTotal)}</td>
+                        <td className="p-2 text-right">—</td>
+                        <td className="p-2 text-right">—</td>
+                        <td className="p-2 text-right">{formatarMoeda(h.resultado.comissaoTotal)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {h.resultado.recebedoresAtivos.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Comissão por responsável</p>
+                    {h.resultado.recebedoresAtivos.map((r) => (
+                      <div key={r.nome} className="flex items-center justify-between py-1 text-sm">
+                        <span className="text-gray-600 dark:text-gray-300">
+                          {r.nome} <span className="text-xs text-gray-400">({r.percentual}%)</span>
+                        </span>
+                        <span className="font-medium text-gray-800 dark:text-white">{formatarMoeda(r.valor)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="mt-3 text-[11px] text-gray-400">
+                  Calculado em {formatarDataHora(h.calculadoEm)}, no momento do fechamento deste mês.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ComissaoClient({
   configInicial,
   metasMensais,
   snapshotInicial,
+  historico,
 }: {
   configInicial: Config | null;
   metasMensais: MetaMensal[];
   snapshotInicial: SnapshotResumo | null;
+  historico: RegistroHistorico[];
 }) {
-  const [aba, setAba] = useState<"calculadora" | "config">("calculadora");
+  const [aba, setAba] = useState<"calculadora" | "config" | "historico">("calculadora");
   const [config, setConfig] = useState<Config>(configInicial ?? CONFIG_PADRAO);
   const [salvandoConfig, setSalvandoConfig] = useState(false);
   const [erroConfig, setErroConfig] = useState<string | null>(null);
@@ -339,7 +480,19 @@ export default function ComissaoClient({
         >
           Configurações
         </button>
+        <button
+          onClick={() => setAba("historico")}
+          className={`rounded-full px-3 py-1.5 text-sm ${
+            aba === "historico"
+              ? "bg-[var(--color-sixxis-navy)] text-white"
+              : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          Histórico
+        </button>
       </div>
+
+      {aba === "historico" && <HistoricoComissao historico={historico} />}
 
       {aba === "config" && (
         <div className="flex flex-col gap-6 print-hide">
