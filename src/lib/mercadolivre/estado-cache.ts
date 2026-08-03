@@ -81,7 +81,22 @@ export async function getVendasPorEstadoComCache(
   // reflete a ordem passada pelo chamador -- em vendas/page.tsx, mais
   // recentes primeiro -- entao o slice abaixo prioriza os mais recentes).
   const naoCacheados = todosPedidos.filter((p) => !cacheMap.has(p.id));
-  const paraBuscarAgora = naoCacheados.slice(0, tetoNovasBuscas);
+  // 03/08/2026 (correcao bug "frete zerado" na Margem Bruta): pedidos cujo
+  // ESTADO ja foi cacheado ANTES da coluna custo_frete existir (ou antes de
+  // uma tentativa anterior falhar em obter o custo) ficavam com custo_frete
+  // nulo PARA SEMPRE, porque esta funcao so verificava presenca no cache
+  // (cacheMap.has) para decidir o que buscar de novo -- nunca revisitava um
+  // pedido so porque faltava o frete. Isso fazia a Margem Bruta tratar
+  // "frete nunca buscado" como "frete R$0,00" (ver bug de coercao em
+  // margem.ts). Agora tambem re-buscamos pedidos que JA tem estado em cache
+  // mas ainda estao com custo_frete nulo. Novos pedidos (sem nenhum dado)
+  // tem prioridade sobre esse backlog de frete, para nao atrasar a
+  // resolucao de estado usada por Vendas/Metricas.
+  const somenteSemFrete = todosPedidos.filter((p) => {
+    const cache = cacheMap.get(p.id);
+    return !!cache && cache.custoFrete === null;
+  });
+  const paraBuscarAgora = [...naoCacheados, ...somenteSemFrete].slice(0, tetoNovasBuscas);
 
   const porContaParaBuscar = new Map<string, { id: number }[]>();
   for (const p of paraBuscarAgora) {
@@ -104,7 +119,11 @@ export async function getVendasPorEstadoComCache(
   );
 
   if (novosResolvidos.length > 0) {
-    const dataPorPedido = new Map(naoCacheados.map((p) => [p.id, p.dataCriacao]));
+    // Usa todosPedidos (nao so naoCacheados) porque paraBuscarAgora agora
+    // tambem inclui pedidos de somenteSemFrete, que ja estavam no cache
+    // (so faltava o frete) -- precisamos da dataCriacao deles tambem para
+    // o upsert abaixo.
+    const dataPorPedido = new Map(todosPedidos.map((p) => [p.id, p.dataCriacao]));
     const linhas = novosResolvidos.map((r) => ({
       pedido_id: r.pedidoId,
       conta_id: r.contaId,

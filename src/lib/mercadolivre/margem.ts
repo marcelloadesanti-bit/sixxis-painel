@@ -76,7 +76,15 @@ export function montarLinhasMargem(
   custoFretePorPedido: Map<number, number | null>
 ): LinhaMargem[] {
   return pedidos.map((p) => {
-    const custoFrete = custoFretePorPedido.has(p.id) ? (custoFretePorPedido.get(p.id) ?? 0) : null;
+    // 03/08/2026 (correcao bug "frete zerado"): antes, se o pedido estivesse
+    // no mapa mas com valor null (frete ainda nao resolvido -- ver nota em
+    // estado-cache.ts), o `?? 0` abaixo transformava "nao resolvido" em
+    // "resolvido como R$0,00", entao a margem aparecia calculada (e maior
+    // do que deveria) mesmo sem o frete ter sido descontado. Agora null
+    // (seja por ausencia no mapa, seja por presenca com valor null) sempre
+    // vira null aqui, e so mostra "calculando..." na tela em vez de somar
+    // R$0,00 de frete por engano.
+    const custoFrete = custoFretePorPedido.get(p.id) ?? null;
     const outrosCustos = 0;
     const margemValor = custoFrete !== null ? p.valor - p.taxaPlataforma - custoFrete - outrosCustos : null;
     const margemPct = margemValor !== null && p.valor > 0 ? (margemValor / p.valor) * 100 : null;
