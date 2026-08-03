@@ -37,6 +37,11 @@ export type SubsecaoConcorrencia = "benchmark_preco" | "mais_vendidos";
 // da secao em si (continua "faturamento", preservando as permissoes ja
 // concedidas a colaboradores existentes), so passa a ter subsecoes.
 export type SubsecaoFaturamento = "fat_faturamento" | "fat_margem" | "fat_custos";
+// 03/08/2026 (parte 2): "estoque" ganha 3 sub-abas -- Estoque (resumo lido
+// da planilha), Metricas de estoque (velocidade + risco de ruptura) e
+// Containers (CRUD manual de pedidos de importacao, substitui a planilha
+// "Pedidos Containers"). Mesmo padrao de faturamento/vendas/amazon/sige.
+export type SubsecaoEstoque = "estoque_resumo" | "estoque_metricas" | "estoque_containers";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -200,7 +205,21 @@ export const SECOES: DefinicaoSecao[] = [
   // Fase 12 (31/07/2026): le a planilha "CONTROLE DE ESTOQUE SIXXIS"
   // (Google Sheets, SOMENTE LEITURA) e cruza com a velocidade de venda por
   // SKU (ultimos 60 dias) para projetar risco de ruptura.
-  { codigo: "estoque", label: "Estoque", href: "/dashboard/estoque", icon: "Boxes", grupo: "vendas_anuncios" },
+  // 03/08/2026 (parte 2): ganhou subsecoes -- Estoque (resumo), Metricas de
+  // estoque (velocidade/risco) e Containers (CRUD manual de pedidos de
+  // importacao, substitui a planilha externa "Pedidos Containers").
+  {
+    codigo: "estoque",
+    label: "Estoque",
+    href: "/dashboard/estoque",
+    icon: "Boxes",
+    grupo: "vendas_anuncios",
+    subsecoes: [
+      { codigo: "estoque_resumo", label: "Estoque", href: "/dashboard/estoque" },
+      { codigo: "estoque_metricas", label: "Métricas de estoque", href: "/dashboard/estoque/metricas" },
+      { codigo: "estoque_containers", label: "Containers", href: "/dashboard/estoque/containers" },
+    ],
+  },
 ];
 
 // Secoes administrativas: gestao de equipe, contas ML/Amazon conectadas,
