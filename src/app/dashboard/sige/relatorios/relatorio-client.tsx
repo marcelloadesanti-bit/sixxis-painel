@@ -190,6 +190,14 @@ export default function RelatorioClient({ contas, podeEditar }: { contas: ContaO
   const [comercialSalvando, setComercialSalvando] = useState(false);
   const [comercialErro, setComercialErro] = useState<string | null>(null);
   const [comercialSalvoEm, setComercialSalvoEm] = useState<string | null>(null);
+  // 03/08/2026: a pedido do usuario, a deducao do Comercial no relatorio
+  // gerado passou a ser opcional (checkbox) -- antes, qualquer relatorio de
+  // Vendas cujo periodo tocasse um mes com Comercial salvo ja vinha com o
+  // valor deduzido automaticamente, obrigando a "zerar" o card toda vez que
+  // ele so queria conferir combinacoes de contas/periodo sem essa dedução.
+  // O valor salvo no banco (por mes) continua intacto e visivel -- o
+  // checkbox so decide se ESTE relatorio gerado aplica a dedução ou nao.
+  const [aplicarComercial, setAplicarComercial] = useState(false);
 
   useEffect(() => {
     if (tipo !== "vendas") return;
@@ -291,6 +299,9 @@ export default function RelatorioClient({ contas, podeEditar }: { contas: ContaO
       if (selecionadas.size > 0 && selecionadas.size < contas.length) {
         params.set("contas", Array.from(selecionadas).join(","));
       }
+    }
+    if (tipo === "vendas" && aplicarComercial) {
+      params.set("aplicarComercial", "1");
     }
 
     try {
@@ -407,6 +418,19 @@ export default function RelatorioClient({ contas, podeEditar }: { contas: ContaO
               )}
             </div>
             {comercialErro && <p className="mt-2 text-xs text-red-500">{comercialErro}</p>}
+            <label className="mt-3 flex items-center gap-2 text-xs font-medium" style={{ color: COR_COMERCIAL_TEXTO }}>
+              <input
+                type="checkbox"
+                checked={aplicarComercial}
+                onChange={(e) => setAplicarComercial(e.target.checked)}
+              />
+              Aplicar esta dedução no relatório gerado abaixo
+            </label>
+            <p className="mt-1 text-[11px] text-gray-400">
+              O valor salvo acima fica guardado por mês independente disso — marque só quando quiser que este
+              relatório específico já saia com o Comercial descontado (ex: no fechamento do mês). Desmarcado, o
+              relatório sai limpo, sem precisar zerar os campos.
+            </p>
           </div>
         )}
 
