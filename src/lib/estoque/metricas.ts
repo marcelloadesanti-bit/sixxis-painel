@@ -1,4 +1,4 @@
-// Metricas de estoque (Fase 12, 31/07/2026).
+// Metricas de estoque (Fase 12, 31/07/2026; Fase 13, 03/08/2026).
 // Cruza o saldo lido da planilha (SOMENTE LEITURA, ver src/lib/estoque/planilha.ts)
 // com a velocidade de venda por SKU (ultimos 60 dias, todas as contas ML
 // conectadas) para projetar dias ate a ruptura e classificar o risco.
@@ -8,6 +8,12 @@
 // - Lead time de compra: 45 dias -> abaixo disso = CRITICO.
 // - Zona de atencao: entre 45 e 68 dias (1.5x o lead time) -> alerta antecipado.
 // - Acima de 68 dias, ou sem nenhuma venda no periodo -> OK.
+//
+// Fase 13 (03/08/2026): a projecao de ruptura passa a ser compensada pelos
+// pedidos de container ainda nao chegados (ver src/lib/estoque/containers.ts,
+// que substitui a antiga planilha externa "Pedidos Containers"). Um SKU com
+// poucos dias de estoque mas com um container chegando antes da ruptura deixa
+// de ser classificado como critico.
 
 import { getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getMaisVendidosPorSku } from "@/lib/mercadolivre/items";
@@ -65,4 +71,57 @@ export function projetarDiasAteRuptura(saldoTotal: number, quantidade60d: number
   const velocidadeDiaria = quantidade60d / JANELA_VELOCIDADE_DIAS;
   if (velocidadeDiaria <= 0) return null;
   return Math.floor(saldoTotal / velocidadeDiaria);
+}
+
+// Fase 13: compensacao da projecao de ruptura com os pedidos de container
+// ainda nao chegados de um SKU (ver containersPendentesPorSku em
+// src/lib/estoque/containers.ts). Simula o consumo diario do saldo e, ao
+// encontrar um container cuja previsao de chegada e anterior a data em que o
+// saldo chegaria a zero, soma a quantidade dele e continua a simulacao a
+// partir dali -- podendo empurrar a ruptura para bem mais longe (ou remove-la
+// da classificacao critica). Containers sem `dataPrevChegada` sao ignorados
+// na simulacao (nao da pra saber quando chegam), mas continuam listados na
+// aba Containers.
+export type ContainerPendente = { quantidade: number; dataPrevChegada: string | null };
+
+export function projetarRupturaComContainers(
+  saldoTotal: number,
+  velocidadeDiaria: number,
+  containers: ContainerPendente[]
+): { diasAteRuptura: number | null; proximaChegada: { data: string; quantidade: number } | null } {
+  if (velocidadeDiaria <= 0) return { diasAteRuptura: null, proximaChegada: null };
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const pendentes = containers
+    .filter((c): c is { quantidade: number; dataPrevChegada: string } => Boolean(c.dataPrevChegada))
+    .map((c) => {
+      const dataChegada = new Date(`${c.dataPrevChegada}T00:00:00`);
+      const dia = Math.max(Math.round((dataChegada.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000)), 0);
+      return { dia, quantidade: c.quantidade, dataPrevChegada: c.dataPrevChegada };
+    })
+    .sort((a, b) => a.dia - b.dia);
+
+  const proximaChegada = pendentes[0]
+    ? { data: pendentes[0].dataPrevChegada, quantidade: pendentes[0].quantidade }
+    : null;
+
+  let saldo = saldoTotal;
+  let diaAtual = 0;
+
+  for (const container of pendentes) {
+    const diaRuptura = diaAtual + saldo / velocidadeDiaria;
+    if (container.dia >= diaRuptura) {
+      // A ruptura acontece antes desse container chegar -- containers
+      // seguintes (mais distantes ainda) nao mudam esse resultado.
+      return { diasAteRuptura: Math.floor(diaRuptura), proximaChegada };
+    }
+    // O container chega a tempo: consome o saldo ate a data dele e reabastece.
+    saldo = saldo - velocidadeDiaria * (container.dia - diaAtual) + container.quantidade;
+    diaAtual = container.dia;
+  }
+
+  const diasRestantes = diaAtual + saldo / velocidadeDiaria;
+  return { diasAteRuptura: Math.floor(diasRestantes), proximaChegada };
 }
