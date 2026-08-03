@@ -31,6 +31,12 @@ export type SubsecaoAmazon =
 // (calculo de comissao) mora dentro da aba Metas existente, nao no SIGE.
 export type SubsecaoSige = "sige_relatorios" | "sige_fechamento" | "sige_historico";
 export type SubsecaoConcorrencia = "benchmark_preco" | "mais_vendidos";
+// 03/08/2026: "faturamento" deixou de ser uma secao unica e virou o grupo
+// Financeiro (Faturamento + Margem Bruta + Custos), no mesmo padrao de
+// subsecoes ja usado por vendas/anuncios/amazon/sige -- nao muda o codigo
+// da secao em si (continua "faturamento", preservando as permissoes ja
+// concedidas a colaboradores existentes), so passa a ter subsecoes.
+export type SubsecaoFaturamento = "fat_faturamento" | "fat_margem" | "fat_custos";
 
 export type PermissaoSecao = {
   acesso: boolean;
@@ -163,7 +169,23 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "reclamacoes", label: "Reclamações" },
     ],
   },
-  { codigo: "faturamento", label: "Faturamento", href: "/dashboard/faturamento", icon: "FileText", grupo: "financeiro" },
+  {
+    codigo: "faturamento",
+    label: "Financeiro",
+    href: "/dashboard/faturamento",
+    icon: "FileText",
+    grupo: "financeiro",
+    // 03/08/2026: item passou a ter subsecoes -- vira automaticamente um
+    // submenu no sidebar (mesmo mecanismo de vendas/anuncios/amazon, ver
+    // app-sidebar.tsx). Colaboradores que ja tinham acesso a "faturamento"
+    // sem `subsecoes` definido continuam vendo as 3 sub-abas normalmente
+    // (temAcessoSubsecao libera tudo quando subsecoes esta vazio/ausente).
+    subsecoes: [
+      { codigo: "fat_faturamento", label: "Faturamento", href: "/dashboard/faturamento" },
+      { codigo: "fat_margem", label: "Margem Bruta", href: "/dashboard/financeiro/margem" },
+      { codigo: "fat_custos", label: "Custos", href: "/dashboard/financeiro/custos" },
+    ],
+  },
   {
     codigo: "concorrencia",
     label: "Concorrência",
