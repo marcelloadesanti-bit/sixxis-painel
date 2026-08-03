@@ -78,6 +78,31 @@ function sugerirRotulo(de: string, ate: string): string {
   return `${nomesMeses[mes - 1]}/${ano}`;
 }
 
+// Cabecalho clicavel reutilizado pelos dois blocos preenchiveis (Canais
+// manuais e Ads manuais) -- 03/08/2026: adicionado a pedido do usuario para
+// poder recolher esses blocos quando nao precisa preenche-los naquele
+// fechamento, sem remover nenhum campo/funcionalidade existente.
+function CabecalhoExpansivel({
+  titulo,
+  aberto,
+  onToggle,
+}: {
+  titulo: string;
+  aberto: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="mb-3 flex w-full items-center justify-between text-left"
+    >
+      <span className="text-xs font-semibold uppercase text-gray-500">{titulo}</span>
+      <span className="text-gray-400">{aberto ? "▲" : "▼"}</span>
+    </button>
+  );
+}
+
 export default function FechamentoClient({
   canais,
   fechamentosExistentes,
@@ -102,6 +127,9 @@ export default function FechamentoClient({
     google_ads: { ...ADS_VAZIO },
     meta_ads: { ...ADS_VAZIO },
   });
+
+  const [canaisAberto, setCanaisAberto] = useState(true);
+  const [adsAberto, setAdsAberto] = useState(true);
 
   const [carregandoPreview, setCarregandoPreview] = useState(false);
   const [itensAuto, setItensAuto] = useState<ItemVendas[] | null>(null);
@@ -292,78 +320,92 @@ export default function FechamentoClient({
       </div>
 
       <div className="mb-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <p className="mb-3 text-xs font-semibold uppercase text-gray-500">Canais manuais (Shopee, TikTok Shop, etc)</p>
-        {canais.length === 0 && <p className="text-sm text-gray-400">Nenhum canal manual cadastrado.</p>}
-        <div className="flex flex-col gap-4">
-          {canais.map((c) => (
-            <div key={c.id} className="rounded border border-gray-100 p-3 dark:border-gray-700">
-              <p className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
-                {c.nome}
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-                {(
-                  [
-                    ["vendasBrutas", "Vendas brutas"],
-                    ["faturamentoBruto", "Faturamento bruto"],
-                    ["vendasCanceladas", "Vendas canceladas"],
-                    ["valorCancelado", "Valor cancelado"],
-                    ["vendasDevolvidas", "Vendas devolvidas"],
-                    ["valorDevolvido", "Valor devolvido"],
-                  ] as [keyof CanalForm, string][]
-                ).map(([campo, label]) => (
-                  <label key={campo} className="flex flex-col text-xs text-gray-500">
-                    {label}
-                    <input
-                      type="number"
-                      value={canaisForm[c.id]?.[campo] ?? ""}
-                      onChange={(e) =>
-                        setCanaisForm((prev) => ({ ...prev, [c.id]: { ...prev[c.id], [campo]: e.target.value } }))
-                      }
-                      className="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                    />
-                  </label>
-                ))}
-              </div>
+        <CabecalhoExpansivel
+          titulo="Canais manuais (Shopee, TikTok Shop, etc)"
+          aberto={canaisAberto}
+          onToggle={() => setCanaisAberto((v) => !v)}
+        />
+        {canaisAberto && (
+          <>
+            {canais.length === 0 && <p className="text-sm text-gray-400">Nenhum canal manual cadastrado.</p>}
+            <div className="flex flex-col gap-4">
+              {canais.map((c) => (
+                <div key={c.id} className="rounded border border-gray-100 p-3 dark:border-gray-700">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
+                    {c.nome}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+                    {(
+                      [
+                        ["vendasBrutas", "Vendas brutas"],
+                        ["faturamentoBruto", "Faturamento bruto"],
+                        ["vendasCanceladas", "Vendas canceladas"],
+                        ["valorCancelado", "Valor cancelado"],
+                        ["vendasDevolvidas", "Vendas devolvidas"],
+                        ["valorDevolvido", "Valor devolvido"],
+                      ] as [keyof CanalForm, string][]
+                    ).map(([campo, label]) => (
+                      <label key={campo} className="flex flex-col text-xs text-gray-500">
+                        {label}
+                        <input
+                          type="number"
+                          value={canaisForm[c.id]?.[campo] ?? ""}
+                          onChange={(e) =>
+                            setCanaisForm((prev) => ({ ...prev, [c.id]: { ...prev[c.id], [campo]: e.target.value } }))
+                          }
+                          className="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
 
       <div className="mb-6 rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <p className="mb-3 text-xs font-semibold uppercase text-gray-500">Ads manuais (Google Ads, Meta Ads)</p>
-        <div className="flex flex-col gap-4">
-          {(["google_ads", "meta_ads"] as const).map((plataforma) => (
-            <div key={plataforma} className="rounded border border-gray-100 p-3 dark:border-gray-700">
-              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                {plataforma === "google_ads" ? "Google Ads" : "Meta Ads"}
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-                {(
-                  [
-                    ["investimento", "Investimento"],
-                    ["retorno", "Retorno"],
-                    ["vendas", "Vendas"],
-                    ["impressoes", "Impressões"],
-                    ["cliques", "Cliques"],
-                  ] as [keyof AdsForm, string][]
-                ).map(([campo, label]) => (
-                  <label key={campo} className="flex flex-col text-xs text-gray-500">
-                    {label}
-                    <input
-                      type="number"
-                      value={adsForm[plataforma][campo]}
-                      onChange={(e) =>
-                        setAdsForm((prev) => ({ ...prev, [plataforma]: { ...prev[plataforma], [campo]: e.target.value } }))
-                      }
-                      className="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
-                    />
-                  </label>
-                ))}
+        <CabecalhoExpansivel
+          titulo="Ads manuais (Google Ads, Meta Ads)"
+          aberto={adsAberto}
+          onToggle={() => setAdsAberto((v) => !v)}
+        />
+        {adsAberto && (
+          <div className="flex flex-col gap-4">
+            {(["google_ads", "meta_ads"] as const).map((plataforma) => (
+              <div key={plataforma} className="rounded border border-gray-100 p-3 dark:border-gray-700">
+                <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {plataforma === "google_ads" ? "Google Ads" : "Meta Ads"}
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+                  {(
+                    [
+                      ["investimento", "Investimento"],
+                      ["retorno", "Retorno"],
+                      ["vendas", "Vendas"],
+                      ["impressoes", "Impressões"],
+                      ["cliques", "Cliques"],
+                    ] as [keyof AdsForm, string][]
+                  ).map(([campo, label]) => (
+                    <label key={campo} className="flex flex-col text-xs text-gray-500">
+                      {label}
+                      <input
+                        type="number"
+                        value={adsForm[plataforma][campo]}
+                        onChange={(e) =>
+                          setAdsForm((prev) => ({ ...prev, [plataforma]: { ...prev[plataforma], [campo]: e.target.value } }))
+                        }
+                        className="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                      />
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {itensAuto && (
