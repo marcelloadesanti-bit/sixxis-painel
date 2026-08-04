@@ -48,6 +48,10 @@ export async function criarContainerAction(formData: FormData) {
   await supabase.from("estoque_containers").insert({
     fatura: valorOuNull(formData, "fatura"),
     fornecedor,
+    // Fase 14 (04/08/2026): vinculo opcional com o cadastro de fornecedores.
+    // Fica nulo quando o pedido usa o fallback manual (fornecedor digitado
+    // livremente em vez de selecionado no dropdown).
+    fornecedor_id: valorOuNull(formData, "fornecedorId"),
     sku,
     quantidade: Number(formData.get("quantidade") ?? 0) || 0,
     data_embarque: valorOuNull(formData, "dataEmbarque"),
@@ -74,6 +78,7 @@ export async function atualizarContainerAction(formData: FormData) {
     .update({
       fatura: valorOuNull(formData, "fatura"),
       fornecedor,
+      fornecedor_id: valorOuNull(formData, "fornecedorId"),
       sku,
       quantidade: Number(formData.get("quantidade") ?? 0) || 0,
       data_embarque: valorOuNull(formData, "dataEmbarque"),
