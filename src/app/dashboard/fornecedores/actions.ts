@@ -39,10 +39,6 @@ function categoriaValida(formData: FormData): CategoriaFornecedor {
   return (CATEGORIAS_FORNECEDOR as readonly string[]).includes(v) ? (v as CategoriaFornecedor) : "Outros";
 }
 
-// O form envia um <input type="hidden" name="skus"> por chip (um por SKU
-// digitado no CampoSkus). Normaliza para maiusculo/trim e remove
-// duplicados -- convencao (Fase 16, 04/08/2026) e cadastrar o SKU "pai" sem
-// sufixo de voltagem (ex: CLI-SX040 em vez de CLI-SX040-110/-220).
 function skusValidos(formData: FormData): string[] {
   const brutos = formData.getAll("skus").map((v) => String(v).trim().toUpperCase());
   return Array.from(new Set(brutos.filter(Boolean)));
@@ -68,6 +64,7 @@ export async function criarFornecedorAction(formData: FormData) {
   await supabase.from("fornecedores").insert({
     categoria: categoriaValida(formData),
     nome,
+    apelido: valorOuNull(formData, "apelido"),
     telefone: valorOuNull(formData, "telefone"),
     localizacao,
     cnpj: valorOuNull(formData, "cnpj"),
@@ -98,6 +95,7 @@ export async function atualizarFornecedorAction(formData: FormData) {
   const atualizacao: Record<string, unknown> = {
     categoria: categoriaValida(formData),
     nome,
+    apelido: valorOuNull(formData, "apelido"),
     telefone: valorOuNull(formData, "telefone"),
     localizacao,
     cnpj: valorOuNull(formData, "cnpj"),
