@@ -3,6 +3,10 @@
     {
       "path": "/api/sige/comissao/atualizar",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/admin/backup/executar",
+      "schedule": "0 7 * * *"
     }
   ]
 }
