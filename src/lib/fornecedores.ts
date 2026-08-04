@@ -1,7 +1,8 @@
 // Cadastro de fornecedores (Fase 14, 03/08/2026; campos telefone/estrela e
 // listagem em cards adicionados 04/08/2026; latitude/longitude para o mapa
 // adicionados 04/08/2026; skus para metricas por fornecedor -- Fase 16 --
-// adicionados 04/08/2026). Fonte: tabela public.fornecedores (Supabase).
+// adicionados 04/08/2026; apelido para selecao rapida em Containers
+// adicionado 04/08/2026). Fonte: tabela public.fornecedores (Supabase).
 // Independente da secao Estoque -- usado tambem para popular o seletor de
 // fornecedor no formulario de Containers (em vez de digitar o nome
 // manualmente a cada pedido).
@@ -31,6 +32,7 @@ export type Fornecedor = {
   id: string;
   categoria: CategoriaFornecedor;
   nome: string;
+  apelido: string | null;
   telefone: string | null;
   localizacao: string | null;
   cnpj: string | null;
@@ -49,6 +51,7 @@ type LinhaFornecedorRaw = {
   id: string;
   categoria: string;
   nome: string;
+  apelido: string | null;
   telefone: string | null;
   localizacao: string | null;
   cnpj: string | null;
@@ -68,6 +71,7 @@ function mapearLinha(row: LinhaFornecedorRaw): Fornecedor {
     id: row.id,
     categoria: row.categoria as CategoriaFornecedor,
     nome: row.nome,
+    apelido: row.apelido,
     telefone: row.telefone,
     localizacao: row.localizacao,
     cnpj: row.cnpj,
@@ -81,6 +85,13 @@ function mapearLinha(row: LinhaFornecedorRaw): Fornecedor {
     geocodificadoEm: row.geocodificado_em,
     criadoEm: row.criado_em,
   };
+}
+
+// Nome curto para exibir em selects e listagens compactas (ex: seletor de
+// fornecedor em Containers) -- usa o apelido quando cadastrado, senao cai
+// no nome completo.
+export function nomeExibicao(f: Pick<Fornecedor, "nome" | "apelido">): string {
+  return f.apelido?.trim() || f.nome;
 }
 
 // Lista todos os fornecedores (ativos e inativos). A pagina de gestao (aba
