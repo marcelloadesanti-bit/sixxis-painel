@@ -77,3 +77,9 @@ try {
   return NextResponse.json({ erro: "Falha ao rodar reconciliacao." }, { status: 500 });
 }
 }
+
+
+// Vercel Cron Jobs chamam a rota via GET (nao POST) -- ver
+// https://vercel.com/docs/cron-jobs. Reaproveita a mesma logica do POST
+// (usado pelo botao manual) para nao duplicar codigo.
+export const GET = POST;
