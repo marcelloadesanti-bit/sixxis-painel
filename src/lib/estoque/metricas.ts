@@ -14,6 +14,14 @@
 // que substitui a antiga planilha externa "Pedidos Containers"). Um SKU com
 // poucos dias de estoque mas com um container chegando antes da ruptura deixa
 // de ser classificado como critico.
+//
+// Fase 14.1 (04/08/2026): containers com previsao de chegada JA VENCIDA (ou
+// seja, atrasados e ainda sem confirmacao de chegada) deixam de entrar nessa
+// simulacao. Antes disso, um container atrasado era tratado como "chegando
+// hoje com certeza" e resolvia a ruptura sozinho, escondendo o risco real
+// (que so seria coberto pelo proximo container ainda dentro do prazo).
+// Containers atrasados continuam visiveis normalmente na aba Containers
+// (com a tag "Atrasado"), so nao contam mais para esta projecao.
 
 import { getProdutosMaisVendidos, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getMaisVendidosPorSku } from "@/lib/mercadolivre/items";
@@ -82,6 +90,11 @@ export function projetarDiasAteRuptura(saldoTotal: number, quantidade60d: number
 // da classificacao critica). Containers sem `dataPrevChegada` sao ignorados
 // na simulacao (nao da pra saber quando chegam), mas continuam listados na
 // aba Containers.
+//
+// Fase 14.1: containers com `dataPrevChegada` anterior a hoje (atrasados,
+// ainda sem chegada confirmada) tambem sao ignorados aqui -- nao ha garantia
+// de quando vao chegar de fato, entao nao podem "resolver" a ruptura na
+// projecao.
 export type ContainerPendente = { quantidade: number; dataPrevChegada: string | null };
 
 export function projetarRupturaComContainers(
@@ -96,9 +109,10 @@ export function projetarRupturaComContainers(
 
   const pendentes = containers
     .filter((c): c is { quantidade: number; dataPrevChegada: string } => Boolean(c.dataPrevChegada))
+    .filter((c) => new Date(`${c.dataPrevChegada}T00:00:00`) >= hoje)
     .map((c) => {
       const dataChegada = new Date(`${c.dataPrevChegada}T00:00:00`);
-      const dia = Math.max(Math.round((dataChegada.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000)), 0);
+      const dia = Math.round((dataChegada.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000));
       return { dia, quantidade: c.quantidade, dataPrevChegada: c.dataPrevChegada };
     })
     .sort((a, b) => a.dia - b.dia);
