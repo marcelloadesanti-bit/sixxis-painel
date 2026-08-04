@@ -2,6 +2,14 @@
 // Fonte: tabela public.estoque_containers (Supabase). Substitui a antiga
 // planilha externa "Pedidos Containers" -- todo o CRUD agora acontece direto
 // pelo painel (aba Containers), sem depender de planilha nenhuma.
+//
+// fornecedorId (Fase 14, 04/08/2026): vinculo opcional com a tabela
+// fornecedores (FK fornecedor_id, nullable). Quando o pedido e lancado
+// selecionando um fornecedor cadastrado, o texto livre "fornecedor" continua
+// sendo preenchido (para exibicao/robustez), mas fornecedorId permite no
+// futuro (Fase 16) cruzar containers com metricas por fornecedor. Pedidos
+// antigos ou lancados com fornecedor digitado manualmente ficam com
+// fornecedorId nulo.
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,6 +17,7 @@ export type PedidoContainer = {
   id: string;
   fatura: string | null;
   fornecedor: string;
+  fornecedorId: string | null;
   sku: string;
   quantidade: number;
   dataEmbarque: string | null;
@@ -23,6 +32,7 @@ type LinhaContainerRaw = {
   id: string;
   fatura: string | null;
   fornecedor: string;
+  fornecedor_id: string | null;
   sku: string;
   quantidade: number;
   data_embarque: string | null;
@@ -38,6 +48,7 @@ function mapearLinha(row: LinhaContainerRaw): PedidoContainer {
     id: row.id,
     fatura: row.fatura,
     fornecedor: row.fornecedor,
+    fornecedorId: row.fornecedor_id,
     sku: row.sku,
     quantidade: row.quantidade,
     dataEmbarque: row.data_embarque,
