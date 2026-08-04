@@ -7,6 +7,7 @@ import {
   atualizarFornecedorAction,
   alternarAtivoFornecedorAction,
   alternarEstrelaFornecedorAction,
+  atualizarLocalizacaoFornecedorAction,
   excluirFornecedorAction,
 } from "./actions";
 import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor } from "@/lib/fornecedores-categorias";
@@ -105,9 +106,24 @@ function BadgeStatus({ ativo }: { ativo: boolean }) {
   );
 }
 
+function BadgeMapa({ geocodificado }: { geocodificado: boolean }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+        geocodificado
+          ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+          : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+      }`}
+    >
+      {geocodificado ? "No mapa" : "Sem localização no mapa"}
+    </span>
+  );
+}
+
 function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; podeEditar: boolean }) {
   const [expandido, setExpandido] = useState(false);
   const [editando, setEditando] = useState(false);
+  const geocodificado = fornecedor.latitude != null && fornecedor.longitude != null;
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
@@ -156,6 +172,9 @@ function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; po
                 <DetalheCampo label="Representante comercial" valor={fornecedor.representanteComercial} />
                 <DetalheCampo label="Linha de produtos" valor={fornecedor.linhaProdutos} />
               </dl>
+              <div className="mt-3">
+                <BadgeMapa geocodificado={geocodificado} />
+              </div>
               {podeEditar && (
                 <div className="mt-4 flex flex-wrap items-center gap-4">
                   <button
@@ -166,6 +185,7 @@ function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; po
                   </button>
                   <BotaoAlternarEstrela id={fornecedor.id} estrela={fornecedor.estrela} />
                   <BotaoAlternarAtivo id={fornecedor.id} ativo={fornecedor.ativo} />
+                  {fornecedor.localizacao && <BotaoAtualizarLocalizacao id={fornecedor.id} />}
                   <BotaoExcluir id={fornecedor.id} rotulo={fornecedor.nome} />
                 </div>
               )}
@@ -205,6 +225,21 @@ function BotaoAlternarEstrela({ id, estrela }: { id: string; estrela: boolean })
       <input type="hidden" name="estrela" value={String(estrela)} />
       <button type="submit" className="text-xs text-gray-500 hover:text-[var(--color-sixxis-navy)] dark:text-gray-400">
         {estrela ? "Remover estrela" : "Marcar estrela"}
+      </button>
+    </form>
+  );
+}
+
+// Re-geocodifica a localizacao atual sem precisar editar o cadastro -- usada
+// tanto para "puxar" para o mapa fornecedores cadastrados antes da
+// integracao com o Maps existir, quanto para tentar de novo se a
+// geocodificacao falhou da primeira vez.
+function BotaoAtualizarLocalizacao({ id }: { id: string }) {
+  return (
+    <form action={atualizarLocalizacaoFornecedorAction}>
+      <input type="hidden" name="id" value={id} />
+      <button type="submit" className="text-xs text-gray-500 hover:text-[var(--color-sixxis-navy)] dark:text-gray-400">
+        Atualizar localização no mapa
       </button>
     </form>
   );
@@ -263,7 +298,11 @@ function FormFornecedor({
       </div>
       <CampoTexto label="Nome" name="nome" defaultValue={fornecedor?.nome ?? ""} required />
       <CampoTexto label="Telefone" name="telefone" defaultValue={fornecedor?.telefone ?? ""} />
-      <CampoTexto label="Localização" name="localizacao" defaultValue={fornecedor?.localizacao ?? ""} />
+      <CampoTexto
+        label="Localização"
+        name="localizacao"
+        defaultValue={fornecedor?.localizacao ?? ""}
+      />
       <CampoTexto label="CNPJ" name="cnpj" defaultValue={fornecedor?.cnpj ?? ""} />
       <CampoTexto
         label="Representante comercial"
@@ -289,6 +328,10 @@ function FormFornecedor({
           Estrela
         </label>
       </div>
+      <p className="col-span-2 text-xs text-gray-400 sm:col-span-4">
+        A localização é convertida em coordenadas automaticamente para aparecer no mapa (assim que a integração com o
+        Google Maps estiver ativa).
+      </p>
       <div className="col-span-2 flex items-center gap-3 sm:col-span-4">
         <button
           type="submit"
