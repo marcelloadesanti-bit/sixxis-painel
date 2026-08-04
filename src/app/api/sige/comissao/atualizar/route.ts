@@ -138,3 +138,9 @@ if (auth.disparadoPor === "cron") {
 return NextResponse.json({ erro: "Erro interno ao calcular comissao." }, { status: 500 });
 }
 }
+
+
+// Vercel Cron Jobs chamam a rota via GET (nao POST) -- ver
+// https://vercel.com/docs/cron-jobs. Reaproveita a mesma logica do POST
+// (usado pelo botao manual) para nao duplicar codigo.
+export const GET = POST;
