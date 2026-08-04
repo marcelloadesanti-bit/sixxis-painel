@@ -5,6 +5,7 @@ import { buscarVendasMlAmazon, buscarVendasManuais, type ItemVendas } from "@/li
 import { buscarAdsMl, buscarAdsManuais, somarItensAds } from "@/lib/sige/ads";
 import { calcularComissao, calcularCanaisAutomaticos, type ConfigComissao } from "@/lib/sige/comissao";
 import { buscarComercial } from "@/lib/sige/comercial";
+import { enviarAlerta } from "@/lib/alertas/email";
 
 // Recalcula a comissao do mes corrente "ate agora" (do dia 1 ate hoje) e
 // grava um snapshot (linha unica, id=1) em sige_comissao_snapshot -- fonte
