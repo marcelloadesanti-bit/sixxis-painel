@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { podeEditar as podeEditarSecao } from "@/lib/permissoes";
 import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor } from "@/lib/fornecedores";
+import { geocodificarEndereco } from "@/lib/geocoding";
 
 // Mesmo padrao de guarda usado no restante do painel: exige nivel "edicao"
 // na secao "fornecedores".
@@ -49,16 +50,25 @@ export async function criarFornecedorAction(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) return;
 
+  const localizacao = valorOuNull(formData, "localizacao");
+  // Geocodifica no momento do cadastro -- se a Geocoding API ainda nao
+  // estiver disponivel (chave/faturamento pendente), coords vem null e o
+  // fornecedor e criado normalmente, so sem pino no mapa por enquanto.
+  const coords = localizacao ? await geocodificarEndereco(localizacao) : null;
+
   await supabase.from("fornecedores").insert({
     categoria: categoriaValida(formData),
     nome,
     telefone: valorOuNull(formData, "telefone"),
-    localizacao: valorOuNull(formData, "localizacao"),
+    localizacao,
     cnpj: valorOuNull(formData, "cnpj"),
     representante_comercial: valorOuNull(formData, "representanteComercial"),
     linha_produtos: valorOuNull(formData, "linhaProdutos"),
     ativo: formData.get("ativo") === "on",
     estrela: formData.get("estrela") === "on",
+    latitude: coords?.latitude ?? null,
+    longitude: coords?.longitude ?? null,
+    geocodificado_em: coords ? new Date().toISOString() : null,
   });
 
   revalidarPaginas();
@@ -72,20 +82,32 @@ export async function atualizarFornecedorAction(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) return;
 
-  await supabase
-    .from("fornecedores")
-    .update({
-      categoria: categoriaValida(formData),
-      nome,
-      telefone: valorOuNull(formData, "telefone"),
-      localizacao: valorOuNull(formData, "localizacao"),
-      cnpj: valorOuNull(formData, "cnpj"),
-      representante_comercial: valorOuNull(formData, "representanteComercial"),
-      linha_produtos: valorOuNull(formData, "linhaProdutos"),
-      ativo: formData.get("ativo") === "on",
-      estrela: formData.get("estrela") === "on",
-    })
-    .eq("id", id);
+  const localizacao = valorOuNull(formData, "localizacao");
+  const coords = localizacao ? await geocodificarEndereco(localizacao) : null;
+
+  const atualizacao: Record<string, unknown> = {
+    categoria: categoriaValida(formData),
+    nome,
+    telefone: valorOuNull(formData, "telefone"),
+    localizacao,
+    cnpj: valorOuNull(formData, "cnpj"),
+    representante_comercial: valorOuNull(formData, "representanteComercial"),
+    linha_produtos: valorOuNull(formData, "linhaProdutos"),
+    ativo: formData.get("ativo") === "on",
+    estrela: formData.get("estrela") === "on",
+  };
+
+  // So sobrescreve latitude/longitude quando a geocodificacao funcionou
+  // dessa vez -- se a API estiver indisponivel (ou o endereco nao for
+  // encontrado), preserva a coordenada que ja existia em vez de apagar um
+  // pino valido do mapa.
+  if (coords) {
+    atualizacao.latitude = coords.latitude;
+    atualizacao.longitude = coords.longitude;
+    atualizacao.geocodificado_em = new Date().toISOString();
+  }
+
+  await supabase.from("fornecedores").update(atualizacao).eq("id", id);
 
   revalidarPaginas();
 }
@@ -115,6 +137,41 @@ export async function alternarEstrelaFornecedorAction(formData: FormData) {
   const estrela = formData.get("estrela") === "true";
 
   await supabase.from("fornecedores").update({ estrela: !estrela }).eq("id", id);
+
+  revalidarPaginas();
+}
+
+// Re-geocodifica a localizacao atual de um fornecedor ja cadastrado, sem
+// precisar abrir o formulario de edicao. Usado tanto para "puxar" para o
+// mapa fornecedores cadastrados antes da integracao com o Maps existir,
+// quanto para tentar de novo caso a geocodificacao tenha falhado da
+// primeira vez (ex: API ainda nao habilitada no momento do cadastro).
+export async function atualizarLocalizacaoFornecedorAction(formData: FormData) {
+  const supabase = await exigirEdicao();
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const { data: fornecedor } = await supabase
+    .from("fornecedores")
+    .select("localizacao")
+    .eq("id", id)
+    .maybeSingle();
+
+  const localizacao = fornecedor?.localizacao?.trim();
+  if (!localizacao) return;
+
+  const coords = await geocodificarEndereco(localizacao);
+  if (!coords) return;
+
+  await supabase
+    .from("fornecedores")
+    .update({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      geocodificado_em: new Date().toISOString(),
+    })
+    .eq("id", id);
 
   revalidarPaginas();
 }
