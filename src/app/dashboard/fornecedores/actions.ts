@@ -52,11 +52,13 @@ export async function criarFornecedorAction(formData: FormData) {
   await supabase.from("fornecedores").insert({
     categoria: categoriaValida(formData),
     nome,
+    telefone: valorOuNull(formData, "telefone"),
     localizacao: valorOuNull(formData, "localizacao"),
     cnpj: valorOuNull(formData, "cnpj"),
     representante_comercial: valorOuNull(formData, "representanteComercial"),
     linha_produtos: valorOuNull(formData, "linhaProdutos"),
     ativo: formData.get("ativo") === "on",
+    estrela: formData.get("estrela") === "on",
   });
 
   revalidarPaginas();
@@ -75,11 +77,13 @@ export async function atualizarFornecedorAction(formData: FormData) {
     .update({
       categoria: categoriaValida(formData),
       nome,
+      telefone: valorOuNull(formData, "telefone"),
       localizacao: valorOuNull(formData, "localizacao"),
       cnpj: valorOuNull(formData, "cnpj"),
       representante_comercial: valorOuNull(formData, "representanteComercial"),
       linha_produtos: valorOuNull(formData, "linhaProdutos"),
       ativo: formData.get("ativo") === "on",
+      estrela: formData.get("estrela") === "on",
     })
     .eq("id", id);
 
@@ -97,6 +101,20 @@ export async function alternarAtivoFornecedorAction(formData: FormData) {
   const ativo = formData.get("ativo") === "true";
 
   await supabase.from("fornecedores").update({ ativo: !ativo }).eq("id", id);
+
+  revalidarPaginas();
+}
+
+// Alterna a marcacao de "estrela" (melhores fornecedores -- normalmente os
+// que ja importamos em grande escala) direto na listagem.
+export async function alternarEstrelaFornecedorAction(formData: FormData) {
+  const supabase = await exigirEdicao();
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const estrela = formData.get("estrela") === "true";
+
+  await supabase.from("fornecedores").update({ estrela: !estrela }).eq("id", id);
 
   revalidarPaginas();
 }
