@@ -39,6 +39,15 @@ function categoriaValida(formData: FormData): CategoriaFornecedor {
   return (CATEGORIAS_FORNECEDOR as readonly string[]).includes(v) ? (v as CategoriaFornecedor) : "Outros";
 }
 
+// O form envia um <input type="hidden" name="skus"> por chip (um por SKU
+// digitado no CampoSkus). Normaliza para maiusculo/trim e remove
+// duplicados -- convencao (Fase 16, 04/08/2026) e cadastrar o SKU "pai" sem
+// sufixo de voltagem (ex: CLI-SX040 em vez de CLI-SX040-110/-220).
+function skusValidos(formData: FormData): string[] {
+  const brutos = formData.getAll("skus").map((v) => String(v).trim().toUpperCase());
+  return Array.from(new Set(brutos.filter(Boolean)));
+}
+
 function revalidarPaginas() {
   revalidatePath("/dashboard/fornecedores");
   revalidatePath("/dashboard/estoque/containers");
@@ -64,6 +73,7 @@ export async function criarFornecedorAction(formData: FormData) {
     cnpj: valorOuNull(formData, "cnpj"),
     representante_comercial: valorOuNull(formData, "representanteComercial"),
     linha_produtos: valorOuNull(formData, "linhaProdutos"),
+    skus: skusValidos(formData),
     ativo: formData.get("ativo") === "on",
     estrela: formData.get("estrela") === "on",
     latitude: coords?.latitude ?? null,
@@ -93,6 +103,7 @@ export async function atualizarFornecedorAction(formData: FormData) {
     cnpj: valorOuNull(formData, "cnpj"),
     representante_comercial: valorOuNull(formData, "representanteComercial"),
     linha_produtos: valorOuNull(formData, "linhaProdutos"),
+    skus: skusValidos(formData),
     ativo: formData.get("ativo") === "on",
     estrela: formData.get("estrela") === "on",
   };
