@@ -24,6 +24,13 @@ function nomeExibicaoFornecedor(f: Pick<Fornecedor, "nome" | "apelido">): string
   return f.apelido?.trim() || f.nome;
 }
 
+// Data de hoje em formato ISO (AAAA-MM-DD), mesmo formato salvo no banco
+// para dataPrevChegada -- usada tanto no filtro de periodo quanto na tag de
+// "Atrasado".
+function hojeISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function formatarData(iso: string | null): string {
   if (!iso) return "—";
   const [ano, mes, dia] = iso.split("-");
@@ -33,6 +40,9 @@ function formatarData(iso: string | null): string {
 function statusContainer(c: PedidoContainer): { label: string; bg: string; text: string } {
   if (c.dataChegada) {
     return { label: "Chegou", bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-300" };
+  }
+  if (c.dataPrevChegada && c.dataPrevChegada < hojeISO()) {
+    return { label: "Atrasado", bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-300" };
   }
   if (c.dataEmbarque) {
     return { label: "Em trânsito", bg: "bg-blue-100 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300" };
@@ -55,6 +65,19 @@ function agruparPorSku(containers: PedidoContainer[]): SkuQuantidade[] {
     .sort((a, b) => b.quantidade - a.quantidade);
 }
 
+// Filtro de periodo: baseado na data de previsao de chegada (mesmo campo
+// usado no card de previsao mensal e na tag de atrasado). Sem data de/ate
+// definida, todos os pedidos passam. Pedidos sem dataPrevChegada cadastrada
+// so ficam de fora quando ha algum filtro ativo (nao tem como avaliar se
+// caem no periodo).
+function dentroDoPeriodo(c: PedidoContainer, de: string, ate: string): boolean {
+  if (!de && !ate) return true;
+  if (!c.dataPrevChegada) return false;
+  if (de && c.dataPrevChegada < de) return false;
+  if (ate && c.dataPrevChegada > ate) return false;
+  return true;
+}
+
 export default function ContainersPainel({
   containers,
   podeEditar,
@@ -66,19 +89,62 @@ export default function ContainersPainel({
 }) {
   const [mostrarForm, setMostrarForm] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [periodoDe, setPeriodoDe] = useState("");
+  const [periodoAte, setPeriodoAte] = useState("");
+
+  const filtroAtivo = periodoDe !== "" || periodoAte !== "";
+  const containersFiltrados = containers.filter((c) => dentroDoPeriodo(c, periodoDe, periodoAte));
 
   const colunas = podeEditar ? 11 : 10;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-start">
-        <CardStatSimples label="Pedidos" valor={containers.length} />
-        <CardUnidadesAReceber containers={containers} />
-        <CardNaoPagos containers={containers} />
-        <CardStatSimples label="Chegaram" valor={containers.filter((c) => c.dataChegada).length} />
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div>
+          <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Previsão de chegada — de</label>
+          <input
+            type="date"
+            value={periodoDe}
+            onChange={(e) => setPeriodoDe(e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">até</label>
+          <input
+            type="date"
+            value={periodoAte}
+            onChange={(e) => setPeriodoAte(e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+          />
+        </div>
+        {filtroAtivo && (
+          <button
+            type="button"
+            onClick={() => {
+              setPeriodoDe("");
+              setPeriodoAte("");
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            Limpar filtro
+          </button>
+        )}
+        {filtroAtivo && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Mostrando {containersFiltrados.length} de {containers.length} pedidos
+          </span>
+        )}
       </div>
 
-      <CardPrevisaoMensal containers={containers} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-start">
+        <CardStatSimples label="Pedidos" valor={containersFiltrados.length} />
+        <CardUnidadesAReceber containers={containersFiltrados} />
+        <CardNaoPagos containers={containersFiltrados} />
+        <CardStatSimples label="Chegaram" valor={containersFiltrados.filter((c) => c.dataChegada).length} />
+      </div>
+
+      <CardPrevisaoMensal containers={containersFiltrados} />
 
       {podeEditar && (
         <div>
@@ -118,7 +184,7 @@ export default function ContainersPainel({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {containers.map((c) =>
+            {containersFiltrados.map((c) =>
               editandoId === c.id ? (
                 <tr key={c.id}>
                   <td colSpan={colunas} className="px-4 py-3">
@@ -182,9 +248,9 @@ export default function ContainersPainel({
             )}
           </tbody>
         </table>
-        {containers.length === 0 && (
+        {containersFiltrados.length === 0 && (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            Nenhum pedido cadastrado ainda.
+            {filtroAtivo ? "Nenhum pedido no período selecionado." : "Nenhum pedido cadastrado ainda."}
           </div>
         )}
       </div>
