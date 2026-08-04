@@ -38,28 +38,53 @@ function revalidarPaginas() {
   revalidatePath("/dashboard/estoque/metricas");
 }
 
-export async function criarContainerAction(formData: FormData) {
-  const supabase = await exigirEdicao();
+// Fase 14b (04/08/2026): um pedido pode trazer mais de um produto no mesmo
+// container -- o formulario manda arrays paralelos sku[]/quantidade[] (uma
+// linha por item adicionado pelo usuario). Cada item vira uma linha propria
+// em estoque_containers, todas compartilhando fatura/fornecedor/datas/
+// pagamento/observacoes do pedido.
+type ItemPedido = { sku: string; quantidade: number };
 
-  const sku = String(formData.get("sku") ?? "").trim().toUpperCase();
-  const fornecedor = String(formData.get("fornecedor") ?? "").trim();
-  if (!sku || !fornecedor) return;
+function extrairItens(formData: FormData): ItemPedido[] {
+  const skus = formData.getAll("sku").map((v) => String(v).trim().toUpperCase());
+  const quantidades = formData.getAll("quantidade").map((v) => Number(v) || 0);
+  const itens: ItemPedido[] = [];
+  for (let i = 0; i < skus.length; i++) {
+    if (skus[i] && quantidades[i] > 0) {
+      itens.push({ sku: skus[i], quantidade: quantidades[i] });
+    }
+  }
+  return itens;
+}
 
-  await supabase.from("estoque_containers").insert({
+function camposCompartilhados(formData: FormData, fornecedor: string) {
+  return {
     fatura: valorOuNull(formData, "fatura"),
     fornecedor,
     // Fase 14 (04/08/2026): vinculo opcional com o cadastro de fornecedores.
     // Fica nulo quando o pedido usa o fallback manual (fornecedor digitado
     // livremente em vez de selecionado no dropdown).
     fornecedor_id: valorOuNull(formData, "fornecedorId"),
-    sku,
-    quantidade: Number(formData.get("quantidade") ?? 0) || 0,
     data_embarque: valorOuNull(formData, "dataEmbarque"),
     data_prev_chegada: valorOuNull(formData, "dataPrevChegada"),
     data_chegada: valorOuNull(formData, "dataChegada"),
     pago: formData.get("pago") === "on",
     observacoes: valorOuNull(formData, "observacoes"),
-  });
+  };
+}
+
+export async function criarContainerAction(formData: FormData) {
+  const supabase = await exigirEdicao();
+
+  const fornecedor = String(formData.get("fornecedor") ?? "").trim();
+  const itens = extrairItens(formData);
+  if (!fornecedor || itens.length === 0) return;
+
+  const compartilhados = camposCompartilhados(formData, fornecedor);
+
+  await supabase
+    .from("estoque_containers")
+    .insert(itens.map((item) => ({ ...compartilhados, sku: item.sku, quantidade: item.quantidade })));
 
   revalidarPaginas();
 }
@@ -69,25 +94,28 @@ export async function atualizarContainerAction(formData: FormData) {
 
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const sku = String(formData.get("sku") ?? "").trim().toUpperCase();
-  const fornecedor = String(formData.get("fornecedor") ?? "").trim();
-  if (!sku || !fornecedor) return;
 
+  const fornecedor = String(formData.get("fornecedor") ?? "").trim();
+  const itens = extrairItens(formData);
+  if (!fornecedor || itens.length === 0) return;
+
+  const compartilhados = camposCompartilhados(formData, fornecedor);
+  const [primeiro, ...extras] = itens;
+
+  // O primeiro item atualiza a linha existente (mesmo id). Itens extras
+  // adicionados durante a edicao (pedido que ganhou mais um SKU depois de
+  // cadastrado) viram novas linhas -- efetivamente "dividindo" o container
+  // em mais de uma linha, todas compartilhando os mesmos dados de pedido.
   await supabase
     .from("estoque_containers")
-    .update({
-      fatura: valorOuNull(formData, "fatura"),
-      fornecedor,
-      fornecedor_id: valorOuNull(formData, "fornecedorId"),
-      sku,
-      quantidade: Number(formData.get("quantidade") ?? 0) || 0,
-      data_embarque: valorOuNull(formData, "dataEmbarque"),
-      data_prev_chegada: valorOuNull(formData, "dataPrevChegada"),
-      data_chegada: valorOuNull(formData, "dataChegada"),
-      pago: formData.get("pago") === "on",
-      observacoes: valorOuNull(formData, "observacoes"),
-    })
+    .update({ ...compartilhados, sku: primeiro.sku, quantidade: primeiro.quantidade })
     .eq("id", id);
+
+  if (extras.length > 0) {
+    await supabase
+      .from("estoque_containers")
+      .insert(extras.map((item) => ({ ...compartilhados, sku: item.sku, quantidade: item.quantidade })));
+  }
 
   revalidarPaginas();
 }
