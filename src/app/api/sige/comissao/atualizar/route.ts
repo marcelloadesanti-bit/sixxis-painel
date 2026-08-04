@@ -51,6 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ erro: "Nao autorizado." }, { status: 401 });
   }
 
+try {
   const admin = createAdminClient();
 
   const hoje = new Date();
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
   ]);
 
   if (!configRow) {
+    if (auth.disparadoPor === "cron") {
+      await enviarAlerta(
+        "Falha no cron de Comissao",
+        "Configuracao de comissao (sige_comissao_config) nao encontrada ao rodar o cron diario."
+        );
+    }
     return NextResponse.json({ erro: "Configuracao de comissao nao encontrada." }, { status: 500 });
   }
   const config = configRow as unknown as ConfigComissao;
@@ -110,8 +117,24 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    if (auth.disparadoPor === "cron") {
+      await enviarAlerta(
+        "Falha no cron de Comissao",
+        "Erro ao gravar snapshot de comissao (sige_comissao_snapshot): " + JSON.stringify(error)
+        );
+    }
     return NextResponse.json({ erro: "Falha ao gravar o snapshot." }, { status: 500 });
   }
 
   return NextResponse.json({ ano, mes, resultado, calculadoEm, disparadoPor: auth.disparadoPor, periodo: { de, ate } });
+} catch (err) {
+  console.error("[cron comissao] Erro inesperado:", err);
+if (auth.disparadoPor === "cron") {
+  await enviarAlerta(
+    "Falha no cron de Comissao",
+    "Erro inesperado ao calcular comissao: " + (err instanceof Error ? err.message : String(err))
+    );
+}
+return NextResponse.json({ erro: "Erro interno ao calcular comissao." }, { status: 500 });
+}
 }
