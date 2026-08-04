@@ -172,6 +172,21 @@ function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; po
                 <DetalheCampo label="Representante comercial" valor={fornecedor.representanteComercial} />
                 <DetalheCampo label="Linha de produtos" valor={fornecedor.linhaProdutos} />
               </dl>
+              {fornecedor.skus.length > 0 && (
+                <div className="mt-3">
+                  <dt className="mb-1 text-xs text-gray-500 dark:text-gray-400">SKUs</dt>
+                  <div className="flex flex-wrap gap-1.5">
+                    {fornecedor.skus.map((sku) => (
+                      <span
+                        key={sku}
+                        className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                      >
+                        {sku}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mt-3">
                 <BadgeMapa geocodificado={geocodificado} />
               </div>
@@ -318,6 +333,7 @@ function FormFornecedor({
           className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
         />
       </div>
+      <CampoSkus defaultValue={fornecedor?.skus ?? []} />
       <div className="col-span-2 flex items-center gap-4 self-end pb-2 sm:col-span-2">
         <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
           <input type="checkbox" name="ativo" defaultChecked={fornecedor?.ativo ?? true} className="rounded" />
@@ -346,6 +362,96 @@ function FormFornecedor({
         )}
       </div>
     </form>
+  );
+}
+
+// Campo de SKUs em formato "chip" (tag input). Digitar o SKU e apertar
+// espaco ou Enter confirma como chip; colar um texto com varios SKUs
+// separados por espaco/virgula quebra tudo de uma vez; Backspace com o
+// campo vazio remove o ultimo chip. Cada chip vira um <input type="hidden">
+// com name="skus" -- a action le com formData.getAll("skus").
+//
+// Convencao (Fase 16): cadastrar o SKU "pai", sem sufixo de voltagem (ex:
+// CLI-SX040 em vez de CLI-SX040-110 / CLI-SX040-220), para que o match
+// futuro com as vendas reais funcione por prefixo e cubra todas as
+// variacoes automaticamente.
+function CampoSkus({ defaultValue }: { defaultValue: string[] }) {
+  const [skus, setSkus] = useState<string[]>(defaultValue);
+  const [texto, setTexto] = useState("");
+
+  function adicionar(bruto: string) {
+    const partes = bruto
+      .split(/[\s,]+/)
+      .map((p) => p.trim().toUpperCase())
+      .filter(Boolean);
+    if (partes.length === 0) return;
+    setSkus((atual) => {
+      const novo = new Set(atual);
+      partes.forEach((p) => novo.add(p));
+      return Array.from(novo);
+    });
+  }
+
+  function remover(sku: string) {
+    setSkus((atual) => atual.filter((s) => s !== sku));
+  }
+
+  return (
+    <div className="col-span-2 sm:col-span-4">
+      <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">SKUs</label>
+      <div className="flex flex-wrap items-center gap-1.5 rounded border border-gray-300 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-800">
+        {skus.map((sku) => (
+          <span
+            key={sku}
+            className="flex items-center gap-1 rounded-full bg-[var(--color-sixxis-navy)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-sixxis-navy)] dark:bg-white/10 dark:text-white"
+          >
+            {sku}
+            <input type="hidden" name="skus" value={sku} />
+            <button
+              type="button"
+              onClick={() => remover(sku)}
+              className="text-[var(--color-sixxis-navy)]/60 hover:text-red-500 dark:text-white/60"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === " " || e.key === "Enter") {
+              e.preventDefault();
+              adicionar(texto);
+              setTexto("");
+            } else if (e.key === "Backspace" && texto === "" && skus.length > 0) {
+              remover(skus[skus.length - 1]);
+            }
+          }}
+          onBlur={() => {
+            if (texto.trim()) {
+              adicionar(texto);
+              setTexto("");
+            }
+          }}
+          onPaste={(e) => {
+            const colado = e.clipboardData.getData("text");
+            if (/[\s,]/.test(colado)) {
+              e.preventDefault();
+              adicionar(colado);
+              setTexto("");
+            }
+          }}
+          placeholder={skus.length === 0 ? "Digite o SKU e aperte espaço" : ""}
+          className="min-w-[140px] flex-1 border-none bg-transparent text-sm outline-none dark:text-gray-100"
+        />
+      </div>
+      <p className="mt-1 text-xs text-gray-400">
+        Espaço ou Enter confirma o SKU. Para produtos com variação de voltagem, cadastre só o SKU "pai" (ex:
+        CLI-SX040 em vez de CLI-SX040-110) -- o match com as vendas reais será feito por prefixo.
+      </p>
+    </div>
   );
 }
 
