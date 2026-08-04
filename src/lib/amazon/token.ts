@@ -1,5 +1,6 @@
 import { refreshAccessToken } from "@/lib/amazon/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enviarAlerta } from "@/lib/alertas/email";
 
 // Retorna sempre um access_token valido (LWA) para a conta Amazon informada.
 // Se o token estiver perto de expirar (ou ja expirado), renova
@@ -21,7 +22,7 @@ export async function getValidAccessToken(amazonAccountId: string): Promise<stri
 
   const { data: conta, error } = await admin
     .from("amazon_accounts")
-    .select("id, access_token, refresh_token, token_expires_at")
+    .select("id, access_token, refresh_token, token_expires_at, apelido, nickname")
     .eq("id", amazonAccountId)
     .single();
 
@@ -36,6 +37,7 @@ export async function getValidAccessToken(amazonAccountId: string): Promise<stri
     return conta.access_token as string;
   }
 
+try {
   const novoToken = await refreshAccessToken(conta.refresh_token as string);
   const novaExpiracao = new Date(Date.now() + novoToken.expires_in * 1000).toISOString();
 
@@ -52,6 +54,13 @@ export async function getValidAccessToken(amazonAccountId: string): Promise<stri
   }
 
   return novoToken.access_token;
+} catch (err) {
+  await enviarAlerta(
+    "Falha ao renovar token da Amazon",
+    `Conta ${conta.apelido || conta.nickname || amazonAccountId}: nao foi possivel renovar o token. ` + (err instanceof Error ? err.message : String(err))
+    );
+  throw err;
+}
 }
 
 // Variante que recebe a linha da conta ja carregada (evita um select extra
