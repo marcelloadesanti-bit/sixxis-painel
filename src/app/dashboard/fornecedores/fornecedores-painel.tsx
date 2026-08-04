@@ -1,148 +1,100 @@
 "use client";
 
 import { useState } from "react";
+import { Star } from "lucide-react";
 import {
   criarFornecedorAction,
   atualizarFornecedorAction,
   alternarAtivoFornecedorAction,
+  alternarEstrelaFornecedorAction,
   excluirFornecedorAction,
 } from "./actions";
 import { CATEGORIAS_FORNECEDOR, type CategoriaFornecedor } from "@/lib/fornecedores-categorias";
 import type { Fornecedor } from "@/lib/fornecedores";
 
+// Fase 14 (04/08/2026): a pagina deixou de ser dividida em 3 secoes fixas por
+// categoria. Categoria agora e so um campo do cadastro (mostrado como badge
+// no card) -- a listagem e uma unica lista de cards expansiveis, ordenada
+// por estrela > ativo > nome, para que os melhores fornecedores (estrela)
+// apareçam primeiro.
 export default function FornecedoresPainel({
-  grupos,
-  podeEditar,
-}: {
-  grupos: Record<CategoriaFornecedor, Fornecedor[]>;
-  podeEditar: boolean;
-}) {
-  return (
-    <div className="space-y-8">
-      {CATEGORIAS_FORNECEDOR.map((categoria) => (
-        <SecaoCategoria key={categoria} categoria={categoria} fornecedores={grupos[categoria]} podeEditar={podeEditar} />
-      ))}
-    </div>
-  );
-}
-
-function SecaoCategoria({
-  categoria,
   fornecedores,
   podeEditar,
 }: {
-  categoria: CategoriaFornecedor;
   fornecedores: Fornecedor[];
   podeEditar: boolean;
 }) {
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
-  const ativos = fornecedores.filter((f) => f.ativo).length;
-  const colunas = podeEditar ? 6 : 5;
+  const [mostrarFormNovo, setMostrarFormNovo] = useState(false);
+
+  const ordenados = [...fornecedores].sort((a, b) => {
+    if (a.estrela !== b.estrela) return a.estrela ? -1 : 1;
+    if (a.ativo !== b.ativo) return a.ativo ? -1 : 1;
+    return a.nome.localeCompare(b.nome, "pt-BR");
+  });
+
+  const totalAtivos = fornecedores.filter((f) => f.ativo).length;
+  const totalEstrela = fornecedores.filter((f) => f.estrela).length;
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-sixxis-navy)] dark:text-white">{categoria}</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {fornecedores.length} cadastrado{fornecedores.length === 1 ? "" : "s"} · {ativos} ativo
-            {ativos === 1 ? "" : "s"}
-          </p>
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {fornecedores.length} cadastrado{fornecedores.length === 1 ? "" : "s"} · {totalAtivos} ativo
+          {totalAtivos === 1 ? "" : "s"} · {totalEstrela} estrela{totalEstrela === 1 ? "" : "s"}
+        </p>
         {podeEditar && (
           <button
-            onClick={() => setMostrarForm((v) => !v)}
-            className="rounded-lg bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
+            onClick={() => setMostrarFormNovo((v) => !v)}
+            className="shrink-0 rounded-lg bg-[var(--color-sixxis-navy)] px-3 py-1.5 text-xs font-medium text-white"
           >
-            {mostrarForm ? "Cancelar" : "+ Novo fornecedor"}
+            {mostrarFormNovo ? "Cancelar" : "+ Novo fornecedor"}
           </button>
         )}
       </div>
 
-      {mostrarForm && (
+      {mostrarFormNovo && (
         <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <FormFornecedor
-            categoriaPadrao={categoria}
-            actionDireta={criarFornecedorAction}
-            aoSalvar={() => setMostrarForm(false)}
-          />
+          <FormFornecedor actionDireta={criarFornecedorAction} aoSalvar={() => setMostrarFormNovo(false)} />
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
-            <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Localização</th>
-              <th className="px-4 py-3">CNPJ</th>
-              <th className="px-4 py-3">Representante</th>
-              <th className="px-4 py-3">Status</th>
-              {podeEditar && <th className="px-4 py-3"></th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {fornecedores.map((f) =>
-              editandoId === f.id ? (
-                <tr key={f.id}>
-                  <td colSpan={colunas} className="px-4 py-3">
-                    <FormFornecedor
-                      fornecedor={f}
-                      categoriaPadrao={categoria}
-                      actionDireta={atualizarFornecedorAction}
-                      aoSalvar={() => setEditandoId(null)}
-                      aoCancelar={() => setEditandoId(null)}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr key={f.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900 dark:text-gray-100">{f.nome}</div>
-                    {f.linhaProdutos && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{f.linhaProdutos}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{f.localizacao ?? "—"}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{f.cnpj ?? "—"}</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{f.representanteComercial ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <BadgeStatus ativo={f.ativo} />
-                  </td>
-                  {podeEditar && (
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => setEditandoId(f.id)}
-                          className="text-xs text-gray-500 hover:text-[var(--color-sixxis-navy)] dark:text-gray-400"
-                        >
-                          Editar
-                        </button>
-                        <BotaoAlternarAtivo id={f.id} ativo={f.ativo} />
-                        <BotaoExcluir id={f.id} rotulo={f.nome} />
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              )
-            )}
-          </tbody>
-        </table>
-        {fornecedores.length === 0 && (
-          <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            Nenhum fornecedor cadastrado nesta categoria ainda.
-          </div>
-        )}
-      </div>
+      {ordenados.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+          Nenhum fornecedor cadastrado ainda.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {ordenados.map((f) => (
+            <CardFornecedor key={f.id} fornecedor={f} podeEditar={podeEditar} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+const CORES_CATEGORIA: Record<CategoriaFornecedor, string> = {
+  "Ar e ventilação": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  Fitness: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  "Aspiradores de pó": "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
+  Samples: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  Outros: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+};
+
+function BadgeCategoria({ categoria }: { categoria: CategoriaFornecedor }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${CORES_CATEGORIA[categoria] ?? CORES_CATEGORIA.Outros}`}
+    >
+      {categoria}
+    </span>
   );
 }
 
 function BadgeStatus({ ativo }: { ativo: boolean }) {
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+      className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
         ativo
           ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
           : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
@@ -153,6 +105,87 @@ function BadgeStatus({ ativo }: { ativo: boolean }) {
   );
 }
 
+function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; podeEditar: boolean }) {
+  const [expandido, setExpandido] = useState(false);
+  const [editando, setEditando] = useState(false);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
+      <button
+        type="button"
+        onClick={() => setExpandido((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 bg-white px-4 py-3 text-left hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800/40"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <Star
+            size={16}
+            className={
+              fornecedor.estrela ? "shrink-0 fill-yellow-400 text-yellow-400" : "shrink-0 text-gray-300 dark:text-gray-600"
+            }
+          />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate font-medium text-gray-900 dark:text-gray-100">{fornecedor.nome}</span>
+              <BadgeCategoria categoria={fornecedor.categoria} />
+            </div>
+            <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+              {[fornecedor.localizacao, fornecedor.telefone].filter(Boolean).join(" · ") || "Sem localização/telefone cadastrado"}
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <BadgeStatus ativo={fornecedor.ativo} />
+          <span className="text-gray-400">{expandido ? "▲" : "▼"}</span>
+        </div>
+      </button>
+
+      {expandido && (
+        <div className="border-t border-gray-100 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-800/20">
+          {editando ? (
+            <FormFornecedor
+              fornecedor={fornecedor}
+              actionDireta={atualizarFornecedorAction}
+              aoSalvar={() => setEditando(false)}
+              aoCancelar={() => setEditando(false)}
+            />
+          ) : (
+            <div>
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <DetalheCampo label="Telefone" valor={fornecedor.telefone} />
+                <DetalheCampo label="CNPJ" valor={fornecedor.cnpj} />
+                <DetalheCampo label="Representante comercial" valor={fornecedor.representanteComercial} />
+                <DetalheCampo label="Linha de produtos" valor={fornecedor.linhaProdutos} />
+              </dl>
+              {podeEditar && (
+                <div className="mt-4 flex flex-wrap items-center gap-4">
+                  <button
+                    onClick={() => setEditando(true)}
+                    className="text-xs font-medium text-[var(--color-sixxis-navy)]"
+                  >
+                    Editar
+                  </button>
+                  <BotaoAlternarEstrela id={fornecedor.id} estrela={fornecedor.estrela} />
+                  <BotaoAlternarAtivo id={fornecedor.id} ativo={fornecedor.ativo} />
+                  <BotaoExcluir id={fornecedor.id} rotulo={fornecedor.nome} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetalheCampo({ label, valor }: { label: string; valor: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="text-gray-700 dark:text-gray-200">{valor || "—"}</dd>
+    </div>
+  );
+}
+
 function BotaoAlternarAtivo({ id, ativo }: { id: string; ativo: boolean }) {
   return (
     <form action={alternarAtivoFornecedorAction}>
@@ -160,6 +193,18 @@ function BotaoAlternarAtivo({ id, ativo }: { id: string; ativo: boolean }) {
       <input type="hidden" name="ativo" value={String(ativo)} />
       <button type="submit" className="text-xs text-gray-500 hover:text-[var(--color-sixxis-navy)] dark:text-gray-400">
         {ativo ? "Desativar" : "Ativar"}
+      </button>
+    </form>
+  );
+}
+
+function BotaoAlternarEstrela({ id, estrela }: { id: string; estrela: boolean }) {
+  return (
+    <form action={alternarEstrelaFornecedorAction}>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="estrela" value={String(estrela)} />
+      <button type="submit" className="text-xs text-gray-500 hover:text-[var(--color-sixxis-navy)] dark:text-gray-400">
+        {estrela ? "Remover estrela" : "Marcar estrela"}
       </button>
     </form>
   );
@@ -184,13 +229,11 @@ function BotaoExcluir({ id, rotulo }: { id: string; rotulo: string }) {
 
 function FormFornecedor({
   fornecedor,
-  categoriaPadrao,
   actionDireta,
   aoSalvar,
   aoCancelar,
 }: {
   fornecedor?: Fornecedor;
-  categoriaPadrao: CategoriaFornecedor;
   actionDireta: (formData: FormData) => Promise<void>;
   aoSalvar: () => void;
   aoCancelar?: () => void;
@@ -208,7 +251,7 @@ function FormFornecedor({
         <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Categoria</label>
         <select
           name="categoria"
-          defaultValue={fornecedor?.categoria ?? categoriaPadrao}
+          defaultValue={fornecedor?.categoria ?? CATEGORIAS_FORNECEDOR[0]}
           className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
         >
           {CATEGORIAS_FORNECEDOR.map((c) => (
@@ -218,10 +261,11 @@ function FormFornecedor({
           ))}
         </select>
       </div>
-      <Campo label="Nome" name="nome" defaultValue={fornecedor?.nome ?? ""} required />
-      <Campo label="Localização" name="localizacao" defaultValue={fornecedor?.localizacao ?? ""} />
-      <Campo label="CNPJ" name="cnpj" defaultValue={fornecedor?.cnpj ?? ""} />
-      <Campo
+      <CampoTexto label="Nome" name="nome" defaultValue={fornecedor?.nome ?? ""} required />
+      <CampoTexto label="Telefone" name="telefone" defaultValue={fornecedor?.telefone ?? ""} />
+      <CampoTexto label="Localização" name="localizacao" defaultValue={fornecedor?.localizacao ?? ""} />
+      <CampoTexto label="CNPJ" name="cnpj" defaultValue={fornecedor?.cnpj ?? ""} />
+      <CampoTexto
         label="Representante comercial"
         name="representanteComercial"
         defaultValue={fornecedor?.representanteComercial ?? ""}
@@ -235,10 +279,16 @@ function FormFornecedor({
           className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
         />
       </div>
-      <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-600 dark:text-gray-300">
-        <input type="checkbox" name="ativo" defaultChecked={fornecedor?.ativo ?? true} className="rounded" />
-        Ativo
-      </label>
+      <div className="col-span-2 flex items-center gap-4 self-end pb-2 sm:col-span-2">
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <input type="checkbox" name="ativo" defaultChecked={fornecedor?.ativo ?? true} className="rounded" />
+          Ativo
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <input type="checkbox" name="estrela" defaultChecked={fornecedor?.estrela ?? false} className="rounded" />
+          Estrela
+        </label>
+      </div>
       <div className="col-span-2 flex items-center gap-3 sm:col-span-4">
         <button
           type="submit"
@@ -256,7 +306,7 @@ function FormFornecedor({
   );
 }
 
-function Campo({
+function CampoTexto({
   label,
   name,
   defaultValue,
