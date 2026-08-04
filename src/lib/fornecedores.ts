@@ -1,9 +1,16 @@
 // Cadastro de fornecedores (Fase 14, 03/08/2026; campos telefone/estrela e
 // listagem em cards adicionados 04/08/2026; latitude/longitude para o mapa
+// adicionados 04/08/2026; skus para metricas por fornecedor -- Fase 16 --
 // adicionados 04/08/2026). Fonte: tabela public.fornecedores (Supabase).
 // Independente da secao Estoque -- usado tambem para popular o seletor de
 // fornecedor no formulario de Containers (em vez de digitar o nome
 // manualmente a cada pedido).
+//
+// Convencao de skus: sempre que o produto tiver variacao de voltagem (ex:
+// CLI-SX040-110 / CLI-SX040-220), cadastrar apenas o SKU "pai", sem o
+// sufixo de voltagem (ex: CLI-SX040). A Fase 16 (metricas de fornecedores
+// por SKU) vai casar por prefixo contra os SKUs reais vendidos, entao um
+// unico SKU pai cobre todas as variacoes automaticamente.
 //
 // As categorias fixas (CATEGORIAS_FORNECEDOR / CategoriaFornecedor) moraram
 // aqui inicialmente, mas foram extraidas para fornecedores-categorias.ts:
@@ -29,6 +36,7 @@ export type Fornecedor = {
   cnpj: string | null;
   representanteComercial: string | null;
   linhaProdutos: string | null;
+  skus: string[];
   ativo: boolean;
   estrela: boolean;
   latitude: number | null;
@@ -46,6 +54,7 @@ type LinhaFornecedorRaw = {
   cnpj: string | null;
   representante_comercial: string | null;
   linha_produtos: string | null;
+  skus: string[] | null;
   ativo: boolean;
   estrela: boolean;
   latitude: number | null;
@@ -64,6 +73,7 @@ function mapearLinha(row: LinhaFornecedorRaw): Fornecedor {
     cnpj: row.cnpj,
     representanteComercial: row.representante_comercial,
     linhaProdutos: row.linha_produtos,
+    skus: row.skus ?? [],
     ativo: row.ativo,
     estrela: row.estrela,
     latitude: row.latitude,
