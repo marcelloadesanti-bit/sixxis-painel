@@ -2,24 +2,40 @@
 
 import { useMemo, useState } from "react";
 import type { ItemEstoque } from "@/lib/estoque/planilha";
+import { GRUPOS, grupoDaCategoria, type GrupoId } from "@/lib/estoque/grupos";
 
 type Consolidado = { totalSkus: number; saldoTotal: number };
 
 export default function EstoqueResumoPainel({
   itens,
-  categorias,
   consolidado,
 }: {
   itens: ItemEstoque[];
   categorias: string[];
   consolidado: Consolidado;
 }) {
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null);
+  const [grupoSelecionado, setGrupoSelecionado] = useState<GrupoId | null>(null);
+
+  const statsPorGrupo = useMemo(() => {
+    const mapa = new Map<GrupoId, { totalSkus: number; saldoTotal: number }>();
+    for (const g of GRUPOS) mapa.set(g.id, { totalSkus: 0, saldoTotal: 0 });
+    for (const item of itens) {
+      const grupo = grupoDaCategoria(item.categoria);
+      const atual = mapa.get(grupo)!;
+      atual.totalSkus += 1;
+      atual.saldoTotal += item.saldoTotal;
+    }
+    return mapa;
+  }, [itens]);
 
   const itensFiltrados = useMemo(() => {
-    if (!categoriaSelecionada) return itens;
-    return itens.filter((i) => i.categoria === categoriaSelecionada);
-  }, [itens, categoriaSelecionada]);
+    if (!grupoSelecionado) return itens;
+    return itens.filter((i) => grupoDaCategoria(i.categoria) === grupoSelecionado);
+  }, [itens, grupoSelecionado]);
+
+  function alternarGrupo(id: GrupoId) {
+    setGrupoSelecionado((atual) => (atual === id ? null : id));
+  }
 
   return (
     <div className="space-y-6">
@@ -33,36 +49,64 @@ export default function EstoqueResumoPainel({
         </div>
       </div>
 
-      {categorias.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setCategoriaSelecionada(null)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-              categoriaSelecionada === null
-                ? "bg-[var(--color-sixxis-navy)] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            }`}
-          >
-            Todas ({itens.length})
-          </button>
-          {categorias.map((cat) => {
-            const qtd = itens.filter((i) => i.categoria === cat).length;
-            return (
-              <button
-                key={cat}
-                onClick={() => setCategoriaSelecionada(cat)}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                  categoriaSelecionada === cat
-                    ? "bg-[var(--color-sixxis-navy)] text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                }`}
-              >
-                {cat} ({qtd})
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {GRUPOS.map((g) => {
+          const stats = statsPorGrupo.get(g.id) ?? { totalSkus: 0, saldoTotal: 0 };
+          const ativo = grupoSelecionado === g.id;
+          return (
+            <button
+              key={g.id}
+              onClick={() => alternarGrupo(g.id)}
+              className={`rounded-xl border p-4 text-left shadow-sm transition ${
+                ativo
+                  ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
+                  : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+              }`}
+            >
+              <div className={`text-sm font-semibold ${ativo ? "text-white" : "text-[var(--color-sixxis-navy)] dark:text-white"}`}>
+                {g.labelCurto}
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className={`text-xl font-bold ${ativo ? "text-white" : "text-gray-900 dark:text-gray-100"}`}>
+                  {stats.saldoTotal.toLocaleString("pt-BR")}
+                </span>
+                <span className={`text-xs ${ativo ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>
+                  unid. em {stats.totalSkus} SKUs
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setGrupoSelecionado(null)}
+          className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+            grupoSelecionado === null
+              ? "bg-[var(--color-sixxis-navy)] text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+          }`}
+        >
+          Todos ({itens.length})
+        </button>
+        {GRUPOS.map((g) => {
+          const stats = statsPorGrupo.get(g.id) ?? { totalSkus: 0, saldoTotal: 0 };
+          return (
+            <button
+              key={g.id}
+              onClick={() => alternarGrupo(g.id)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                grupoSelecionado === g.id
+                  ? "bg-[var(--color-sixxis-navy)] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`}
+            >
+              {g.labelCurto} ({stats.totalSkus})
+            </button>
+          );
+        })}
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
         <table className="w-full text-sm">
