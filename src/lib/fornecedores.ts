@@ -1,8 +1,9 @@
 // Cadastro de fornecedores (Fase 14, 03/08/2026; campos telefone/estrela e
-// listagem em cards adicionados 04/08/2026). Fonte: tabela
-// public.fornecedores (Supabase). Independente da secao Estoque -- usado
-// tambem para popular o seletor de fornecedor no formulario de Containers
-// (em vez de digitar o nome manualmente a cada pedido).
+// listagem em cards adicionados 04/08/2026; latitude/longitude para o mapa
+// adicionados 04/08/2026). Fonte: tabela public.fornecedores (Supabase).
+// Independente da secao Estoque -- usado tambem para popular o seletor de
+// fornecedor no formulario de Containers (em vez de digitar o nome
+// manualmente a cada pedido).
 //
 // As categorias fixas (CATEGORIAS_FORNECEDOR / CategoriaFornecedor) moraram
 // aqui inicialmente, mas foram extraidas para fornecedores-categorias.ts:
@@ -30,6 +31,9 @@ export type Fornecedor = {
   linhaProdutos: string | null;
   ativo: boolean;
   estrela: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  geocodificadoEm: string | null;
   criadoEm: string;
 };
 
@@ -44,6 +48,9 @@ type LinhaFornecedorRaw = {
   linha_produtos: string | null;
   ativo: boolean;
   estrela: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  geocodificado_em: string | null;
   criado_em: string;
 };
 
@@ -59,6 +66,9 @@ function mapearLinha(row: LinhaFornecedorRaw): Fornecedor {
     linhaProdutos: row.linha_produtos,
     ativo: row.ativo,
     estrela: row.estrela,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    geocodificadoEm: row.geocodificado_em,
     criadoEm: row.criado_em,
   };
 }
