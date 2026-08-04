@@ -1,5 +1,6 @@
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { listarContainers } from "@/lib/estoque/containers";
+import { listarFornecedoresAtivos } from "@/lib/fornecedores";
 import ContainersPainel from "./containers-painel";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export const revalidate = 0;
 export default async function ContainersPage() {
   const { podeEditar } = await exigirAcessoSecao("estoque", "estoque_containers");
   const containers = await listarContainers();
-
+  const fornecedores = await listarFornecedoresAtivos();
   return (
     <div className="mx-auto max-w-6xl p-6">
       <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Containers</h1>
@@ -16,7 +17,7 @@ export default async function ContainersPage() {
         Controle manual dos pedidos de importação (containers a caminho). Substitui a planilha externa "Pedidos
         Containers" -- os dados daqui compensam a projeção de ruptura em Métricas de estoque.
       </p>
-      <ContainersPainel containers={containers} podeEditar={podeEditar} />
+      <ContainersPainel containers={containers} podeEditar={podeEditar} fornecedores={fornecedores} />
     </div>
   );
 }
