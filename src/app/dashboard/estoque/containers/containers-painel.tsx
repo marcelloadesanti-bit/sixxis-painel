@@ -11,7 +11,12 @@ import type { Fornecedor } from "@/lib/fornecedores";
 // nunca fica bloqueado por falta de cadastro). Ao escolher um fornecedor
 // cadastrado, o SKU tambem vira um select com os SKUs daquele fornecedor;
 // se o fornecedor nao tiver SKUs cadastrados, o campo SKU cai direto para
-// texto livre. Ver CampoFornecedorSku mais abaixo.
+// texto livre. Ver CampoFornecedorEItens mais abaixo.
+//
+// Fase 14b (04/08/2026): um pedido pode trazer mais de um produto no mesmo
+// container -- o formulario agora permite adicionar varias linhas de
+// SKU + quantidade (ver ItemSkuQuantidade), cada uma virando uma linha
+// propria em estoque_containers (ver actions.ts).
 //
 // nomeExibicaoFornecedor() e uma copia local de lib/fornecedores.ts
 // (nomeExibicao) -- este arquivo e "use client", entao nao pode importar
@@ -503,19 +508,6 @@ function FormContainer({
     >
       {container && <input type="hidden" name="id" value={container.id} />}
       <Campo label="Fatura" name="fatura" defaultValue={container?.fatura ?? ""} />
-      <CampoFornecedorSku
-        fornecedores={fornecedores}
-        fornecedorIdInicial={container?.fornecedorId ?? null}
-        fornecedorNomeInicial={container?.fornecedor ?? ""}
-        skuInicial={container?.sku ?? ""}
-      />
-      <Campo
-        label="Quantidade"
-        name="quantidade"
-        type="number"
-        defaultValue={container ? String(container.quantidade) : ""}
-        required
-      />
       <Campo label="Embarque" name="dataEmbarque" type="date" defaultValue={container?.dataEmbarque ?? ""} />
       <Campo
         label="Prev. chegada"
@@ -524,10 +516,19 @@ function FormContainer({
         defaultValue={container?.dataPrevChegada ?? ""}
       />
       <Campo label="Chegada" name="dataChegada" type="date" defaultValue={container?.dataChegada ?? ""} />
-      <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-600 dark:text-gray-300">
+
+      <CampoFornecedorEItens
+        fornecedores={fornecedores}
+        fornecedorIdInicial={container?.fornecedorId ?? null}
+        fornecedorNomeInicial={container?.fornecedor ?? ""}
+        itensIniciais={container ? [{ sku: container.sku, quantidade: container.quantidade }] : []}
+      />
+
+      <label className="flex items-center gap-2 self-start pt-1 text-sm text-gray-600 dark:text-gray-300">
         <input type="checkbox" name="pago" defaultChecked={container?.pago ?? false} className="rounded" />
         Pago
       </label>
+
       <div className="col-span-2 sm:col-span-4">
         <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Observações</label>
         <input
@@ -554,25 +555,37 @@ function FormContainer({
   );
 }
 
-// Fornecedor: select com os fornecedores ativos cadastrados (rotulo =
-// apelido, com fallback pro nome completo) + opcao "Outro (digitar
-// manualmente)" que sempre libera um campo de texto -- garante que o
-// lancamento de pedido nunca fique bloqueado por falta de cadastro.
-//
-// SKU: quando um fornecedor cadastrado esta selecionado E ele tem SKUs
-// cadastrados, vira select com os SKUs daquele fornecedor (+ "Outro"). Caso
-// contrario (fornecedor sem SKUs cadastrados, ou modo manual de fornecedor),
-// cai direto para o campo de texto livre de sempre, sem exigir toggle.
-function CampoFornecedorSku({
+// Estado de uma linha de item (SKU + quantidade) dentro do formulario. Cada
+// linha vira uma linha propria em estoque_containers ao salvar (ver
+// actions.ts) -- isso cobre o caso de um pedido/container que chega com
+// mais de um produto.
+type ItemPedidoForm = {
+  id: number;
+  manualSku: boolean;
+  skuManual: string;
+  skuSelecionado: string;
+  quantidade: string;
+};
+
+function novoItemVazio(): ItemPedidoForm {
+  return { id: Math.random(), manualSku: false, skuManual: "", skuSelecionado: "", quantidade: "" };
+}
+
+// Fornecedor (select com fallback manual, igual antes) + lista dinamica de
+// itens (SKU + quantidade). O usuario pode clicar em "+ Adicionar outro
+// SKU" para lancar mais de um produto no mesmo pedido/container -- cada
+// linha adicionada exige seu proprio SKU e quantidade. Trocar o fornecedor
+// selecionado reinicia a lista de itens (os SKUs cadastrados mudam).
+function CampoFornecedorEItens({
   fornecedores,
   fornecedorIdInicial,
   fornecedorNomeInicial,
-  skuInicial,
+  itensIniciais,
 }: {
   fornecedores: Fornecedor[];
   fornecedorIdInicial: string | null;
   fornecedorNomeInicial: string;
-  skuInicial: string;
+  itensIniciais: { sku: string; quantidade: number }[];
 }) {
   const fornecedorInicial = fornecedorIdInicial
     ? fornecedores.find((f) => f.id === fornecedorIdInicial) ?? null
@@ -589,18 +602,38 @@ function CampoFornecedorSku({
 
   const fornecedorSelecionado = fornecedores.find((f) => f.id === fornecedorId) ?? null;
   const skusDoFornecedor = fornecedorSelecionado?.skus ?? [];
-  const skuBateComFornecedor = skusDoFornecedor.includes(skuInicial);
 
-  const [manualSku, setManualSku] = useState(!skuBateComFornecedor);
-  const [skuManual, setSkuManual] = useState(skuInicial);
-  const [skuSelecionado, setSkuSelecionado] = useState(skuBateComFornecedor ? skuInicial : "");
+  const [itens, setItens] = useState<ItemPedidoForm[]>(() => {
+    if (itensIniciais.length === 0) return [novoItemVazio()];
+    return itensIniciais.map((item) => {
+      const bate = skusDoFornecedor.includes(item.sku);
+      return {
+        id: Math.random(),
+        manualSku: !bate,
+        skuManual: item.sku,
+        skuSelecionado: bate ? item.sku : "",
+        quantidade: item.quantidade ? String(item.quantidade) : "",
+      };
+    });
+  });
 
   const nomeFinal = manualFornecedor ? nomeManual : fornecedorSelecionado ? nomeExibicaoFornecedor(fornecedorSelecionado) : "";
-  const skuFinal = manualSku || skusDoFornecedor.length === 0 ? skuManual : skuSelecionado;
+
+  function atualizarItem(id: number, patch: Partial<ItemPedidoForm>) {
+    setItens((atual) => atual.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  }
+
+  function adicionarItem() {
+    setItens((atual) => [...atual, novoItemVazio()]);
+  }
+
+  function removerItem(id: number) {
+    setItens((atual) => (atual.length > 1 ? atual.filter((it) => it.id !== id) : atual));
+  }
 
   return (
-    <>
-      <div>
+    <div className="col-span-2 space-y-3 sm:col-span-4">
+      <div className="max-w-sm">
         <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">Fornecedor</label>
         {manualFornecedor ? (
           <div className="flex gap-1">
@@ -633,10 +666,8 @@ function CampoFornecedorSku({
                 setNomeManual("");
               } else {
                 setFornecedorId(v);
-                setManualSku(true);
-                setSkuSelecionado("");
-                setSkuManual("");
               }
+              setItens([novoItemVazio()]);
             }}
             required
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
@@ -657,21 +688,67 @@ function CampoFornecedorSku({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">SKU</label>
-        {manualSku || skusDoFornecedor.length === 0 ? (
+        <label className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
+          Produtos deste pedido{itens.length > 1 ? ` (${itens.length})` : ""}
+        </label>
+        <div className="space-y-2">
+          {itens.map((item) => (
+            <ItemSkuQuantidade
+              key={item.id}
+              item={item}
+              skusDisponiveis={skusDoFornecedor}
+              podeRemover={itens.length > 1}
+              onAlterar={(patch) => atualizarItem(item.id, patch)}
+              onRemover={() => removerItem(item.id)}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={adicionarItem}
+          className="mt-2 text-xs font-medium text-[var(--color-sixxis-navy)] hover:underline dark:text-sky-400"
+        >
+          + Adicionar outro SKU
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Uma linha do pedido: SKU (select com fallback manual, igual antes) +
+// quantidade lado a lado, com botao de remover quando ha mais de uma linha.
+function ItemSkuQuantidade({
+  item,
+  skusDisponiveis,
+  podeRemover,
+  onAlterar,
+  onRemover,
+}: {
+  item: ItemPedidoForm;
+  skusDisponiveis: string[];
+  podeRemover: boolean;
+  onAlterar: (patch: Partial<ItemPedidoForm>) => void;
+  onRemover: () => void;
+}) {
+  const skuFinal = item.manualSku || skusDisponiveis.length === 0 ? item.skuManual : item.skuSelecionado;
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1">
+        {item.manualSku || skusDisponiveis.length === 0 ? (
           <div className="flex gap-1">
             <input
               type="text"
-              value={skuManual}
-              onChange={(e) => setSkuManual(e.target.value)}
+              value={item.skuManual}
+              onChange={(e) => onAlterar({ skuManual: e.target.value })}
               required
               placeholder="Digite o SKU"
               className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm font-mono uppercase dark:border-gray-700 dark:bg-gray-800"
             />
-            {skusDoFornecedor.length > 0 && (
+            {skusDisponiveis.length > 0 && (
               <button
                 type="button"
-                onClick={() => setManualSku(false)}
+                onClick={() => onAlterar({ manualSku: false })}
                 title="Selecionar da lista de SKUs do fornecedor"
                 className="shrink-0 rounded border border-gray-300 px-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400"
               >
@@ -681,14 +758,13 @@ function CampoFornecedorSku({
           </div>
         ) : (
           <select
-            value={skuSelecionado}
+            value={item.skuSelecionado}
             onChange={(e) => {
               const v = e.target.value;
               if (v === OPCAO_MANUAL) {
-                setManualSku(true);
-                setSkuManual("");
+                onAlterar({ manualSku: true, skuManual: "" });
               } else {
-                setSkuSelecionado(v);
+                onAlterar({ skuSelecionado: v });
               }
             }}
             required
@@ -697,7 +773,7 @@ function CampoFornecedorSku({
             <option value="" disabled>
               Selecione...
             </option>
-            {skusDoFornecedor.map((s) => (
+            {skusDisponiveis.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -707,7 +783,28 @@ function CampoFornecedorSku({
         )}
         <input type="hidden" name="sku" value={skuFinal} />
       </div>
-    </>
+      <div className="w-28 shrink-0">
+        <input
+          type="number"
+          name="quantidade"
+          value={item.quantidade}
+          onChange={(e) => onAlterar({ quantidade: e.target.value })}
+          required
+          placeholder="Qtd."
+          className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800"
+        />
+      </div>
+      {podeRemover && (
+        <button
+          type="button"
+          onClick={onRemover}
+          title="Remover este item"
+          className="shrink-0 rounded border border-gray-300 px-2 py-1.5 text-xs text-red-500 hover:bg-red-50 dark:border-gray-700 dark:hover:bg-red-900/20"
+        >
+          ✕
+        </button>
+      )}
+    </div>
   );
 }
 
