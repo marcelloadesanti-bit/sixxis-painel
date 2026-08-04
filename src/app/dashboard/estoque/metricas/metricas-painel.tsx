@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { GRUPOS, grupoDaCategoria, type GrupoId } from "@/lib/estoque/grupos";
 
 export type LinhaMetrica = {
   sku: string;
@@ -36,21 +37,42 @@ function formatarData(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+function calcularConsolidado(linhas: LinhaMetrica[]): Consolidado {
+  return {
+    totalSkus: linhas.length,
+    saldoTotal: linhas.reduce((s, l) => s + l.saldoTotal, 0),
+    criticos: linhas.filter((l) => l.nivel === "critico").length,
+    atencao: linhas.filter((l) => l.nivel === "atencao").length,
+  };
+}
+
 export default function MetricasEstoquePainel({
   linhas,
-  categorias,
   consolidado,
 }: {
   linhas: LinhaMetrica[];
   categorias: string[];
   consolidado: Consolidado;
 }) {
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string | null>(null);
+  const [grupoSelecionado, setGrupoSelecionado] = useState<GrupoId | null>(null);
+
+  const statsPorGrupo = useMemo(() => {
+    const mapa = new Map<GrupoId, Consolidado>();
+    for (const g of GRUPOS) {
+      const linhasDoGrupo = linhas.filter((l) => grupoDaCategoria(l.categoria) === g.id);
+      mapa.set(g.id, calcularConsolidado(linhasDoGrupo));
+    }
+    return mapa;
+  }, [linhas]);
 
   const linhasFiltradas = useMemo(() => {
-    if (!categoriaSelecionada) return linhas;
-    return linhas.filter((l) => l.categoria === categoriaSelecionada);
-  }, [linhas, categoriaSelecionada]);
+    if (!grupoSelecionado) return linhas;
+    return linhas.filter((l) => grupoDaCategoria(l.categoria) === grupoSelecionado);
+  }, [linhas, grupoSelecionado]);
+
+  function alternarGrupo(id: GrupoId) {
+    setGrupoSelecionado((atual) => (atual === id ? null : id));
+  }
 
   return (
     <div className="space-y-6">
@@ -66,36 +88,73 @@ export default function MetricasEstoquePainel({
         </div>
       </div>
 
-      {categorias.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setCategoriaSelecionada(null)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-              categoriaSelecionada === null
-                ? "bg-[var(--color-sixxis-navy)] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            }`}
-          >
-            Todas ({linhas.length})
-          </button>
-          {categorias.map((cat) => {
-            const qtd = linhas.filter((l) => l.categoria === cat).length;
-            return (
-              <button
-                key={cat}
-                onClick={() => setCategoriaSelecionada(cat)}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                  categoriaSelecionada === cat
-                    ? "bg-[var(--color-sixxis-navy)] text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                }`}
-              >
-                {cat} ({qtd})
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {GRUPOS.map((g) => {
+          const stats = statsPorGrupo.get(g.id) ?? { totalSkus: 0, saldoTotal: 0, criticos: 0, atencao: 0 };
+          const ativo = grupoSelecionado === g.id;
+          return (
+            <button
+              key={g.id}
+              onClick={() => alternarGrupo(g.id)}
+              className={`rounded-xl border p-4 text-left shadow-sm transition ${
+                ativo
+                  ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
+                  : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+              }`}
+            >
+              <div className={`text-sm font-semibold ${ativo ? "text-white" : "text-[var(--color-sixxis-navy)] dark:text-white"}`}>
+                {g.labelCurto}
+              </div>
+              <div className={`mt-2 text-xs ${ativo ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>
+                {stats.totalSkus} SKUs · {stats.saldoTotal.toLocaleString("pt-BR")} unid.
+              </div>
+              <div className="mt-3 flex gap-4">
+                <div>
+                  <div className={`text-lg font-bold ${ativo ? "text-white" : "text-red-600 dark:text-red-400"}`}>
+                    {stats.criticos}
+                  </div>
+                  <div className={`text-xs ${ativo ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>Críticos</div>
+                </div>
+                <div>
+                  <div className={`text-lg font-bold ${ativo ? "text-white" : "text-amber-600 dark:text-amber-400"}`}>
+                    {stats.atencao}
+                  </div>
+                  <div className={`text-xs ${ativo ? "text-white/80" : "text-gray-500 dark:text-gray-400"}`}>Atenção</div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setGrupoSelecionado(null)}
+          className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+            grupoSelecionado === null
+              ? "bg-[var(--color-sixxis-navy)] text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+          }`}
+        >
+          Todos ({linhas.length})
+        </button>
+        {GRUPOS.map((g) => {
+          const stats = statsPorGrupo.get(g.id) ?? { totalSkus: 0, saldoTotal: 0, criticos: 0, atencao: 0 };
+          return (
+            <button
+              key={g.id}
+              onClick={() => alternarGrupo(g.id)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                grupoSelecionado === g.id
+                  ? "bg-[var(--color-sixxis-navy)] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              }`}
+            >
+              {g.labelCurto} ({stats.totalSkus})
+            </button>
+          );
+        })}
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
         <table className="w-full text-sm">
