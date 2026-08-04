@@ -1,6 +1,7 @@
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { listarFornecedores } from "@/lib/fornecedores";
 import FornecedoresPainel from "./fornecedores-painel";
+import FornecedoresMapa from "./fornecedores-mapa";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +17,7 @@ export default async function FornecedoresPage() {
         Cadastro de fornecedores ativos e inativos. Fornecedores ativos ficam selecionáveis automaticamente no
         formulário de Containers.
       </p>
+      <FornecedoresMapa fornecedores={fornecedores} />
       <FornecedoresPainel fornecedores={fornecedores} podeEditar={podeEditar} />
     </div>
   );
