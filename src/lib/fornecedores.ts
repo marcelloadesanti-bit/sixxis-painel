@@ -1,4 +1,5 @@
-// Cadastro de fornecedores (Fase 14, 03/08/2026). Fonte: tabela
+// Cadastro de fornecedores (Fase 14, 03/08/2026; campos telefone/estrela e
+// listagem em cards adicionados 04/08/2026). Fonte: tabela
 // public.fornecedores (Supabase). Independente da secao Estoque -- usado
 // tambem para popular o seletor de fornecedor no formulario de Containers
 // (em vez de digitar o nome manualmente a cada pedido).
@@ -22,11 +23,13 @@ export type Fornecedor = {
   id: string;
   categoria: CategoriaFornecedor;
   nome: string;
+  telefone: string | null;
   localizacao: string | null;
   cnpj: string | null;
   representanteComercial: string | null;
   linhaProdutos: string | null;
   ativo: boolean;
+  estrela: boolean;
   criadoEm: string;
 };
 
@@ -34,11 +37,13 @@ type LinhaFornecedorRaw = {
   id: string;
   categoria: string;
   nome: string;
+  telefone: string | null;
   localizacao: string | null;
   cnpj: string | null;
   representante_comercial: string | null;
   linha_produtos: string | null;
   ativo: boolean;
+  estrela: boolean;
   criado_em: string;
 };
 
@@ -47,23 +52,25 @@ function mapearLinha(row: LinhaFornecedorRaw): Fornecedor {
     id: row.id,
     categoria: row.categoria as CategoriaFornecedor,
     nome: row.nome,
+    telefone: row.telefone,
     localizacao: row.localizacao,
     cnpj: row.cnpj,
     representanteComercial: row.representante_comercial,
     linhaProdutos: row.linha_produtos,
     ativo: row.ativo,
+    estrela: row.estrela,
     criadoEm: row.criado_em,
   };
 }
 
-// Lista todos os fornecedores (ativos e inativos), ordenados por categoria e
-// depois por nome. Usada na pagina de gestao (aba Fornecedores).
+// Lista todos os fornecedores (ativos e inativos). A pagina de gestao (aba
+// Fornecedores) ordena localmente (estrela > ativo > nome), entao aqui basta
+// ordenar por nome para ter uma base estavel.
 export async function listarFornecedores(): Promise<Fornecedor[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("fornecedores")
     .select("*")
-    .order("categoria", { ascending: true })
     .order("nome", { ascending: true });
 
   if (error) {
@@ -92,8 +99,9 @@ export async function listarFornecedoresAtivos(): Promise<Fornecedor[]> {
   return ((data ?? []) as LinhaFornecedorRaw[]).map(mapearLinha);
 }
 
-// Agrupa a lista de fornecedores pelas 3 categorias fixas, na ordem definida
-// em CATEGORIAS_FORNECEDOR. Usada para renderizar a pagina em secoes.
+// Agrupa a lista de fornecedores pelas categorias fixas. Nao e mais usada
+// para estruturar a pagina de Fornecedores (que agora e uma lista unica de
+// cards), mas fica disponivel para uso futuro (ex: filtros, relatorios).
 export function agruparPorCategoria(fornecedores: Fornecedor[]): Record<CategoriaFornecedor, Fornecedor[]> {
   const grupos = Object.fromEntries(CATEGORIAS_FORNECEDOR.map((c) => [c, [] as Fornecedor[]])) as Record<
     CategoriaFornecedor,
