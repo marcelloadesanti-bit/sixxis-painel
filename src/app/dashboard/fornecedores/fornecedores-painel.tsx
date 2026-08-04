@@ -142,6 +142,11 @@ function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; po
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="truncate font-medium text-gray-900 dark:text-gray-100">{fornecedor.nome}</span>
+              {fornecedor.apelido && (
+                <span className="truncate text-xs font-normal text-gray-400 dark:text-gray-500">
+                  &ldquo;{fornecedor.apelido}&rdquo;
+                </span>
+              )}
               <BadgeCategoria categoria={fornecedor.categoria} />
             </div>
             <div className="truncate text-xs text-gray-500 dark:text-gray-400">
@@ -167,6 +172,7 @@ function CardFornecedor({ fornecedor, podeEditar }: { fornecedor: Fornecedor; po
           ) : (
             <div>
               <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <DetalheCampo label="Apelido" valor={fornecedor.apelido} />
                 <DetalheCampo label="Telefone" valor={fornecedor.telefone} />
                 <DetalheCampo label="CNPJ" valor={fornecedor.cnpj} />
                 <DetalheCampo label="Representante comercial" valor={fornecedor.representanteComercial} />
@@ -312,6 +318,11 @@ function FormFornecedor({
         </select>
       </div>
       <CampoTexto label="Nome" name="nome" defaultValue={fornecedor?.nome ?? ""} required />
+      <CampoTexto
+        label="Apelido"
+        name="apelido"
+        defaultValue={fornecedor?.apelido ?? ""}
+      />
       <CampoTexto label="Telefone" name="telefone" defaultValue={fornecedor?.telefone ?? ""} />
       <CampoTexto
         label="Localização"
@@ -345,7 +356,8 @@ function FormFornecedor({
         </label>
       </div>
       <p className="col-span-2 text-xs text-gray-400 sm:col-span-4">
-        A localização é convertida em coordenadas automaticamente para aparecer no mapa (assim que a integração com o
+        O apelido aparece no seletor de fornecedor em Containers (mais rápido de preencher que o nome completo). A
+        localização é convertida em coordenadas automaticamente para aparecer no mapa (assim que a integração com o
         Google Maps estiver ativa).
       </p>
       <div className="col-span-2 flex items-center gap-3 sm:col-span-4">
