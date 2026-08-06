@@ -41,9 +41,16 @@ async function autenticar(request: Request): Promise<{ ok: true; disparadoPor: "
   return { ok: true, disparadoPor: "manual", userId: user.id };
 }
 
-function formatarDataYMD(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+// Fuso horario de Brasilia (UTC-3 fixo) -- ver mesmo ajuste em
+  // lib/date-utils.ts. Sem isso, o cron das 23:30 BRT roda com "hoje" 3h
+  // adiantado (ja em UTC do dia seguinte), o que pode fazer o snapshot mensal
+  // virar de mes 30min antes da meia-noite real de Brasilia no ultimo dia do
+  // mes.
+  const OFFSET_BRT_MS = 3 * 60 * 60 * 1000;
+
+  function formatarDataYMD(d: Date): string {
+        return new Date(d.getTime() - OFFSET_BRT_MS).toISOString().slice(0, 10);
+  }
 
 export async function POST(request: Request) {
   const auth = await autenticar(request);
@@ -54,11 +61,13 @@ export async function POST(request: Request) {
 try {
   const admin = createAdminClient();
 
-  const hoje = new Date();
-  const ano = hoje.getFullYear();
-  const mes = hoje.getMonth() + 1;
-  const de = formatarDataYMD(new Date(ano, hoje.getMonth(), 1));
-  const ate = formatarDataYMD(hoje);
+const hoje = new Date();
+      const hojeStr = formatarDataYMD(hoje);
+      const [anoStr, mesStr] = hojeStr.split("-");
+      const ano = Number(anoStr);
+      const mes = Number(mesStr);
+      const de = `${anoStr}-${mesStr}-01`;
+      const ate = hojeStr;
 
   const [{ data: configRow }, { data: metaRow }] = await Promise.all([
     admin.from("sige_comissao_config").select("pesos, niveis, recebedores").eq("id", 1).maybeSingle(),
