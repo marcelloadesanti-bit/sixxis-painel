@@ -11,8 +11,16 @@ export const PRESETS: { key: PresetKey; label: string }[] = [
   { key: "30dias", label: "Últimos 30 dias" },
 ];
 
+// Fuso horario do negocio (Brasilia, UTC-3 fixo -- sem horario de verao
+// desde 2019). Deslocamos -3h antes de formatar para garantir que "hoje"
+// nunca vire 3h adiantado: sem isso, toISOString() usa UTC puro e o dia
+// troca as 21h de Brasilia (=00h UTC), fazendo qualquer tela com filtro
+// "Hoje" (Resumo, Vendas ao vivo, Publicidade, Anuncios, Pos-venda, SIGE
+// Relatorios) mostrar zero dados entre 21h e meia-noite todos os dias.
+const OFFSET_BRT_MS = 3 * 60 * 60 * 1000;
+
 export function formatarData(d: Date): string {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+    return new Date(d.getTime() - OFFSET_BRT_MS).toISOString().slice(0, 10); // YYYY-MM-DD (horario de Brasilia)
 }
 
 export function periodoDoPreset(preset: PresetKey, hoje: Date): { de: string; ate: string } {
