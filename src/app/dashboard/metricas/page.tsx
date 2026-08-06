@@ -6,8 +6,14 @@ import { getTotaisPorStatus, periodoDeDatas, type PeriodoISO } from "@/lib/merca
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { nomeConta } from "@/lib/account-colors";
 
+// Mesmo ajuste de fuso horario de src/lib/date-utils.ts (ver comentario la):
+// esta pagina tem sua propria copia local de formatarData/periodoDoPreset,
+// entao precisa do mesmo fix aplicado separadamente para nao zerar a partir
+// das 21h de Brasilia.
+const OFFSET_BRT_MS = 3 * 60 * 60 * 1000;
+
 function formatarData(d: Date) {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+    return new Date(d.getTime() - OFFSET_BRT_MS).toISOString().slice(0, 10); // YYYY-MM-DD (horario de Brasilia)
 }
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
