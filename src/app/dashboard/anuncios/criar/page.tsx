@@ -2,7 +2,7 @@ import Link from "next/link";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { createClient } from "@/lib/supabase/server";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
-import CriarAnuncioForm from "./criar-anuncio-form";
+import AnunciosCriarTabs from "./anuncios-criar-tabs";
 
 export default async function CriarAnuncioPage() {
   const { podeEditar } = await exigirAcessoSecao("anuncios", "criar");
@@ -38,7 +38,7 @@ export default async function CriarAnuncioPage() {
           Conecte ao menos uma conta do Mercado Livre antes de criar um anúncio.
         </p>
       ) : (
-        <CriarAnuncioForm contas={contas} />
+        <AnunciosCriarTabs contas={contas} />
       )}
     </div>
   );
