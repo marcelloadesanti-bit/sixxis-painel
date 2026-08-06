@@ -4,6 +4,7 @@ import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import { getTotaisPorStatus, periodoDeDatas } from "@/lib/mercadolivre/orders";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
 import { buscarVendasMlAmazon, somarItensVendas } from "@/lib/sige/vendas";
+import { formatarData } from "@/lib/date-utils";
 
 // Rota leve para as secoes "ao vivo" do Resumo: vendas de hoje (respeita o
 // filtro de conta da pagina, so Mercado Livre -- a Amazon nao tem "vendas ao
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
   const contasVendasHoje = idsFiltro ? listaContas.filter((c) => idsFiltro.includes(c.id)) : listaContas;
 
   const hoje = new Date();
-  const hojeStr = hoje.toISOString().slice(0, 10);
+  const hojeStr = formatarData(hoje); // horario de Brasilia -- ver lib/date-utils.ts
   const periodoHoje = periodoDeDatas(hojeStr, hojeStr);
 
   let vendasBrutas = 0;
@@ -63,8 +64,11 @@ export async function GET(request: Request) {
   // cancelados - devolvidos) que ja alimenta Relatorios/Fechamento do SIGE,
   // para a meta nunca contar pedido cancelado/devolvido como se ja fosse
   // faturamento fechado (evita falsa sensacao de meta proxima).
-  const ano = hoje.getFullYear();
-  const mes = hoje.getMonth() + 1;
+  // ano/mes derivados de hojeStr (ja em horario de Brasilia) em vez de
+    // hoje.getFullYear()/getMonth(), que no runtime da Vercel rodam em UTC.
+    const [anoStr, mesStr] = hojeStr.split("-");
+    const ano = Number(anoStr);
+    const mes = Number(mesStr);
   const primeiroDia = `${ano}-${String(mes).padStart(2, "0")}-01`;
 
   const itensMes = await buscarVendasMlAmazon(primeiroDia, hojeStr, null);
