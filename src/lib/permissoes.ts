@@ -150,7 +150,17 @@ export const SECOES: DefinicaoSecao[] = [
       { codigo: "tendencias_busca", label: "Tendências de busca", href: "/dashboard/anuncios/tendencias" },
     ],
   },
-  { codigo: "publicidade", label: "Publicidade", href: "/dashboard/publicidade", icon: "Megaphone", grupo: "vendas_anuncios" },
+  {
+        codigo: "publicidade",
+        label: "Publicidade",
+        href: "/dashboard/publicidade",
+        icon: "Megaphone",
+        grupo: "vendas_anuncios",
+        subsecoes: [
+          { codigo: "publicidade_visao_geral", label: "Visão geral", href: "/dashboard/publicidade" },
+          { codigo: "publicidade_metricas_desempenho", label: "Métricas de Desempenho", href: "/dashboard/publicidade/metricas" },
+              ],
+  },
   { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "BadgePercent", grupo: "vendas_anuncios" },
   {
     codigo: "amazon",
