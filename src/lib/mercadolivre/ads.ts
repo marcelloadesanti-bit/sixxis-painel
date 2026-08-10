@@ -244,6 +244,79 @@ export async function getAnuncios(
   });
 }
 
+// Ranking de anuncios ordenado por investimento (cost) desc -- necessario
+// porque getAnuncios (ordenado por vendas) nunca traz os PIORES anuncios:
+// um anuncio com gasto alto e poucas vendas (TACOS ruim) fica fora do top
+// por vendas, mas e exatamente o que a Metricas de Desempenho precisa
+// encontrar. Usado em conjunto com getAnuncios (uniao das duas listas,
+// dedupe por itemId) na pagina de Metricas de Desempenho.
+export async function getAnunciosPorInvestimento(
+    accessToken: string,
+    advertiserSiteId: string,
+    advertiserId: number,
+    de: string,
+    ate: string,
+    limite = 20
+  ): Promise<Anuncio[]> {
+    const params = new URLSearchParams({
+          limit: String(limite),
+          offset: "0",
+          date_from: de,
+          date_to: ate,
+          metrics: METRICAS_ANUNCIO,
+          sort_by: "cost",
+          sort: "desc",
+    });
+  
+    const res = await fetch(
+          `${ML_API}/advertising/${advertiserSiteId}/advertisers/${advertiserId}/product_ads/ads/search?${params.toString()}`,
+      {
+              headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        "api-version": "2",
+              },
+      }
+        );
+  
+    if (res.status === 404) return [];
+    if (!res.ok) {
+          throw new Error(`Falha ao buscar anuncios por investimento: ${res.status}`);
+    }
+  
+    const data = (await res.json()) as {
+          results: {
+                  item_id: string;
+                  title: string;
+                  status: string;
+                  campaign_id: number;
+                  metrics?: {
+                            clicks: number;
+                            prints: number;
+                            cost: number;
+                            total_amount: number;
+                            units_quantity: number;
+                  };
+          }[];
+    };
+  
+    return (data.results ?? []).map((a) => {
+          const m = a.metrics ?? { clicks: 0, prints: 0, cost: 0, total_amount: 0, units_quantity: 0 };
+          return {
+                  itemId: a.item_id,
+                  titulo: a.title,
+                  status: a.status,
+                  campanhaId: a.campaign_id,
+                  clicks: m.clicks,
+                  prints: m.prints,
+                  cost: m.cost,
+                  totalAmount: m.total_amount,
+                  unitsQuantity: m.units_quantity,
+                  ctr: m.prints > 0 ? m.clicks / m.prints : null,
+                  roas: m.cost > 0 ? m.total_amount / m.cost : null,
+          };
+    });
+}
+
 // --- Metricas avancadas de campanha (impression share, etc.) ---
 // So existem no endpoint de DETALHE de uma campanha (nao no /search), ou
 // seja, precisam de 1 chamada por campanha. Por isso so devem ser buscadas
