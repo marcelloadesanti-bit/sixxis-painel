@@ -321,6 +321,96 @@ export async function getAnunciosPorInvestimento(
 // So existem no endpoint de DETALHE de uma campanha (nao no /search), ou
 // seja, precisam de 1 chamada por campanha. Por isso so devem ser buscadas
 // para um numero limitado de campanhas (ver TETO_METRICAS_AVANCADAS em
+// Busca TODOS os anuncios de um anunciante no periodo, paginando ate
+// esgotar os resultados (ou ate o teto de seguranca) -- diferente de
+// getAnuncios/getAnunciosPorInvestimento, que trazem so um top-N (por
+// vendas ou por investimento). Usado na pagina de Metricas de Desempenho,
+// que precisa saber TODOS os SKUs anunciados em cada campanha para
+// calcular o TACOS real (investimento / faturamento total dos SKUs
+// daquela campanha, nao so as vendas atribuidas pelo Mercado Ads).
+const TETO_ANUNCIOS = 1000;
+
+export async function getTodosAnuncios(
+    accessToken: string,
+    advertiserSiteId: string,
+    advertiserId: number,
+    de: string,
+    ate: string
+  ): Promise<Anuncio[]> {
+    const limite = 50;
+    let offset = 0;
+    let total = Infinity;
+    const anuncios: Anuncio[] = [];
+  
+    while (offset < total && offset < TETO_ANUNCIOS) {
+          const params = new URLSearchParams({
+                  limit: String(limite),
+                  offset: String(offset),
+                  date_from: de,
+                  date_to: ate,
+                  metrics: METRICAS_ANUNCIO,
+                  sort_by: "total_amount",
+                  sort: "desc",
+          });
+      
+          const res = await fetch(
+                  `${ML_API}/advertising/${advertiserSiteId}/advertisers/${advertiserId}/product_ads/ads/search?${params.toString()}`,
+            {
+                      headers: {
+                                  Authorization: `Bearer ${accessToken}`,
+                                  "api-version": "2",
+                      },
+            }
+                );
+      
+          if (res.status === 404) return anuncios;
+          if (!res.ok) {
+                  throw new Error(`Falha ao buscar todos os anuncios: ${res.status}`);
+          }
+      
+          const data = (await res.json()) as {
+                  paging?: { total: number };
+                  results: {
+                            item_id: string;
+                            title: string;
+                            status: string;
+                            campaign_id: number;
+                            metrics?: {
+                                        clicks: number;
+                                        prints: number;
+                                        cost: number;
+                                        total_amount: number;
+                                        units_quantity: number;
+                            };
+                  }[];
+          };
+      
+          const pagina = data.results ?? [];
+          for (const a of pagina) {
+                  const m = a.metrics ?? { clicks: 0, prints: 0, cost: 0, total_amount: 0, units_quantity: 0 };
+                  anuncios.push({
+                            itemId: a.item_id,
+                            titulo: a.title,
+                            status: a.status,
+                            campanhaId: a.campaign_id,
+                            clicks: m.clicks,
+                            prints: m.prints,
+                            cost: m.cost,
+                            totalAmount: m.total_amount,
+                            unitsQuantity: m.units_quantity,
+                            ctr: m.prints > 0 ? m.clicks / m.prints : null,
+                            roas: m.cost > 0 ? m.total_amount / m.cost : null,
+                  });
+          }
+      
+          total = data.paging?.total ?? anuncios.length;
+          offset += limite;
+          if (pagina.length === 0) break;
+    }
+  
+    return anuncios;
+}
+
 // publicidade/page.tsx), para nao arriscar rate limit (429) somando essas
 // chamadas as demais que a pagina de Publicidade ja faz.
 export type MetricasAvancadasCampanha = {
