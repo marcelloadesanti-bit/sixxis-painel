@@ -56,7 +56,7 @@ function CorSemaforo({ semaforo }: { semaforo: Semaforo }) {
     };
     const rotulos: Record<Semaforo, string> = { otimo: "Ótimo", padrao: "Padrão", critico: "Crítico" };
     return (
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${estilos[semaforo]}`}>{rotulos[semaforo]}</span>span>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${estilos[semaforo]}`}>{rotulos[semaforo]}</span>
         );
 }
 
