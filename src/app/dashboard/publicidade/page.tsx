@@ -105,7 +105,7 @@ export default async function PublicidadePage({
 }: {
     searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
 }) {
-    await exigirAcessoSecao("publicidade");
+    await exigirAcessoSecao("publicidade", "publicidade_visao_geral");
     const params = await searchParams;
     const supabase = await createClient();
 
