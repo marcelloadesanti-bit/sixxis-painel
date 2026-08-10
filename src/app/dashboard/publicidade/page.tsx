@@ -3,23 +3,23 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
 import {
-  getAnunciantes,
-  getCampanhas,
-  getAnuncios,
-  getMetricasAvancadasCampanha,
-  type Campanha,
-  type Anunciante,
-  type Anuncio,
-  type MetricasAvancadasCampanha,
+    getAnunciantes,
+    getCampanhas,
+    getAnuncios,
+    getMetricasAvancadasCampanha,
+    type Campanha,
+    type Anunciante,
+    type Anuncio,
+    type MetricasAvancadasCampanha,
 } from "@/lib/mercadolivre/ads";
 import { getTotaisPorStatus, periodoDeDatas } from "@/lib/mercadolivre/orders";
-import { PRESETS, type PresetKey, periodoDoPreset } from "@/lib/date-utils";
+import { PRESETS, type PresetKey, periodoDoPreset, formatarData } from "@/lib/date-utils";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import PublicidadePorConta, {
-  type ContaComCampanhas,
-  type CampanhaFormatada,
-  type AnuncioFormatado,
+    type ContaComCampanhas,
+    type CampanhaFormatada,
+    type AnuncioFormatado,
 } from "./publicidade-por-conta";
 
 const formatarMoeda = (valor: number, moeda: string = "BRL") =>
@@ -36,7 +36,7 @@ const formatarPctFracao = (valor: number, casas = 1) => `${(valor <= 1 ? valor *
 const ORDEM_CONTAS_ADS = ["SIXXISARBRASIL", "SIXXIS", "SIXXISBR", "SIXXISBRASIL", "BRASILSIXXIS"];
 const posicaoConta = (nickname: string) => {
   const i = ORDEM_CONTAS_ADS.indexOf(nickname);
-  return i === -1 ? 999 : i;
+    return i === -1 ? 999 : i;
 };
 
 // Metricas avancadas de campanha (impression share etc.) so existem no
@@ -44,39 +44,52 @@ const posicaoConta = (nickname: string) => {
 // para nao arriscar rate limit somando com as demais chamadas da pagina.
 const TETO_METRICAS_AVANCADAS = 6;
 
+// O Mercado Ads (Product Ads) so aceita consultas de ate 90 dias anteriores
+// a hoje -- usado tanto para limitar o periodo personalizado (evita erro 400
+// da API) quanto para os atributos min/max dos campos de data na tela.
+const LIMITE_DIAS_ADS = 90;
+
+function clampPeriodoAds(de: string, ate: string, hoje: Date): { de: string; ate: string } {
+    const hojeFmt = formatarData(hoje);
+    const ateClamp = ate > hojeFmt ? hojeFmt : ate;
+    const minDe = formatarData(new Date(hoje.getTime() - (LIMITE_DIAS_ADS - 1) * 86400000));
+    const deClamp = de < minDe ? minDe : de;
+    return { de: deClamp > ateClamp ? ateClamp : deClamp, ate: ateClamp };
+}
+
 // --- "Metas em andamento": indicadores calculados a partir dos dados reais
 // do mes corrente (nao respeita o filtro de periodo da pagina, igual a meta
 // de faturamento no Resumo -- e sempre "mes atual, todas as contas"). ---
 type CardMeta = {
-  titulo: string;
-  valorLabel: string;
-  metaLabel: string | null;
-  pct: number | null;
-  dentroDaMeta: boolean | null;
+    titulo: string;
+    valorLabel: string;
+    metaLabel: string | null;
+    pct: number | null;
+    dentroDaMeta: boolean | null;
 };
 
 function CardMetaAndamento({ card }: { card: CardMeta }) {
-  const corBarra = card.dentroDaMeta === null ? "bg-gray-300" : card.dentroDaMeta ? "bg-green-500" : "bg-red-500";
-  const corTexto = card.dentroDaMeta === null ? "text-gray-400" : card.dentroDaMeta ? "text-green-600" : "text-red-500";
-  return (
-    <div className="rounded border border-gray-200 bg-white p-4">
-      <p className="text-xs uppercase text-gray-400">{card.titulo}</p>
-      <p className="text-xl font-bold text-gray-900">{card.valorLabel}</p>
-      {card.metaLabel ? (
-        <>
-          <p className={`text-xs font-medium ${corTexto}`}>
-            Meta: {card.metaLabel}
-            {card.dentroDaMeta !== null && (card.dentroDaMeta ? " · dentro da meta" : " · fora da meta")}
-          </p>
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-            <div
-              className={`h-full rounded-full transition-all ${corBarra}`}
+    const corBarra = card.dentroDaMeta === null ? "bg-gray-300" : card.dentroDaMeta ? "bg-green-500" : "bg-red-500";
+    const corTexto = card.dentroDaMeta === null ? "text-gray-400" : card.dentroDaMeta ? "text-green-600" : "text-red-500";
+    return (
+          <div className="rounded border border-gray-200 bg-white p-4">
+            <p className="text-xs uppercase text-gray-400">{card.titulo}</p>
+        <p className="text-xl font-bold text-gray-900">{card.valorLabel}</p>
+  {card.metaLabel ? (
+            <>
+              <p className={`text-xs font-medium ${corTexto}`}>
+              Meta: {card.metaLabel}
+  {card.dentroDaMeta !== null && (card.dentroDaMeta ? " · dentro da meta" : " · fora da meta")}
+            </p>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div
+                className={`h-full rounded-full transition-all ${corBarra}`}
               style={{ width: `${card.pct !== null ? Math.min(100, Math.max(0, card.pct)) : 0}%` }}
             />
           </div>
         </>
       ) : (
-        <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-400">
           Meta não definida ·{" "}
           <a href="/dashboard/configuracoes/metas?aba=ads" className="text-[var(--color-sixxis-blue)] underline">
             definir
@@ -88,79 +101,81 @@ function CardMetaAndamento({ card }: { card: CardMeta }) {
 }
 
 export default async function PublicidadePage({
-  searchParams,
+    searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
+    searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
 }) {
-  await exigirAcessoSecao("publicidade");
-  const params = await searchParams;
-  const supabase = await createClient();
+    await exigirAcessoSecao("publicidade");
+    const params = await searchParams;
+    const supabase = await createClient();
 
   const {
-    data: { user },
+        data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+        redirect("/login");
   }
 
   const hoje = new Date();
-  const presetSelecionado = (params.periodo as PresetKey) ?? "30dias";
-  const isPersonalizado = presetSelecionado === "personalizado" && params.de && params.ate;
-  const { de, ate } = isPersonalizado
-    ? { de: params.de!, ate: params.ate! }
-    : periodoDoPreset(presetSelecionado, hoje);
+    const presetSelecionado = (params.periodo as PresetKey) ?? "30dias";
+    const isPersonalizado = presetSelecionado === "personalizado" && params.de && params.ate;
+    const { de, ate } = isPersonalizado
+      ? clampPeriodoAds(params.de!, params.ate!, hoje)
+          : periodoDoPreset(presetSelecionado, hoje);
+    const minDataPersonalizada = formatarData(new Date(hoje.getTime() - (LIMITE_DIAS_ADS - 1) * 86400000));
+    const maxDataPersonalizada = formatarData(hoje);
 
   const { data: contas } = await supabase
-    .from("ml_accounts")
-    .select("id, ml_user_id, nickname, apelido, cor")
-    .order("nickname", { ascending: true });
+      .from("ml_accounts")
+      .select("id, ml_user_id, nickname, apelido, cor")
+      .order("nickname", { ascending: true });
 
   const anoAtual = hoje.getFullYear();
-  const mesAtual = hoje.getMonth() + 1;
-  const primeiroDiaMes = `${anoAtual}-${String(mesAtual).padStart(2, "0")}-01`;
-  const hojeStr = hoje.toISOString().slice(0, 10);
-  const periodoMes = periodoDeDatas(primeiroDiaMes, hojeStr);
+    const mesAtual = hoje.getMonth() + 1;
+    const primeiroDiaMes = `${anoAtual}-${String(mesAtual).padStart(2, "0")}-01`;
+    const hojeStr = hoje.toISOString().slice(0, 10);
+    const periodoMes = periodoDeDatas(primeiroDiaMes, hojeStr);
 
   const { data: metasAdsRaw } = await supabase
-    .from("metas_ads")
-    .select("tipo_meta, valor")
-    .eq("ano", anoAtual)
-    .eq("mes", mesAtual);
-  const metasAdsAtual = new Map((metasAdsRaw ?? []).map((m) => [m.tipo_meta as string, Number(m.valor)]));
+      .from("metas_ads")
+      .select("tipo_meta, valor")
+      .eq("ano", anoAtual)
+      .eq("mes", mesAtual);
+    const metasAdsAtual = new Map((metasAdsRaw ?? []).map((m) => [m.tipo_meta as string, Number(m.valor)]));
 
   // Busca anunciantes uma unica vez por conta e reaproveita para as janelas
   // de tempo (mes corrente, para "Metas em andamento", e periodo filtrado na
   // tela, para os cards consolidados + campanhas/anuncios por conta).
   const resultados = await Promise.all(
-    (contas ?? []).map(async (conta) => {
-      try {
-        const accessToken = await getValidAccessToken(conta.id);
-        const anunciantes: Anunciante[] = await getAnunciantes(accessToken);
+        (contas ?? []).map(async (conta) => {
+          try {
+                  const accessToken = await getValidAccessToken(conta.id);
+                  const anunciantes: Anunciante[] = await getAnunciantes(accessToken);
 
         if (anunciantes.length === 0) {
-          return {
-            conta,
-            semAnuncios: true,
-            campanhasPeriodo: [] as Campanha[],
-            anuncios: [] as Anuncio[],
-            advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
-            investimentoMes: 0,
-            vendasAdsMes: 0,
-            faturamentoMes: 0,
-            erro: null as string | null,
-          };
-        }
+                    return {
+                                  conta,
+                                  semAnuncios: true,
+                                  campanhasPeriodo: [] as Campanha[],
+                                  anuncios: [] as Anuncio[],
+                                  advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
+                                  investimentoMes: 0,
+                                  vendasAdsMes: 0,
+                                  faturamentoMes: 0,
+                                  erro: null as string | null,
+                      };
+}
 
         const [listasPeriodo, listasMes, pagasMes, canceladasMes, listasAnuncios] = await Promise.all([
-          Promise.all(anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, de, ate))),
-          Promise.all(
-            anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, primeiroDiaMes, hojeStr))
-          ),
-          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "paid"),
-          getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "cancelled"),
-          Promise.all(anunciantes.map((a) => getAnuncios(accessToken, a.siteId, a.advertiserId, de, ate, 10))),
-        ]);
+                    Promise.all(anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, de, ate))),
+                    Promise.all(
+                                  anunciantes.map((a) => getCampanhas(accessToken, a.siteId, a.advertiserId, primeiroDiaMes, hojeStr))
+                                ),
+                    getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "paid"),
+                    getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "cancelled"),
+                    Promise.all(anunciantes.map((a) => getAnuncios(accessToken, a.siteId, a.advertiserId, de, ate, 10))),
+                  ]);
 
         // Tag de siteId por campanha (necessario para a chamada de detalhe
         // das metricas avancadas, que exige o site do anunciante dono dela).
@@ -179,9 +194,9 @@ export default async function PublicidadePage({
         const advancedPorCampanha = new Map<number, MetricasAvancadasCampanha | null>();
         if (campanhasAtivas.length > 0) {
           const detalhes = await Promise.all(
-            campanhasAtivas.map((c) => getMetricasAvancadasCampanha(accessToken, c.siteId, c.id, de, ate))
-          );
-          campanhasAtivas.forEach((c, i) => advancedPorCampanha.set(c.id, detalhes[i]));
+                        campanhasAtivas.map((c) => getMetricasAvancadasCampanha(accessToken, c.siteId, c.id, de, ate))
+                      );
+                    campanhasAtivas.forEach((c, i) => advancedPorCampanha.set(c.id, detalhes[i]));
         }
 
         const investimentoMes = campanhasMes.reduce((s, c) => s + c.metricas.cost, 0);
@@ -189,31 +204,31 @@ export default async function PublicidadePage({
         const faturamentoMes = pagasMes.valor + canceladasMes.valor;
 
         return {
-          conta,
-          semAnuncios: false,
-          campanhasPeriodo,
-          anuncios,
-          advancedPorCampanha,
-          investimentoMes,
-          vendasAdsMes,
-          faturamentoMes,
-          erro: null as string | null,
+                    conta,
+                    semAnuncios: false,
+                    campanhasPeriodo,
+                    anuncios,
+                    advancedPorCampanha,
+                    investimentoMes,
+                    vendasAdsMes,
+                    faturamentoMes,
+                    erro: null as string | null,
         };
-      } catch (err) {
-        console.error(`Erro ao buscar publicidade de ${conta.nickname}:`, err);
-        return {
-          conta,
-          semAnuncios: false,
-          campanhasPeriodo: [] as Campanha[],
-          anuncios: [] as Anuncio[],
-          advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
-          investimentoMes: 0,
-          vendasAdsMes: 0,
-          faturamentoMes: 0,
-          erro: "Falha ao buscar dados de Mercado Ads desta conta.",
-        };
-      }
-    })
+} catch (err) {
+          console.error(`Erro ao buscar publicidade de ${conta.nickname}:`, err);
+          return {
+                      conta,
+                      semAnuncios: false,
+                      campanhasPeriodo: [] as Campanha[],
+                      anuncios: [] as Anuncio[],
+                      advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
+                      investimentoMes: 0,
+                      vendasAdsMes: 0,
+                      faturamentoMes: 0,
+                      erro: "Falha ao buscar dados de Mercado Ads desta conta.",
+            };
+}
+})
   );
 
   // --- Cards consolidados do cabecalho (periodo filtrado na tela) ---
@@ -235,7 +250,7 @@ export default async function PublicidadePage({
   const roasAtual = investimentoAdsMesTotal > 0 ? vendasAdsMesTotal / investimentoAdsMesTotal : null;
   const tacosAtual = faturamentoMesTotal > 0 ? (investimentoAdsMesTotal / faturamentoMesTotal) * 100 : null;
   const proporcaoOrganicoAtual =
-    faturamentoMesTotal > 0 ? ((faturamentoMesTotal - vendasAdsMesTotal) / faturamentoMesTotal) * 100 : null;
+        faturamentoMesTotal > 0 ? ((faturamentoMesTotal - vendasAdsMesTotal) / faturamentoMesTotal) * 100 : null;
 
   const metaProporcao = metasAdsAtual.get("proporcao_organico_min") ?? null;
   const metaRoas = metasAdsAtual.get("roas_minimo") ?? null;
@@ -244,102 +259,176 @@ export default async function PublicidadePage({
 
   const cardsMeta: CardMeta[] = [
     {
-      titulo: "Proporção orgânico (mês)",
-      valorLabel: formatarPct(proporcaoOrganicoAtual),
-      metaLabel: metaProporcao !== null ? `mín. ${formatarPct(metaProporcao)}` : null,
-      pct: metaProporcao && proporcaoOrganicoAtual !== null ? (proporcaoOrganicoAtual / metaProporcao) * 100 : null,
-      dentroDaMeta:
-        metaProporcao !== null && proporcaoOrganicoAtual !== null ? proporcaoOrganicoAtual >= metaProporcao : null,
+            titulo: "Proporção orgânico (mês)",
+            valorLabel: formatarPct(proporcaoOrganicoAtual),
+            metaLabel: metaProporcao !== null ? `mín. ${formatarPct(metaProporcao)}` : null,
+            pct: metaProporcao && proporcaoOrganicoAtual !== null ? (proporcaoOrganicoAtual / metaProporcao) * 100 : null,
+            dentroDaMeta:
+                      metaProporcao !== null && proporcaoOrganicoAtual !== null ? proporcaoOrganicoAtual >= metaProporcao : null,
     },
     {
-      titulo: "ROAS (mês)",
-      valorLabel: formatarRoas(roasAtual),
-      metaLabel: metaRoas !== null ? `mín. ${formatarRoas(metaRoas)}` : null,
-      pct: metaRoas && roasAtual !== null ? (roasAtual / metaRoas) * 100 : null,
-      dentroDaMeta: metaRoas !== null && roasAtual !== null ? roasAtual >= metaRoas : null,
+            titulo: "ROAS (mês)",
+            valorLabel: formatarRoas(roasAtual),
+            metaLabel: metaRoas !== null ? `mín. ${formatarRoas(metaRoas)}` : null,
+            pct: metaRoas && roasAtual !== null ? (roasAtual / metaRoas) * 100 : null,
+            dentroDaMeta: metaRoas !== null && roasAtual !== null ? roasAtual >= metaRoas : null,
     },
     {
-      titulo: "TACOS (mês)",
-      valorLabel: formatarPct(tacosAtual),
-      metaLabel: metaTacos !== null ? `máx. ${formatarPct(metaTacos)}` : null,
-      pct: metaTacos && tacosAtual !== null ? (tacosAtual / metaTacos) * 100 : null,
-      dentroDaMeta: metaTacos !== null && tacosAtual !== null ? tacosAtual <= metaTacos : null,
+            titulo: "TACOS (mês)",
+            valorLabel: formatarPct(tacosAtual),
+            metaLabel: metaTacos !== null ? `máx. ${formatarPct(metaTacos)}` : null,
+            pct: metaTacos && tacosAtual !== null ? (tacosAtual / metaTacos) * 100 : null,
+            dentroDaMeta: metaTacos !== null && tacosAtual !== null ? tacosAtual <= metaTacos : null,
     },
-  ];
+      ];
 
   const pctOrcamento = orcamentoMensal && orcamentoMensal > 0 ? (investimentoAdsMesTotal / orcamentoMensal) * 100 : null;
+
+  // --- Participacao e ranking por conta (periodo filtrado na tela) --
+  // pedido explicito do usuario: quanto cada conta representa do
+  // investimento e do faturamento vindo de ads, ordenado da maior para a
+  // menor eficiencia (ROAS = vendas por ads / investimento).
+  const rankingContas = resultados
+    .map((r) => {
+      const investimento = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.cost, 0);
+          const vendas = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.total_amount, 0);
+          const acos = vendas > 0 ? (investimento / vendas) * 100 : null;
+          const roas = investimento > 0 ? vendas / investimento : null;
+          return {
+                    id: r.conta.id as string,
+                    nome: nomeConta(r.conta),
+                    cor: (r.conta.cor as string) ?? COR_PADRAO,
+                    investimento,
+                    vendas,
+                    acos,
+                    roas,
+                    pctInvestimento: investimentoTotal > 0 ? (investimento / investimentoTotal) * 100 : 0,
+                    pctVendas: vendasTotal > 0 ? (vendas / vendasTotal) * 100 : 0,
+            };
+  })
+    .filter((c) => c.investimento > 0 || c.vendas > 0)
+    .sort((a, b) => (b.roas ?? -1) - (a.roas ?? -1));
 
   // --- Campanhas + anuncios reais por conta, ordem fixa (so nesta tela) ---
   const contasComCampanhas: ContaComCampanhas[] = resultados
     .slice()
     .sort((a, b) => posicaoConta(a.conta.nickname as string) - posicaoConta(b.conta.nickname as string))
     .map((r) => {
+      const investimentoConta = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.cost, 0);
+            const cliquesConta = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.clicks, 0);
+            const impressoesConta = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.prints, 0);
+            const vendasConta = r.campanhasPeriodo.reduce((s, c) => s + c.metricas.total_amount, 0);
+            const acosConta = vendasConta > 0 ? (investimentoConta / vendasConta) * 100 : 0;
+            const moedaConta = r.campanhasPeriodo[0]?.moeda ?? "BRL";
+
       const campanhas: CampanhaFormatada[] = r.campanhasPeriodo.map((c) => {
-        const adv = r.advancedPorCampanha.get(c.id) ?? null;
-        return {
-          id: c.id,
-          nome: c.nome,
-          status: c.status,
-          investimentoLabel: formatarMoeda(c.metricas.cost, c.moeda),
-          cliques: c.metricas.clicks,
-          ctrLabel: `${(c.metricas.ctr * 100).toFixed(2)}%`,
-          acosLabel: `${c.metricas.acos.toFixed(1)}%`,
-          roasLabel: formatarRoas(c.metricas.roas),
-          vendasLabel: formatarMoeda(c.metricas.total_amount, c.moeda),
-          roasObjetivoLabel: c.roasObjetivo !== null ? formatarRoas(c.roasObjetivo) : null,
-          impressionShareLabel: adv?.impressionShare != null ? formatarPctFracao(adv.impressionShare) : null,
-          lostShareOrcamentoLabel: adv?.lostShareOrcamento != null ? formatarPctFracao(adv.lostShareOrcamento) : null,
-          lostShareRankingLabel: adv?.lostShareRanking != null ? formatarPctFracao(adv.lostShareRanking) : null,
-        };
+                const adv = r.advancedPorCampanha.get(c.id) ?? null;
+                return {
+                            id: c.id,
+                            nome: c.nome,
+                            status: c.status,
+                            investimentoLabel: formatarMoeda(c.metricas.cost, c.moeda),
+                            cliques: c.metricas.clicks,
+                            ctrLabel: `${(c.metricas.ctr * 100).toFixed(2)}%`,
+                            acosLabel: `${c.metricas.acos.toFixed(1)}%`,
+                            roasLabel: formatarRoas(c.metricas.roas),
+                            vendasLabel: formatarMoeda(c.metricas.total_amount, c.moeda),
+                            roasObjetivoLabel: c.roasObjetivo !== null ? formatarRoas(c.roasObjetivo) : null,
+                            impressionShareLabel: adv?.impressionShare != null ? formatarPctFracao(adv.impressionShare) : null,
+                            lostShareOrcamentoLabel: adv?.lostShareOrcamento != null ? formatarPctFracao(adv.lostShareOrcamento) : null,
+                            lostShareRankingLabel: adv?.lostShareRanking != null ? formatarPctFracao(adv.lostShareRanking) : null,
+                };
       });
 
       const anuncios: AnuncioFormatado[] = r.anuncios.map((a) => ({
-        itemId: a.itemId,
-        titulo: a.titulo,
-        status: a.status,
-        cliques: a.clicks,
-        investimentoLabel: formatarMoeda(a.cost),
-        roasLabel: a.roas !== null ? formatarRoas(a.roas) : "—",
-        vendasLabel: formatarMoeda(a.totalAmount),
+                itemId: a.itemId,
+                titulo: a.titulo,
+                status: a.status,
+                cliques: a.clicks,
+                investimentoLabel: formatarMoeda(a.cost),
+                roasLabel: a.roas !== null ? formatarRoas(a.roas) : "—",
+                vendasLabel: formatarMoeda(a.totalAmount),
       }));
 
       return {
-        id: r.conta.id as string,
-        nome: nomeConta(r.conta),
-        cor: (r.conta.cor as string) ?? COR_PADRAO,
-        erro: r.erro,
-        semAnuncios: r.semAnuncios,
-        campanhas,
-        anuncios,
+                id: r.conta.id as string,
+                nome: nomeConta(r.conta),
+                cor: (r.conta.cor as string) ?? COR_PADRAO,
+                erro: r.erro,
+                semAnuncios: r.semAnuncios,
+                resumo: {
+                            investimentoLabel: formatarMoeda(investimentoConta, moedaConta),
+                            cliquesLabel: cliquesConta.toLocaleString("pt-BR"),
+                            impressoesLabel: impressoesConta.toLocaleString("pt-BR"),
+                            vendasLabel: formatarMoeda(vendasConta, moedaConta),
+                            acosLabel: `${acosConta.toFixed(1)}%`,
+                },
+                campanhas,
+                anuncios,
       };
     });
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+        <div className="mx-auto max-w-6xl p-6">
       <h1 className="mb-1 text-2xl font-bold text-[var(--color-sixxis-navy)]">Publicidade</h1>
       <p className="mb-6 text-sm text-gray-500">
         Mercado Ads — campanhas consolidadas de todas as {contas?.length ?? 0} contas
       </p>
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        {PRESETS.map((p) => (
-          <Link
-            key={p.key}
-            href={`/dashboard/publicidade?periodo=${p.key}`}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              presetSelecionado === p.key
-                ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
-                : "border-gray-300 text-gray-600 hover:bg-gray-50"
-            }`}
+      <div className="mb-6 flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap gap-2">
+{PRESETS.map((p) => (
+              <Link
+                key={p.key}
+              href={`/dashboard/publicidade?periodo=${p.key}`}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                                presetSelecionado === p.key
+                                  ? "border-[var(--color-sixxis-navy)] bg-[var(--color-sixxis-navy)] text-white"
+                                  : "border-gray-300 text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+{p.label}
+            </Link>
+          ))}
+        </div>
+
+        <form className="flex items-end gap-2">
+          <input type="hidden" name="periodo" value="personalizado" />
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">De</label>
+            <input
+              type="date"
+              name="de"
+              defaultValue={de}
+              min={minDataPersonalizada}
+              max={maxDataPersonalizada}
+              className="rounded border border-gray-300 px-2 py-1 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Até</label>
+            <input
+              type="date"
+              name="ate"
+              defaultValue={ate}
+              min={minDataPersonalizada}
+              max={maxDataPersonalizada}
+              className="rounded border border-gray-300 px-2 py-1 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
           >
-            {p.label}
-          </Link>
-        ))}
+            Período personalizado
+          </button>
+        </form>
       </div>
 
       <p className="mb-4 text-xs text-gray-400">
         Período: {new Date(de + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
-        {new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")}
+{new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")} · o Mercado Ads permite consultar até{" "}
+{LIMITE_DIAS_ADS} dias anteriores a hoje
       </p>
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -365,31 +454,31 @@ export default async function PublicidadePage({
         </div>
       </div>
 
-      {/* Metas em andamento -- sempre mes corrente, todas as contas, real */}
+{/* Metas em andamento -- sempre mes corrente, todas as contas, real */}
       <h2 className="mb-2 text-sm font-semibold text-gray-700">
         Metas em andamento <span className="font-normal text-gray-400">— mês corrente</span>
       </h2>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cardsMeta.map((card) => (
-          <CardMetaAndamento key={card.titulo} card={card} />
+{cardsMeta.map((card) => (
+            <CardMetaAndamento key={card.titulo} card={card} />
         ))}
         <div className="rounded border border-gray-200 bg-white p-4">
           <p className="text-xs uppercase text-gray-400">Orçamento mensal (referência)</p>
           <p className="text-xl font-bold text-gray-900">{formatarMoeda(investimentoAdsMesTotal)}</p>
-          {orcamentoMensal !== null ? (
-            <>
-              <p className="text-xs text-gray-400">
-                de {formatarMoeda(orcamentoMensal)} · {pctOrcamento!.toFixed(0)}% usado
-              </p>
-              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className="h-full rounded-full bg-[var(--color-sixxis-blue)] transition-all"
-                  style={{ width: `${Math.min(100, Math.max(0, pctOrcamento!))}%` }}
+{orcamentoMensal !== null ? (
+              <>
+                <p className="text-xs text-gray-400">
+                 de {formatarMoeda(orcamentoMensal)} · {pctOrcamento!.toFixed(0)}% usado
+               </p>
+               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                 <div
+                   className="h-full rounded-full bg-[var(--color-sixxis-blue)] transition-all"
+                   style={{ width: `${Math.min(100, Math.max(0, pctOrcamento!))}%` }}
                 />
               </div>
             </>
           ) : (
-            <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-400">
               Orçamento não definido ·{" "}
               <a href="/dashboard/configuracoes/metas?aba=ads" className="text-[var(--color-sixxis-blue)] underline">
                 definir
@@ -399,15 +488,59 @@ export default async function PublicidadePage({
         </div>
       </div>
 
-      {/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas e anúncios por conta</h2>
-      {contasComCampanhas.length === 0 ? (
-        <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-          Nenhuma conta Mercado Livre conectada ainda.
+{/* Participacao e ranking por conta -- quanto cada conta representa do
+            investimento e do faturamento vindo de ads no periodo selecionado,
+            ordenado da maior para a menor eficiencia (ROAS). */}
+      <h2 className="mb-2 text-sm font-semibold text-gray-700">
+        Participação e ranking por conta <span className="font-normal text-gray-400">— período selecionado</span>
+      </h2>
+{rankingContas.length === 0 ? (
+          <p className="mb-8 text-sm text-gray-400">Nenhuma campanha com investimento no período selecionado.</p>
+        ) : (
+                  <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white">
+           <table className="w-full text-sm">
+             <thead>
+               <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
+                 <th className="p-3">#</th>
+                 <th className="p-3">Conta</th>
+                 <th className="p-3 text-right">Investimento</th>
+                 <th className="p-3 text-right">% do investimento</th>
+                 <th className="p-3 text-right">Vendas por Ads</th>
+                 <th className="p-3 text-right">% do faturamento Ads</th>
+                 <th className="p-3 text-right">ACOS</th>
+                 <th className="p-3 text-right">ROAS</th>
+               </tr>
+             </thead>
+             <tbody>
+ {rankingContas.map((c, i) => (
+                   <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                   <td className="p-3 text-xs text-gray-400">{i + 1}</td>
+                   <td className="p-3">
+                     <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
+{c.nome}
+                  </td>
+                  <td className="p-3 text-right">{formatarMoeda(c.investimento, moeda)}</td>
+                  <td className="p-3 text-right">{c.pctInvestimento.toFixed(1)}%</td>
+                  <td className="p-3 text-right">{formatarMoeda(c.vendas, moeda)}</td>
+                  <td className="p-3 text-right">{c.pctVendas.toFixed(1)}%</td>
+                  <td className="p-3 text-right">{formatarPct(c.acos)}</td>
+                  <td className="p-3 text-right font-medium">{formatarRoas(c.roas)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        <PublicidadePorConta contas={contasComCampanhas} />
       )}
+
+{/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
+      <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas e anúncios por conta</h2>
+{contasComCampanhas.length === 0 ? (
+          <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+            Nenhuma conta Mercado Livre conectada ainda.
+                      </div>
+       ) : (
+                 <PublicidadePorConta contas={contasComCampanhas} />
+       )}
     </div>
   );
 }
