@@ -123,7 +123,16 @@ export const GRUPOS_SIDEBAR: { codigo: CodigoGrupoSidebar; label: string }[] = [
 // Ao criar uma nova secao no futuro, basta adiciona-la aqui para que
 // ela apareca automaticamente na tela de Configuracoes.
 export const SECOES: DefinicaoSecao[] = [
-  { codigo: "resumo", label: "Resumo", href: "/dashboard", icon: "Home" },
+  {
+        codigo: "resumo",
+        label: "Resumo",
+        href: "/dashboard",
+        icon: "Home",
+        subsecoes: [
+          { codigo: "resumo_geral", label: "Resumo", href: "/dashboard" },
+          { codigo: "calendario", label: "Calendário", href: "/dashboard/calendario" },
+              ],
+  },
   {
     codigo: "vendas",
     label: "Vendas",
