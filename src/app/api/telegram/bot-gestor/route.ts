@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getValidAccessToken } from "@/lib/mercadolivre/token";
-import { getVendas, periodoDeDatas } from "@/lib/mercadolivre/orders";
+import { getVendas, periodoDeDatas, type PeriodoISO } from "@/lib/mercadolivre/orders";
 import { getTotalVisitas } from "@/lib/mercadolivre/visits";
 import { lerEstoquePlanilha } from "@/lib/estoque/planilha";
 import { periodoDoPreset } from "@/lib/date-utils";
@@ -22,6 +22,9 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_BOT_GESTOR_WEBHOOK_SECRET;
 
 const MENU: BotaoTelegram[][] = [
   [{ text: "💰 Vendas de hoje", callback_data: "vendas_hoje" }],
+  [{ text: "📅 Vendas do mês", callback_data: "vendas_mes" }],
+  [{ text: "📆 Vendas do ano", callback_data: "vendas_ano" }],
+  [{ text: "🗓️ Vendas em período específico", callback_data: "vendas_periodo" }],
   [{ text: "📦 Vendas de hoje por SKU", callback_data: "vendas_sku" }],
   [{ text: "🏢 Vendas de hoje por conta", callback_data: "vendas_conta" }],
   [{ text: "👀 Visitas de hoje", callback_data: "visitas_hoje" }],
@@ -46,6 +49,47 @@ function hojeBRT(): Date {
   return new Date(Date.now() - 3 * 60 * 60 * 1000);
 }
 
+function hojeStrBRT(): string {
+  return hojeBRT().toISOString().slice(0, 10);
+}
+
+function inicioMesBRT(): string {
+  const d = hojeBRT();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function inicioAnoBRT(): string {
+  const d = hojeBRT();
+  return new Date(Date.UTC(d.getUTCFullYear(), 0, 1)).toISOString().slice(0, 10);
+}
+
+// Converte "DD/MM/AAAA" digitado pelo usuario em "AAAA-MM-DD", validando a
+// data real (rejeita "31/02/2026", por exemplo).
+function parseDataBR(texto: string): string | null {
+  const m = texto.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const dia = Number(m[1]);
+  const mes = Number(m[2]);
+  const ano = Number(m[3]);
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  if (
+    d.getUTCFullYear() !== ano ||
+    d.getUTCMonth() !== mes - 1 ||
+    d.getUTCDate() !== dia
+  ) {
+    return null;
+  }
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+function formatarDataBR(isoDate: string): string {
+  const [ano, mes, dia] = isoDate.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
 async function contasAtivas() {
   const admin = createAdminClient();
   const { data } = await admin
@@ -65,9 +109,11 @@ async function ehAdminMaster(chatId: string): Promise<boolean> {
   return !!data;
 }
 
-async function respostaVendasHoje(): Promise<string> {
+async function respostaVendasResumo(
+  periodo: PeriodoISO,
+  titulo: string
+): Promise<string> {
   const contas = await contasAtivas();
-  const periodo = await periodoHoje();
   let totalPedidos = 0;
   let valorSomado = 0;
   let cod: string | null = null;
@@ -88,10 +134,28 @@ async function respostaVendasHoje(): Promise<string> {
       // conta com token invalido ou erro pontual: ignora e segue com as demais
     }
   }
-  return `<b>💰 Vendas de hoje</b>\n\nPedidos: <b>${totalPedidos}</b>\nFaturamento: <b>${moeda(
+  return `<b>${titulo}</b>\n\nPedidos: <b>${totalPedidos}</b>\nFaturamento: <b>${moeda(
     valorSomado,
     cod
   )}</b>`;
+}
+
+async function respostaVendasHoje(): Promise<string> {
+  return respostaVendasResumo(await periodoHoje(), "💰 Vendas de hoje");
+}
+
+async function respostaVendasMes(): Promise<string> {
+  return respostaVendasResumo(
+    periodoDeDatas(inicioMesBRT(), hojeStrBRT()),
+    "📅 Vendas do mês"
+  );
+}
+
+async function respostaVendasAno(): Promise<string> {
+  return respostaVendasResumo(
+    periodoDeDatas(inicioAnoBRT(), hojeStrBRT()),
+    "📆 Vendas do ano"
+  );
 }
 
 async function respostaVendasPorSku(): Promise<string> {
@@ -228,21 +292,30 @@ async function respostaEstoqueSku(consulta: string): Promise<string> {
   return `<b>📋 Estoque</b>\n\n${linhas}`;
 }
 
-async function definirEstado(chatId: string, aguardando: string | null) {
+async function definirEstado(
+  chatId: string,
+  aguardando: string | null,
+  dado?: string | null
+) {
   const admin = createAdminClient();
-  await admin
-    .from("telegram_bot_estado")
-    .upsert({ chat_id: chatId, aguardando, atualizado_em: new Date().toISOString() });
+  await admin.from("telegram_bot_estado").upsert({
+    chat_id: chatId,
+    aguardando,
+    dado: dado ?? null,
+    atualizado_em: new Date().toISOString(),
+  });
 }
 
-async function lerEstado(chatId: string): Promise<string | null> {
+async function lerEstado(
+  chatId: string
+): Promise<{ aguardando: string | null; dado: string | null }> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("telegram_bot_estado")
-    .select("aguardando")
+    .select("aguardando, dado")
     .eq("chat_id", chatId)
     .maybeSingle();
-  return data?.aguardando ?? null;
+  return { aguardando: data?.aguardando ?? null, dado: data?.dado ?? null };
 }
 
 export async function POST(req: Request) {
@@ -286,9 +359,18 @@ export async function POST(req: Request) {
           chatId,
           "Digite o SKU ou parte da descrição do produto:"
         );
+      } else if (data === "vendas_periodo") {
+        await definirEstado(chatId, "periodo_inicio");
+        await sendTelegramMessageComBotoes(
+          TOKEN,
+          chatId,
+          "Digite a data inicial (formato DD/MM/AAAA):"
+        );
       } else {
         const respostas: Record<string, () => Promise<string>> = {
           vendas_hoje: respostaVendasHoje,
+          vendas_mes: respostaVendasMes,
+          vendas_ano: respostaVendasAno,
           vendas_sku: respostaVendasPorSku,
           vendas_conta: respostaVendasPorConta,
           visitas_hoje: respostaVisitasHoje,
@@ -311,11 +393,49 @@ export async function POST(req: Request) {
           MENU
         );
       } else {
-        const aguardando = await lerEstado(chatId);
-        if (aguardando === "estoque_sku" && texto) {
+        const estado = await lerEstado(chatId);
+        if (estado.aguardando === "estoque_sku" && texto) {
           await definirEstado(chatId, null);
           const resposta = await respostaEstoqueSku(texto);
           await sendTelegramMessageComBotoes(TOKEN, chatId, resposta, MENU);
+        } else if (estado.aguardando === "periodo_inicio" && texto) {
+          const inicio = parseDataBR(texto);
+          if (!inicio) {
+            await sendTelegramMessageComBotoes(
+              TOKEN,
+              chatId,
+              "Data inválida. Digite no formato DD/MM/AAAA:"
+            );
+          } else {
+            await definirEstado(chatId, "periodo_fim", inicio);
+            await sendTelegramMessageComBotoes(
+              TOKEN,
+              chatId,
+              `Início: ${formatarDataBR(
+                inicio
+              )}. Agora digite a data final (DD/MM/AAAA):`
+            );
+          }
+        } else if (estado.aguardando === "periodo_fim" && texto) {
+          const fim = parseDataBR(texto);
+          const inicio = estado.dado;
+          if (!fim || !inicio) {
+            await definirEstado(chatId, null);
+            await sendTelegramMessageComBotoes(
+              TOKEN,
+              chatId,
+              "Data inválida. Use o menu para tentar novamente:",
+              MENU
+            );
+          } else {
+            await definirEstado(chatId, null);
+            const periodo = periodoDeDatas(inicio, fim);
+            const resposta = await respostaVendasResumo(
+              periodo,
+              `🗓️ Vendas de ${formatarDataBR(inicio)} até ${formatarDataBR(fim)}`
+            );
+            await sendTelegramMessageComBotoes(TOKEN, chatId, resposta, MENU);
+          }
         } else {
           await sendTelegramMessageComBotoes(TOKEN, chatId, "Use o menu abaixo:", MENU);
         }
