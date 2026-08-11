@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { listarEventos } from "@/lib/google/calendar";
-import CalendarioMes from "./calendario-mes";
+import { createAdminClient } from "@/lib/supabase/admin"; import { corGoogleMaisProxima } from "@/lib/google/cores-evento"; import CalendarioMes from "./calendario-mes";
 import { salvarTelegramChatIdAction } from "./actions";
 
 export const maxDuration = 30;
@@ -44,7 +44,7 @@ export default async function CalendarioPage({
       .eq("id", user.id)
       .single();
 
-  const conectadoGoogle = Boolean(perfil?.google_calendar_email);
+  const conectadoGoogle = Boolean(perfil?.google_calendar_email); const admin = createAdminClient(); const [{ data: contasMl }, { data: contasAmazon }, { data: canais }] = await Promise.all([admin.from("ml_accounts").select("id, nickname, apelido, cor").order("nickname"), admin.from("amazon_accounts").select("id, nickname, apelido, cor").order("nickname"), admin.from("canais_manuais").select("id, nome, apelido, cor").eq("ativo", true).order("nome")]); const contas = [...(contasMl ?? []).map((c) => ({ id: `ml:${c.id}`, nome: c.apelido || c.nickname, colorId: corGoogleMaisProxima(c.cor ?? "#64748b") })), ...(contasAmazon ?? []).map((c) => ({ id: `amazon:${c.id}`, nome: c.apelido || c.nickname, colorId: corGoogleMaisProxima(c.cor ?? "#64748b") })), ...(canais ?? []).map((c) => ({ id: `canal:${c.id}`, nome: c.apelido || c.nome, colorId: corGoogleMaisProxima(c.cor ?? "#64748b") }))];
 
   let eventos: Awaited<ReturnType<typeof listarEventos>> = [];
     let erroEventos: string | null = null;
@@ -142,7 +142,7 @@ const agora = new Date();
 
   {conectadoGoogle && (
             <div className="mb-6">
-              <CalendarioMes eventosIniciais={eventos} conectadoGoogle={conectadoGoogle} podeEditar={true} />
+              <CalendarioMes eventosIniciais={eventos} conectadoGoogle={conectadoGoogle} podeEditar={true} contas={contas} />
            </div>
          )}
 
