@@ -12,15 +12,15 @@ name: Lembretes do Calendario
 
 on:
   schedule:
-      - cron: "*/5 * * * *"
-        workflow_dispatch: {}
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
 
-        jobs:
-          chamar-cron:
-              runs-on: ubuntu-latest
-                  steps:
-                        - name: Chamar rota de lembretes
-                                run: |
-                                          curl -sS -X GET "${{ secrets.SITE_URL }}/api/cron/lembretes-calendario" \
-                                                      -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-                                                                  --fail
+jobs:
+  chamar-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar rota de lembretes
+        run: |
+          curl -sS -X GET "${{ secrets.SITE_URL }}/api/cron/lembretes-calendario" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail
