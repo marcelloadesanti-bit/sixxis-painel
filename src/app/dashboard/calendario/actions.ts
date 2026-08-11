@@ -22,7 +22,7 @@ export async function criarEventoAction(formData: FormData) {
     const horaInicio = String(formData.get("horaInicio") ?? "");
     const horaFim = String(formData.get("horaFim") ?? "");
     const convidadosRaw = String(formData.get("convidados") ?? "");
-    const descricao = String(formData.get("descricao") ?? "").trim();
+    const descricao = String(formData.get("descricao") ?? "").trim(); const corId = String(formData.get("corId") ?? "").trim();
 
   if (!titulo || !data || !horaInicio || !horaFim) {
         return { erro: "Preencha titulo, data e horarios." };
@@ -39,7 +39,7 @@ export async function criarEventoAction(formData: FormData) {
                 descricao: descricao || undefined,
                 inicio: `${data}T${horaInicio}:00-03:00`,
                 fim: `${data}T${horaFim}:00-03:00`,
-                convidados,
+                convidados, colorId: corId || undefined,
         });
   } catch (err) {
         console.error("Erro ao criar evento:", err);
