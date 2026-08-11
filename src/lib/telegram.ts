@@ -41,3 +41,47 @@ export async function getTelegramUpdates(): Promise<unknown> {
     }
     return res.json();
 }
+
+// --- Bot Gestor: variante parametrizada por token, com suporte a botoes ---
+// Bot separado do lembrete de calendario acima; usa TELEGRAM_BOT_GESTOR_TOKEN
+// (nunca o TELEGRAM_BOT_TOKEN, que pertence ao bot de lembretes).
+
+export type BotaoTelegram = { text: string; callback_data: string };
+
+export async function sendTelegramMessageComBotoes(
+  token: string,
+  chatId: string,
+  texto: string,
+  botoes?: BotaoTelegram[][]
+): Promise<void> {
+  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: texto,
+      parse_mode: "HTML",
+      ...(botoes ? { reply_markup: { inline_keyboard: botoes } } : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    const corpo = await res.text();
+    throw new Error(`Falha ao enviar mensagem via Telegram: ${res.status} ${corpo}`);
+  }
+}
+
+export async function responderTelegramCallback(
+  token: string,
+  callbackQueryId: string,
+  texto?: string
+): Promise<void> {
+  await fetch(`${TELEGRAM_API}/bot${token}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      ...(texto ? { text: texto } : {}),
+    }),
+  });
+}
