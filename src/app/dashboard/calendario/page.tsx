@@ -118,7 +118,7 @@ export default async function CalendarioPage({
                  Abra o Telegram, procure <span className="font-medium">@Sixxisagenda_bot</span>, envie qualquer
                  mensagem para ele e cole aqui o seu Chat ID.
                                </p>
-               <form action={salvarTelegramChatIdAction} className="flex flex-wrap items-center gap-2">
+               <form action={async (formData) => { await salvarTelegramChatIdAction(formData); }} className="flex flex-wrap items-center gap-2">
                  <input
                    name="chatId"
                    placeholder="ex: 8436986527"
