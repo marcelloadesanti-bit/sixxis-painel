@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { listarEventos } from "@/lib/google/calendar";
-import NovoEventoForm from "./novo-evento-form";
+import CalendarioMes from "./calendario-mes";
 import { salvarTelegramChatIdAction } from "./actions";
 
 export const maxDuration = 30;
@@ -51,9 +51,13 @@ export default async function CalendarioPage({
 
   if (conectadoGoogle) {
         try {
-                const agora = new Date();
-                const em30Dias = new Date(agora.getTime() + 30 * 24 * 60 * 60 * 1000);
-                eventos = await listarEventos(user.id, agora.toISOString(), em30Dias.toISOString());
+const agora = new Date();
+            			const primeiroDiaMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
+            			const inicioGrade = new Date(primeiroDiaMes);
+            			inicioGrade.setDate(inicioGrade.getDate() - primeiroDiaMes.getDay());
+            			const fimGrade = new Date(inicioGrade);
+            			fimGrade.setDate(fimGrade.getDate() + 42);
+            			eventos = await listarEventos(user.id, inicioGrade.toISOString(), fimGrade.toISOString());
         } catch (err) {
                 console.error("Erro ao listar eventos do Calendario:", err);
                 erroEventos = "Falha ao carregar eventos do Google Calendar.";
@@ -138,7 +142,7 @@ export default async function CalendarioPage({
 
   {conectadoGoogle && (
             <div className="mb-6">
-              <NovoEventoForm />
+              <CalendarioMes eventosIniciais={eventos} conectadoGoogle={conectadoGoogle} podeEditar={true} />
            </div>
          )}
 
