@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { criarEvento } from "@/lib/google/calendar";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Cria um evento no Google Calendar do usuario logado, opcionalmente
 // convidando outros Gmails (compartilhamento nativo do Calendar -- os
@@ -47,4 +48,37 @@ export async function criarEventoAction(formData: FormData) {
 
   revalidatePath("/dashboard/calendario");
     return { ok: true };
+}
+
+
+// Salva o chat_id do Telegram do usuario logado (obtido enviando uma
+// mensagem para o bot @Sixxisagenda_bot e conferindo o retorno do
+// getUpdates) -- usado pelo cron de lembretes para saber pra quem enviar.
+export async function salvarTelegramChatIdAction(formData: FormData) {
+      const supabase = await createClient();
+      const {
+              data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+              return { erro: "Nao autenticado." };
+      }
+
+  const chatId = String(formData.get("chatId") ?? "").trim();
+      if (!chatId || !/^-?\d+$/.test(chatId)) {
+              return { erro: "Chat ID invalido. Deve conter apenas numeros." };
+      }
+
+  const admin = createAdminClient();
+      const { error } = await admin
+        .from("profiles")
+        .update({ telegram_chat_id: chatId })
+        .eq("id", user.id);
+
+  if (error) {
+          console.error("Erro ao salvar chat_id do Telegram:", error);
+          return { erro: "Falha ao salvar o Chat ID." };
+  }
+
+  revalidatePath("/dashboard/calendario");
+      return { ok: true };
 }
