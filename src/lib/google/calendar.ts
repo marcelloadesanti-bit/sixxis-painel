@@ -47,7 +47,7 @@ export type EventoCalendario = {
     fim: string;
     diaTodo: boolean;
     convidados: string[];
-    link: string | null;
+    link: string | null; cor: string | null;
 };
 
 type EventoGoogleRaw = {
@@ -57,7 +57,7 @@ type EventoGoogleRaw = {
     htmlLink?: string;
     start?: { date?: string; dateTime?: string };
     end?: { date?: string; dateTime?: string };
-    attendees?: { email?: string }[];
+    attendees?: { email?: string }[]; colorId?: string;
 };
 
 function converterEvento(raw: EventoGoogleRaw): EventoCalendario {
@@ -69,7 +69,7 @@ function converterEvento(raw: EventoGoogleRaw): EventoCalendario {
           fim: raw.end?.dateTime ?? raw.end?.date ?? "",
           diaTodo: !raw.start?.dateTime,
           convidados: (raw.attendees ?? []).map((a) => a.email).filter((e): e is string => Boolean(e)),
-      link: raw.htmlLink ?? null,
+      link: raw.htmlLink ?? null, cor: raw.colorId ?? null,
         };
 }
 
@@ -109,7 +109,7 @@ export async function criarEvento(
           descricao?: string;
           inicio: string;
           fim: string;
-          convidados?: string[];
+          convidados?: string[]; colorId?: string;
     }
   ): Promise<EventoCalendario> {
     const accessToken = await getValidGoogleAccessToken(profileId);
@@ -118,7 +118,7 @@ export async function criarEvento(
           description: evento.descricao ?? undefined,
           start: { dateTime: evento.inicio, timeZone: "America/Sao_Paulo" },
           end: { dateTime: evento.fim, timeZone: "America/Sao_Paulo" },
-          attendees: (evento.convidados ?? []).map((email) => ({ email })),
+          attendees: (evento.convidados ?? []).map((email) => ({ email })), colorId: evento.colorId || undefined,
     };
 
   const params = new URLSearchParams({ sendUpdates: "all" });
