@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
   try {
         const eventos = await listarEventos(
                 user.id,
-                new Date(inicio),
-                new Date(fim)
+                inicio,
+                fim
               );
         return NextResponse.json({ eventos });
   } catch (error) {
