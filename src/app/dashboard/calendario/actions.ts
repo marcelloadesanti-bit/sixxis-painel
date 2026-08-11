@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { criarEvento } from "@/lib/google/calendar";
+import { criarEvento, excluirEvento } from "@/lib/google/calendar";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // Cria um evento no Google Calendar do usuario logado, opcionalmente
@@ -81,4 +81,25 @@ export async function salvarTelegramChatIdAction(formData: FormData) {
 
   revalidatePath("/dashboard/calendario");
       return { ok: true };
+}
+
+// Exclui/cancela um evento do Google Calendar do usuario logado.
+export async function excluirEventoAction(eventoId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { erro: "Nao autenticado." };
+  }
+
+  try {
+    await excluirEvento(user.id, eventoId);
+  } catch (err) {
+    console.error("Erro ao excluir evento:", err);
+    return { erro: "Falha ao excluir evento no Google Calendar." };
+  }
+
+  revalidatePath("/dashboard/calendario");
+  return { ok: true };
 }
