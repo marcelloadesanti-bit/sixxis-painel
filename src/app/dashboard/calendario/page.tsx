@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { listarEventos } from "@/lib/google/calendar";
 import { createAdminClient } from "@/lib/supabase/admin"; import { corGoogleMaisProxima } from "@/lib/google/cores-evento"; import CalendarioMes from "./calendario-mes";
-import { salvarTelegramChatIdAction } from "./actions";
+import { salvarTelegramChatIdAction, excluirEventoAction } from "./actions";
 
 export const maxDuration = 30;
 
@@ -156,13 +156,23 @@ const agora = new Date();
                           ) : (
                                     <ul className="divide-y divide-gray-200 rounded border border-gray-200 bg-white dark:divide-gray-700 dark:border-gray-700 dark:bg-gray-800">
   {eventos.map((evento) => (
-                <li key={evento.id} className="p-3 text-sm">
-                  <p className="font-medium text-gray-800 dark:text-gray-100">{evento.titulo}</p>
-                 <p className="text-xs text-gray-400">
-   {formatarDataHora(evento.inicio, evento.diaTodo)}
-   {evento.convidados.length > 0 ? ` · Convidados: ${evento.convidados.join(", ")}` : ""}
-                 </p>
-               </li>
+                <li key={evento.id} className="flex items-start justify-between gap-2 p-3 text-sm">
+              <div>
+                <p className="font-medium text-gray-800 dark:text-gray-100">{evento.titulo}</p>
+                <p className="text-xs text-gray-400">
+                  {formatarDataHora(evento.inicio, evento.diaTodo)}
+                  {evento.convidados.length > 0 ? ` · Convidados: ${evento.convidados.join(", ")}` : ""}
+                </p>
+              </div>
+              <form action={async () => { "use server"; await excluirEventoAction(evento.id); }}>
+                <button
+                  type="submit"
+                  className="shrink-0 rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                >
+                  Excluir
+                </button>
+              </form>
+            </li>
              ))}
            </ul>
          )}
