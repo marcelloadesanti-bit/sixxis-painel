@@ -17,6 +17,7 @@ import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
 import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
 import MetricasVendasView from "./metricas-vendas-view";
+import { ShoppingCart, DollarSign, XCircle, RotateCcw } from "lucide-react";
 
 // 27/07/2026: com as novas metricas por conta (visitas, cancelados,
 // devolucoes), o carregamento da pagina passou a fazer bem mais chamadas a
@@ -546,27 +547,55 @@ export default async function VendasPage({
       </p>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Pedidos pagos no período</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalPedidos)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Pedidos pagos no período</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalPedidos)}</p>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-sixxis-blue)]">
+              <ShoppingCart className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Faturamento no período</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarMoeda(totalValor, moeda)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Faturamento no período</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarMoeda(totalValor, moeda)}</p>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-sixxis-navy)]">
+              <DollarSign className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Cancelados no período</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalCancelados)}</p>
-          {valorCancelado > 0 && (
-            <p className="text-xs text-gray-400">{formatarMoeda(valorCancelado, moeda)}</p>
-          )}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Cancelados no período</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalCancelados)}</p>
+              {valorCancelado > 0 && (
+                <p className="text-xs text-gray-400">{formatarMoeda(valorCancelado, moeda)}</p>
+              )}
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-red-500">
+              <XCircle className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Devolvidos no período</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalDevolvidos)}</p>
-          {valorDevolvido > 0 && (
-            <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
-          )}
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Devolvidos no período</p>
+              <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalDevolvidos)}</p>
+              {valorDevolvido > 0 && (
+                <p className="text-xs text-gray-400">{formatarMoeda(valorDevolvido, moeda)}</p>
+              )}
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-500">
+              <RotateCcw className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
       </div>
 
