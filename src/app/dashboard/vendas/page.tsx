@@ -137,11 +137,24 @@ export default async function VendasPage({
           buscarSeguro(() => getCanceladosClassificados(accessToken, conta.ml_user_id, periodo)),
           buscarSeguro(() => getTotalVisitas(accessToken, conta.ml_user_id, de, ate)),
         ]);
+        // Pedidos extraviados/danificados no transporte (Full) sao
+        // reembolsados pelo ML ao VENDEDOR, entao contam como venda valida
+        // (decisao do usuario em 13/08/2026) -- somamos aqui para que
+        // "Pedidos pagos"/"Faturamento" e o card "Por conta" reflitam isso.
+        const extravio = canceladosClassificados?.extraviadosCompensados;
+        const vendasAjustadas =
+          vendas && extravio && extravio.quantidade > 0
+            ? {
+                ...vendas,
+                totalPedidos: vendas.totalPedidos + extravio.quantidade,
+                valorSomado: vendas.valorSomado + extravio.valor,
+              }
+            : vendas;
         return {
           conta,
           nome,
           cor,
-          vendas,
+          vendas: vendasAjustadas,
           canceladosClassificados,
           visitas,
           accessToken,
