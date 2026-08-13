@@ -3,8 +3,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-sixxis-navy: #1f3864;
-  --color-sixxis-blue: #2e5395;
+  --color-sixxis-navy: #085041;
+  --color-sixxis-blue: #0F6E56;
 }
 
 body {
