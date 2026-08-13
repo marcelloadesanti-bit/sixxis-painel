@@ -323,8 +323,10 @@ export async function getTotaisPorStatus(
 export type ClassificacaoCancelados = {
   canceladosPuros: { quantidade: number; valor: number };
   devolvidos: { quantidade: number; valor: number };
+  extraviadosCompensados: { quantidade: number; valor: number };
   canceladosPedidos: { id: number; valor: number }[];
   devolvidosPedidos: { id: number; valor: number }[];
+  extraviadosCompensadosPedidos: { id: number; valor: number }[];
   moeda: string | null;
 };
 
@@ -372,23 +374,42 @@ export async function getCanceladosClassificados(
 
   let canceladosPuros = { quantidade: 0, valor: 0 };
   let devolvidos = { quantidade: 0, valor: 0 };
+  let extraviadosCompensados = { quantidade: 0, valor: 0 };
   const canceladosPedidos: { id: number; valor: number }[] = [];
   const devolvidosPedidos: { id: number; valor: number }[] = [];
+  const extraviadosCompensadosPedidos: { id: number; valor: number }[] = [];
+
+  // Substatus de envio "not_delivered" que representam extravio/avaria em
+  // transporte (Mercado Envios / Full): o produto nao volta fisicamente e o
+  // Mercado Livre reembolsa o VENDEDOR pelo prejuizo (mensagem padrao do ML:
+  // "reembolsamos os custos da venda na sua conta"). Diferente de uma
+  // devolucao real (substatus "returned"), aqui o valor da venda fica com o
+  // vendedor -- por isso e tratado como venda valida, nao como devolucao
+  // (confirmado com o usuario em 13/08/2026, caso do pedido #2000017840088248).
+  const SUBSTATUS_EXTRAVIO_COMPENSADO = new Set(["damaged", "stolen", "lost"]);
 
   const classificacoes = await Promise.all(
     pedidos.map(async (p) => {
       try {
         const envio = await getEnvioPedido(accessToken, p.id);
         const foiDevolvido = envio?.status === "not_delivered";
-        return { id: p.id, valor: p.valor, foiDevolvido };
+        const foiExtraviadoCompensado =
+          foiDevolvido && !!envio?.substatus && SUBSTATUS_EXTRAVIO_COMPENSADO.has(envio.substatus);
+        return { id: p.id, valor: p.valor, foiDevolvido, foiExtraviadoCompensado };
       } catch {
-        return { id: p.id, valor: p.valor, foiDevolvido: false };
+        return { id: p.id, valor: p.valor, foiDevolvido: false, foiExtraviadoCompensado: false };
       }
     })
   );
 
   for (const c of classificacoes) {
-    if (c.foiDevolvido) {
+    if (c.foiExtraviadoCompensado) {
+      extraviadosCompensados = {
+        quantidade: extraviadosCompensados.quantidade + 1,
+        valor: extraviadosCompensados.valor + c.valor,
+      };
+      extraviadosCompensadosPedidos.push({ id: c.id, valor: c.valor });
+    } else if (c.foiDevolvido) {
       devolvidos = { quantidade: devolvidos.quantidade + 1, valor: devolvidos.valor + c.valor };
       devolvidosPedidos.push({ id: c.id, valor: c.valor });
     } else {
@@ -397,7 +418,15 @@ export async function getCanceladosClassificados(
     }
   }
 
-  return { canceladosPuros, devolvidos, canceladosPedidos, devolvidosPedidos, moeda };
+  return {
+    canceladosPuros,
+    devolvidos,
+    extraviadosCompensados,
+    canceladosPedidos,
+    devolvidosPedidos,
+    extraviadosCompensadosPedidos,
+    moeda,
+  };
 }
 
 type PedidoApiCompleto = PedidoApi & {
