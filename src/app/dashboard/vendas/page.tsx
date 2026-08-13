@@ -18,6 +18,7 @@ import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
 import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
 import MetricasVendasView from "./metricas-vendas-view";
 import { ShoppingCart, DollarSign, XCircle, RotateCcw } from "lucide-react";
+import FunilVendas from "./funil-vendas";
 
 // 27/07/2026: com as novas metricas por conta (visitas, cancelados,
 // devolucoes), o carregamento da pagina passou a fazer bem mais chamadas a
@@ -178,6 +179,11 @@ export default async function VendasPage({
   const totalValor = resultados.reduce((soma, r) => soma + (r.vendas?.valorSomado ?? 0), 0);
   const algumCortado = resultados.some((r) => r.vendas?.cortado);
   const moeda = resultados.find((r) => r.vendas?.moeda)?.vendas?.moeda ?? "BRL";
+
+  const totalVisitas = resultados.reduce((soma, r) => soma + (r.visitas ?? 0), 0);
+  const temVisitas = resultados.some((r) => r.visitas !== null);
+  const corFunil = filtroConta === "todas" ? "var(--color-sixxis-blue)" : (resultados[0]?.cor ?? COR_PADRAO);
+  const rotuloFunil = filtroConta === "todas" ? "Consolidado (todas as contas)" : (resultados[0]?.nome ?? "");
 
   const totalCancelados = resultados.reduce(
     (soma, r) => soma + (r.canceladosClassificados?.canceladosPuros.quantidade ?? 0), 0
@@ -597,6 +603,18 @@ export default async function VendasPage({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mb-8">
+        <FunilVendas
+          visitas={totalVisitas}
+          temVisitas={temVisitas}
+          vendasQtd={totalPedidos}
+          vendasValor={totalValor}
+          moeda={moeda}
+          cor={corFunil}
+          rotulo={rotuloFunil}
+        />
       </div>
 
       <div className="mb-8">
