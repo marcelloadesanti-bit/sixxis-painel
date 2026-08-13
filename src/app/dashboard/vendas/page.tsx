@@ -16,7 +16,6 @@ import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { COR_PADRAO, nomeConta } from "@/lib/account-colors";
 import VendasPorConta, { type ContaVendas } from "./vendas-por-conta";
 import ExtratoLinha, { type LinhaExtrato } from "./extrato-linha";
-import MetricasVendasView from "./metricas-vendas-view";
 import { ShoppingCart, DollarSign, XCircle, RotateCcw } from "lucide-react";
 import FunilVendas from "./funil-vendas";
 
@@ -196,6 +195,23 @@ export default async function VendasPage({
   );
   const valorDevolvido = resultados.reduce(
     (soma, r) => soma + (r.canceladosClassificados?.devolvidos.valor ?? 0), 0
+  );
+
+  const pedidosCancelados = resultados.flatMap((r) =>
+    (r.canceladosClassificados?.canceladosPedidos ?? []).map((p) => ({
+      id: p.id,
+      valor: p.valor,
+      cor: r.cor,
+      nome: r.nome,
+    }))
+  );
+  const pedidosDevolvidos = resultados.flatMap((r) =>
+    (r.canceladosClassificados?.devolvidosPedidos ?? []).map((p) => ({
+      id: p.id,
+      valor: p.valor,
+      cor: r.cor,
+      nome: r.nome,
+    }))
   );
 
   // --- Formatacao por conta (texto ja pronto, evita mismatch de hidratacao) ---
@@ -575,8 +591,8 @@ export default async function VendasPage({
             </div>
           </div>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between">
+        <details className="group rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <summary className="flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
             <div>
               <p className="text-xs uppercase text-gray-400">Cancelados no período</p>
               <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalCancelados)}</p>
@@ -587,10 +603,25 @@ export default async function VendasPage({
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-red-500">
               <XCircle className="h-5 w-5 text-white" />
             </div>
+          </summary>
+          <div className="mt-3 max-h-56 space-y-1.5 overflow-y-auto border-t border-gray-100 pt-3 text-xs dark:border-gray-700">
+            {pedidosCancelados.length === 0 ? (
+              <p className="text-gray-400">Nenhum pedido cancelado neste período.</p>
+            ) : (
+              pedidosCancelados.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.cor }} />
+                    {p.nome} · #{p.id}
+                  </span>
+                  <span className="shrink-0 text-gray-400">{formatarMoeda(p.valor, moeda)}</span>
+                </div>
+              ))
+            )}
           </div>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between">
+        </details>
+        <details className="group rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <summary className="flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden">
             <div>
               <p className="text-xs uppercase text-gray-400">Devolvidos no período</p>
               <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{formatarNumero(totalDevolvidos)}</p>
@@ -601,8 +632,23 @@ export default async function VendasPage({
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-500">
               <RotateCcw className="h-5 w-5 text-white" />
             </div>
+          </summary>
+          <div className="mt-3 max-h-56 space-y-1.5 overflow-y-auto border-t border-gray-100 pt-3 text-xs dark:border-gray-700">
+            {pedidosDevolvidos.length === 0 ? (
+              <p className="text-gray-400">Nenhum pedido devolvido neste período.</p>
+            ) : (
+              pedidosDevolvidos.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.cor }} />
+                    {p.nome} · #{p.id}
+                  </span>
+                  <span className="shrink-0 text-gray-400">{formatarMoeda(p.valor, moeda)}</span>
+                </div>
+              ))
+            )}
           </div>
-        </div>
+        </details>
       </div>
 
       <div className="mb-8">
@@ -622,26 +668,14 @@ export default async function VendasPage({
         <VendasPorConta contas={contasFormatadas} />
       </div>
 
-      <div className="mb-8">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Métricas</h2>
-          <Link
-            href="/dashboard/vendas/metricas"
-            className="text-xs text-[var(--color-sixxis-blue)] underline"
-          >
-            Ver mais →
-          </Link>
-        </div>
-        <MetricasVendasView
-          pedidosHorario={pedidosHorario}
-          contas={contasFiltroHorario}
-          vendasPorEstado={vendasPorEstado}
-          estadoAmostraParcial={estadoAmostraParcial}
-          estadoResolvidoTotal={estadoResolvidoTotal}
-          estadoTotalPeriodo={todosPedidos.length}
-          maisVendidosPorSku={maisVendidosPorSku}
-          porEstadoDetalhado={porEstadoDetalhado}
-        />
+      <div className="mb-8 flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Métricas detalhadas</h2>
+        <Link
+          href="/dashboard/vendas/metricas"
+          className="text-xs text-[var(--color-sixxis-blue)] underline"
+        >
+          Ver métricas completas →
+        </Link>
       </div>
 
       {algumCortado && (
@@ -651,8 +685,12 @@ export default async function VendasPage({
         </p>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">Extrato de pedidos</h2>
-      {todosPedidos.length === 0 ? (
+      <details className="mb-8 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
+        Extrato de pedidos
+      </summary>
+      <div className="mt-3">
+            {todosPedidos.length === 0 ? (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700">
           Nenhum pedido pago encontrado neste período.
         </div>
@@ -697,6 +735,8 @@ export default async function VendasPage({
           )}
         </>
       )}
-    </main>
+
+      </div>
+    </details>    </main>
   );
 }
