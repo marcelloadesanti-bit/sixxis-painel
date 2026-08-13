@@ -1,10 +1,12 @@
 "use client";
 
+
 import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -16,8 +18,10 @@ import {
 } from "recharts";
 import VendasAoVivo from "./vendas-ao-vivo";
 
+
 type PontoVendas = { data: string; quantidade: number; valor: number };
 type PontoVisitas = { data: string; total: number };
+
 
 export type ContaResumo = {
   id: string;
@@ -25,12 +29,15 @@ export type ContaResumo = {
   cor: string;
 };
 
+
 export type SerieConta = {
   atual: { vendas: PontoVendas[]; visitas: PontoVisitas[] };
   anterior: { vendas: PontoVendas[]; visitas: PontoVisitas[] };
 };
 
+
 type MetricaKey = "vendasBrutas" | "quantidadeVendas" | "visualizacoes" | "conversao";
+
 
 const METRICAS: { key: MetricaKey; label: string }[] = [
   { key: "vendasBrutas", label: "Vendas brutas" },
@@ -38,6 +45,7 @@ const METRICAS: { key: MetricaKey; label: string }[] = [
   { key: "visualizacoes", label: "Visualizações" },
   { key: "conversao", label: "Conversão" },
 ];
+
 
 // Gera a lista de datas (YYYY-MM-DD) entre de/ate, tratando as strings como
 // datas de calendario "puras" (sem hora/timezone), via Date.UTC - evitando o
@@ -56,10 +64,12 @@ function listarDatas(de: string, ate: string): string[] {
   return datas;
 }
 
+
 function formatarDataCurta(iso: string): string {
   const [, m, d] = iso.split("-");
   return `${d}/${m}`;
 }
+
 
 function valorMetricaDoDia(
   metrica: MetricaKey,
@@ -78,6 +88,7 @@ function valorMetricaDoDia(
   }
 }
 
+
 function formatarValor(metrica: MetricaKey, valor: number, moeda: string): string {
   if (metrica === "vendasBrutas") {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: moeda }).format(valor);
@@ -87,6 +98,7 @@ function formatarValor(metrica: MetricaKey, valor: number, moeda: string): strin
   }
   return new Intl.NumberFormat("pt-BR").format(Math.round(valor));
 }
+
 
 export default function ResumoInterativo({
   cards,
@@ -111,11 +123,13 @@ export default function ResumoInterativo({
   const [metrica, setMetrica] = useState<MetricaKey>("vendasBrutas");
   const [contaSelecionada, setContaSelecionada] = useState<string>("todas");
 
+
   const datasAtual = useMemo(() => listarDatas(periodo.de, periodo.ate), [periodo.de, periodo.ate]);
   const datasAnterior = useMemo(
     () => listarDatas(periodo.deAnterior, periodo.ateAnterior),
     [periodo.deAnterior, periodo.ateAnterior]
   );
+
 
   const contasParaSomar = contaSelecionada === "todas" ? contas : contas.filter((c) => c.id === contaSelecionada);
   // Quando "Consolidado" esta selecionado e ha mais de uma conta, o grafico
@@ -126,6 +140,7 @@ export default function ResumoInterativo({
   // disponivel selecionando uma conta especifica no filtro.
   const modoMultiConta = contaSelecionada === "todas" && contas.length > 1;
 
+
   // A linha usa a cor da conta selecionada. No modo "Consolidado" com uma
   // unica conta cadastrada, usa a cor dela mesma (ex: SIXXIS = rosa).
   const corLinha =
@@ -134,6 +149,7 @@ export default function ResumoInterativo({
       : contas.length === 1
         ? contas[0].cor
         : "var(--color-sixxis-navy)";
+
 
   const dadosGrafico = useMemo(() => {
     if (modoMultiConta) {
@@ -149,19 +165,24 @@ export default function ResumoInterativo({
       });
     }
 
+
     return datasAtual.map((diaAtual, i) => {
       const diaAnterior = datasAnterior[i];
 
+
       let valorAtual = 0;
       let valorAnterior = 0;
+
 
       for (const conta of contasParaSomar) {
         const serie = seriesPorConta[conta.id];
         if (!serie) continue;
 
+
         const vendaAtualDia = serie.atual.vendas.find((v) => v.data === diaAtual);
         const visitaAtualDia = serie.atual.visitas.find((v) => v.data === diaAtual)?.total ?? 0;
         valorAtual += valorMetricaDoDia(metrica, vendaAtualDia, visitaAtualDia);
+
 
         if (diaAnterior) {
           const vendaAnteriorDia = serie.anterior.vendas.find((v) => v.data === diaAnterior);
@@ -169,6 +190,7 @@ export default function ResumoInterativo({
           valorAnterior += valorMetricaDoDia(metrica, vendaAnteriorDia, visitaAnteriorDia);
         }
       }
+
 
       return {
         dia: formatarDataCurta(diaAtual),
@@ -178,9 +200,11 @@ export default function ResumoInterativo({
     });
   }, [datasAtual, datasAnterior, contasParaSomar, seriesPorConta, metrica, modoMultiConta, contas]);
 
+
   const semDados = modoMultiConta
     ? dadosGrafico.every((d) => contas.every((c) => (d[c.id] as number) === 0))
     : dadosGrafico.every((d) => (d as { atual: number; anterior: number }).atual === 0 && (d as { atual: number; anterior: number }).anterior === 0);
+
 
   return (
     <div>
@@ -216,6 +240,7 @@ export default function ResumoInterativo({
         })}
       </div>
 
+
       <div className="mb-8 rounded border border-gray-200 bg-white p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-gray-700">
@@ -237,11 +262,18 @@ export default function ResumoInterativo({
           )}
         </div>
 
+
         {semDados ? (
           <p className="py-12 text-center text-sm text-gray-400">Sem dados para o período selecionado.</p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={dadosGrafico}>
+              <defs>
+                <linearGradient id="gradienteResumoAtual" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={corLinha} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={corLinha} stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="dia" tick={{ fontSize: 11 }} />
               <YAxis
@@ -270,12 +302,13 @@ export default function ResumoInterativo({
                 ))
               ) : (
                 <>
-                  <Line
+                  <Area
                     type="monotone"
                     dataKey="atual"
                     name="Atual"
                     stroke={corLinha}
                     strokeWidth={2}
+                    fill="url(#gradienteResumoAtual)"
                     dot={false}
                   />
                   <Line
@@ -295,7 +328,9 @@ export default function ResumoInterativo({
         )}
       </div>
 
+
       <VendasAoVivo />
+
 
       {pizza.length > 0 && (
         <div className="mb-8 rounded border border-gray-200 bg-white p-4">
@@ -346,3 +381,7 @@ export default function ResumoInterativo({
     </div>
   );
 }
+
+
+
+
