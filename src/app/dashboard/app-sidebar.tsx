@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,7 +16,9 @@ import {
 import { IconeSecao } from "@/lib/icone-secao";
 import { useSidebar } from "./sidebar-context";
 
+
 type SubItemMenu = { href: string; label: string };
+
 
 type ItemMenu = {
   href: string;
@@ -24,6 +27,7 @@ type ItemMenu = {
   grupo?: CodigoGrupoSidebar;
   subitens?: SubItemMenu[];
 };
+
 
 // Icone de "colapsar/expandir barra lateral", mesmo estilo do botao usado
 // pelo Claude (retangulo com uma divisao vertical perto da borda esquerda).
@@ -36,6 +40,7 @@ function IconeAlternar() {
   );
 }
 
+
 export default function AppSidebar({
   isAdmin,
   permissoes,
@@ -45,6 +50,7 @@ export default function AppSidebar({
 }) {
   const { aberto, alternar } = useSidebar();
   const pathname = usePathname();
+
 
   const itensSecoes: ItemMenu[] = secoesVisiveis(isAdmin, permissoes).map((s) => {
     const subitens = (s.subsecoes ?? [])
@@ -58,6 +64,7 @@ export default function AppSidebar({
       subitens: subitens.length > 0 ? subitens : undefined,
     };
   });
+
 
   // Mesma logica de subitens de itensSecoes -- secoes administrativas (ex:
   // SIGE) tambem podem ter subsecoes navegaveis (Relatorios / Fechamento
@@ -77,7 +84,9 @@ export default function AppSidebar({
     };
   });
 
+
   const itens: ItemMenu[] = [...itensSecoes, ...itensAdmin];
+
 
   // Metas & Comissao nunca fica concedivel via permissoes JSONB (ver
   // exigirMaster em lib/permissoes-guard.ts) -- por isso entra direto aqui,
@@ -86,8 +95,10 @@ export default function AppSidebar({
     itens.push({ href: "/dashboard/sige/comissao", label: "Metas & Comissão", icon: "Target", grupo: "gestao" });
   }
 
+
   const ativo = (href: string) =>
     href === "/dashboard" ? pathname === "/dashboard" : pathname?.startsWith(href);
+
 
   // Para itens com submenu, destaca apenas o sub-item mais especifico (maior
   // prefixo) que bate com a rota atual, evitando que "Resumo" e "Editar
@@ -100,14 +111,17 @@ export default function AppSidebar({
     return maisEspecifico.href === sub.href;
   };
 
+
   // Grupo que contem a secao ativa agora -- usado so como valor inicial do
   // estado de grupos abertos; a partir dai o usuario controla livremente
   // quais grupos ficam abertos/fechados.
   const grupoAtivoInicial = itens.find((item) => item.grupo && ativo(item.href))?.grupo;
 
+
   const [gruposAbertos, setGruposAbertos] = useState<Set<CodigoGrupoSidebar>>(
     () => new Set(grupoAtivoInicial ? [grupoAtivoInicial] : [])
   );
+
 
   function alternarGrupo(codigo: CodigoGrupoSidebar) {
     setGruposAbertos((atual) => {
@@ -117,6 +131,7 @@ export default function AppSidebar({
       return novo;
     });
   }
+
 
   // Itens sem grupo (Resumo) ficam soltos no topo; os demais sao agrupados
   // por CodigoGrupoSidebar e renderizados na ordem de GRUPOS_SIDEBAR.
@@ -129,24 +144,24 @@ export default function AppSidebar({
     itensPorGrupo.set(item.grupo, lista);
   }
 
+
   function renderItem(item: ItemMenu) {
     return (
       <li key={item.href} className="w-full">
         {item.subitens ? (
           <>
-            <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-gray-800">
+            <div className="flex items-center gap-3 px-3 py-2 text-sm font-semibold text-teal-100">
               <IconeSecao chave={item.icon} className="h-[18px] w-[18px] shrink-0" />
               {item.label}
             </div>
-            <ul className="ml-4 flex flex-col gap-0.5 border-l border-gray-200 pl-4">
+            <ul className="ml-4 flex flex-col gap-0.5 border-l border-teal-800 pl-4">
               {item.subitens.map((sub) => (
                 <li key={sub.href}>
                   <Link
                     href={sub.href}
-                    className={`block rounded px-3 py-1.5 text-sm hover:bg-gray-50 ${
+                    className={`block rounded px-3 py-1.5 text-sm hover:bg-teal-900/60 ${
                       subitemAtivo(sub, item.subitens!)
-                        ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]"
-                        : "text-gray-600"
+                        ? "bg-teal-600 font-medium text-white" : "text-teal-300"
                     }`}
                   >
                     {sub.label}
@@ -158,8 +173,8 @@ export default function AppSidebar({
         ) : (
           <Link
             href={item.href}
-            className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-gray-50 ${
-              ativo(item.href) ? "bg-gray-100 font-medium text-[var(--color-sixxis-navy)]" : "text-gray-700"
+            className={`flex items-center gap-3 rounded px-3 py-2 text-sm hover:bg-teal-900/60 ${
+              ativo(item.href) ? "bg-teal-600 font-medium text-white" : "text-teal-200"
             }`}
           >
             <IconeSecao chave={item.icon} className="h-[18px] w-[18px] shrink-0" />
@@ -170,27 +185,29 @@ export default function AppSidebar({
     );
   }
 
+
   return (
     <nav
-      className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-gray-200 bg-white transition-[width] duration-150 ${
+      className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-teal-900 bg-teal-950 transition-[width] duration-150 ${
         aberto ? "w-64" : "w-16"
       }`}
     >
       <div
-        className={`flex h-16 shrink-0 items-center border-b border-gray-200 ${
+        className={`flex h-16 shrink-0 items-center border-b border-teal-900 ${
           aberto ? "justify-between px-4" : "justify-center"
         }`}
       >
-        {aberto && <p className="truncate text-sm font-semibold text-gray-800">Painel Sixxis</p>}
+        {aberto && <p className="truncate text-sm font-semibold text-white">Painel Sixxis</p>}
         <button
           onClick={alternar}
           title={aberto ? "Fechar barra lateral" : "Abrir barra lateral"}
           aria-label={aberto ? "Fechar barra lateral" : "Abrir barra lateral"}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-teal-200 hover:bg-teal-900/60"
         >
           <IconeAlternar />
         </button>
       </div>
+
 
       {!aberto ? (
         <ul className="flex flex-1 flex-col items-center gap-1 overflow-y-auto px-2 py-3">
@@ -199,8 +216,8 @@ export default function AppSidebar({
               <Link
                 href={item.href}
                 title={item.label}
-                className={`flex h-10 w-10 items-center justify-center rounded hover:bg-gray-100 ${
-                  ativo(item.href) ? "bg-[var(--color-sixxis-navy)]/10 text-[var(--color-sixxis-navy)]" : "text-gray-500"
+                className={`flex h-10 w-10 items-center justify-center rounded hover:bg-teal-900/60 ${
+                  ativo(item.href) ? "bg-teal-600 text-white" : "text-teal-200"
                 }`}
               >
                 <IconeSecao chave={item.icon} className="h-5 w-5" />
@@ -212,6 +229,7 @@ export default function AppSidebar({
         <ul className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
           {itensSoltos.map(renderItem)}
 
+
           {GRUPOS_SIDEBAR.filter((g) => (itensPorGrupo.get(g.codigo)?.length ?? 0) > 0).map((grupo) => {
             const itensDoGrupo = itensPorGrupo.get(grupo.codigo)!;
             const grupoAberto = gruposAbertos.has(grupo.codigo);
@@ -220,7 +238,7 @@ export default function AppSidebar({
                 <button
                   type="button"
                   onClick={() => alternarGrupo(grupo.codigo)}
-                  className="flex w-full items-center justify-between rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600"
+                  className="flex w-full items-center justify-between rounded px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-teal-400 hover:text-teal-100"
                 >
                   {grupo.label}
                   {grupoAberto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -234,3 +252,8 @@ export default function AppSidebar({
     </nav>
   );
 }
+
+
+
+
+
