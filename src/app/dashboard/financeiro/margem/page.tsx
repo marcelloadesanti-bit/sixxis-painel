@@ -8,6 +8,7 @@ import { montarLinhasMargem, consolidarMargem, montarRankingPorSku, type LinhaMa
 import { exigirAcessoSecao } from "@/lib/permissoes-guard";
 import { nomeConta } from "@/lib/account-colors";
 import MargemExtratoLinha, { type LinhaMargemExtrato } from "./extrato-linha";
+import { DollarSign, Receipt, TrendingUp, Percent } from "lucide-react";
 
 // Financeiro > Margem Bruta -- roda em paralelo a Vendas, reaproveitando
 // exatamente os mesmos dados (getVendas ja traz taxaPlataforma de graca) e o
@@ -250,46 +251,84 @@ export default async function MargemBrutaPage({
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Venda bruta</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {formatarMoeda(consolidado.vendaBruta, consolidado.moeda)}
-          </p>
-          <p className="text-xs text-gray-400">{consolidado.totalPedidos} pedidos</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Venda bruta</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {formatarMoeda(consolidado.vendaBruta, consolidado.moeda)}
+              </p>
+              <p className="text-xs text-gray-400">{consolidado.totalPedidos} pedidos</p>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-sixxis-blue)]">
+              <DollarSign className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Custos (comissão + frete)</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {formatarMoeda(consolidado.taxaPlataforma + consolidado.custoFrete, consolidado.moeda)}
-          </p>
-          <p className="text-xs text-gray-400">
-            Comissão {formatarMoeda(consolidado.taxaPlataforma, consolidado.moeda)} · Frete{" "}
-            {formatarMoeda(consolidado.custoFrete, consolidado.moeda)}
-          </p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Custos (comissão + frete)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {formatarMoeda(consolidado.taxaPlataforma + consolidado.custoFrete, consolidado.moeda)}
+              </p>
+              <p className="text-xs text-gray-400">
+                Comissão {formatarMoeda(consolidado.taxaPlataforma, consolidado.moeda)} · Frete{" "}
+                {formatarMoeda(consolidado.custoFrete, consolidado.moeda)}
+              </p>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-500">
+              <Receipt className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-xs uppercase text-gray-400">Margem bruta (R$)</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {formatarMoeda(consolidado.margemValor, consolidado.moeda)}
-          </p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Margem bruta (R$)</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {formatarMoeda(consolidado.margemValor, consolidado.moeda)}
+              </p>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-sixxis-navy)]">
+              <TrendingUp className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
         <div
-          className={`rounded border p-4 ${
+          className={`rounded-xl border p-4 shadow-sm ${
             corMargem(consolidado.margemPct) === "vermelho"
               ? "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
               : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800"
           }`}
         >
-          <p className="text-xs uppercase text-gray-400">Margem bruta (%)</p>
-          <p className={`text-2xl font-bold ${CORES_TEXTO[corMargem(consolidado.margemPct)]}`}>
-            {formatarPct(consolidado.margemPct)}
-          </p>
-          {consolidado.amostraParcialFrete && (
-            <p className="text-xs text-amber-600">
-              Amostra parcial: frete ainda calculando em {consolidado.pedidosSemFreteResolvido} pedido
-              {consolidado.pedidosSemFreteResolvido === 1 ? "" : "s"} (recarregue a página em instantes).
-            </p>
-          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Margem bruta (%)</p>
+              <p className={`text-2xl font-bold ${CORES_TEXTO[corMargem(consolidado.margemPct)]}`}>
+                {formatarPct(consolidado.margemPct)}
+              </p>
+              {consolidado.amostraParcialFrete && (
+                <p className="text-xs text-amber-600">
+                  Amostra parcial: frete ainda calculando em {consolidado.pedidosSemFreteResolvido} pedido
+                  {consolidado.pedidosSemFreteResolvido === 1 ? "" : "s"} (recarregue a página em instantes).
+                </p>
+              )}
+            </div>
+            <div
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
+                corMargem(consolidado.margemPct) === "vermelho"
+                  ? "bg-red-500"
+                  : corMargem(consolidado.margemPct) === "amarelo"
+                    ? "bg-amber-500"
+                    : corMargem(consolidado.margemPct) === "verde"
+                      ? "bg-green-600"
+                      : "bg-gray-400"
+              }`}
+            >
+              <Percent className="h-5 w-5 text-white" />
+            </div>
+          </div>
         </div>
       </div>
 
