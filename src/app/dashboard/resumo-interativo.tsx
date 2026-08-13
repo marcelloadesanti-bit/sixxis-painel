@@ -18,6 +18,7 @@ import {
   Cell,
 } from "recharts";
 import VendasAoVivo from "./vendas-ao-vivo";
+import { DollarSign, ShoppingCart, Eye, Percent, type LucideIcon } from "lucide-react";
 
 
 type PontoVendas = { data: string; quantidade: number; valor: number };
@@ -40,11 +41,11 @@ export type SerieConta = {
 type MetricaKey = "vendasBrutas" | "quantidadeVendas" | "visualizacoes" | "conversao";
 
 
-const METRICAS: { key: MetricaKey; label: string }[] = [
-  { key: "vendasBrutas", label: "Vendas brutas" },
-  { key: "quantidadeVendas", label: "Quantidade de vendas" },
-  { key: "visualizacoes", label: "Visualizações" },
-  { key: "conversao", label: "Conversão" },
+const METRICAS: { key: MetricaKey; label: string; icon: LucideIcon }[] = [
+  { key: "vendasBrutas", label: "Vendas brutas", icon: DollarSign },
+  { key: "quantidadeVendas", label: "Quantidade de vendas", icon: ShoppingCart },
+  { key: "visualizacoes", label: "Visualizações", icon: Eye },
+  { key: "conversao", label: "Conversão", icon: Percent },
 ];
 
 
@@ -213,36 +214,48 @@ export default function ResumoInterativo({
         {METRICAS.map((m) => {
           const dado = cards[m.key];
           const ativo = metrica === m.key;
+          const Icone = m.icon;
           return (
             <button
               key={m.key}
               onClick={() => setMetrica(m.key)}
-              className={`rounded border bg-white p-4 text-left transition ${
+              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition ${
                 ativo
                   ? "border-t-4 border-t-[var(--color-sixxis-navy)] border-x-gray-200 border-b-gray-200 ring-1 ring-[var(--color-sixxis-navy)]/30"
                   : "border-gray-200 hover:border-gray-300"
               }`}
             >
-              <p className="text-xs uppercase text-gray-400">{m.label}</p>
-              <p className="text-xl font-bold text-gray-900">
-                {formatarValor(m.key, dado.valor, moeda)}
-              </p>
-              {dado.variacaoPct === null ? (
-                <span className="text-xs text-gray-400">sem base de comparação</span>
-              ) : (
-                <span
-                  className={`text-xs font-medium ${dado.variacaoPct >= 0 ? "text-green-600" : "text-red-500"}`}
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs uppercase text-gray-400">{m.label}</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {formatarValor(m.key, dado.valor, moeda)}
+                  </p>
+                  {dado.variacaoPct === null ? (
+                    <span className="text-xs text-gray-400">sem base de comparação</span>
+                  ) : (
+                    <span
+                      className={`text-xs font-medium ${dado.variacaoPct >= 0 ? "text-green-600" : "text-red-500"}`}
+                    >
+                      {dado.variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(dado.variacaoPct).toFixed(1)}% vs. mês anterior
+                    </span>
+                  )}
+                </div>
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                    ativo ? "bg-[var(--color-sixxis-navy)]" : "bg-[var(--color-sixxis-blue)]"
+                  }`}
                 >
-                  {dado.variacaoPct >= 0 ? "▲" : "▼"} {Math.abs(dado.variacaoPct).toFixed(1)}% vs. mês anterior
-                </span>
-              )}
+                  <Icone className="h-5 w-5 text-white" />
+                </div>
+              </div>
             </button>
           );
         })}
       </div>
 
 
-      <div className="mb-8 rounded border border-gray-200 bg-white p-4">
+      <div className="mb-8 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-gray-700">
             {METRICAS.find((m) => m.key === metrica)?.label} · período atual vs. anterior
@@ -334,7 +347,7 @@ export default function ResumoInterativo({
 
 
       {pizza.length > 0 && (
-        <div className="mb-8 rounded border border-gray-200 bg-white p-4">
+        <div className="mb-8 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <h2 className="mb-4 text-sm font-semibold text-gray-700">
             Participação de cada conta em vendas brutas no período
           </h2>
