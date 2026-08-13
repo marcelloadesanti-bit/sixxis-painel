@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ItemEstoque } from "@/lib/estoque/planilha";
 import { GRUPOS, grupoDaCategoria, type GrupoId } from "@/lib/estoque/grupos";
+import { Package, Layers } from "lucide-react";
 
 type Consolidado = { totalSkus: number; saldoTotal: number };
 
@@ -44,8 +45,8 @@ export default function EstoqueResumoPainel({
           Consolidado geral
         </h2>
         <div className="grid grid-cols-2 gap-4">
-          <Stat label="SKUs" valor={consolidado.totalSkus} />
-          <Stat label="Saldo total" valor={consolidado.saldoTotal.toLocaleString("pt-BR")} />
+          <Stat label="SKUs" valor={consolidado.totalSkus} icon={Package} />
+          <Stat label="Saldo total" valor={consolidado.saldoTotal.toLocaleString("pt-BR")} icon={Layers} />
         </div>
       </div>
 
@@ -152,13 +153,20 @@ export default function EstoqueResumoPainel({
   );
 }
 
-function Stat({ label, valor, destaque }: { label: string; valor: string | number; destaque?: string }) {
+function Stat({ label, valor, destaque, icon: Icon }: { label: string; valor: string | number; destaque?: string; icon?: React.ElementType }) {
   return (
-    <div>
-      <div className={`text-2xl font-bold ${destaque ?? "text-[var(--color-sixxis-navy)] dark:text-white"}`}>
-        {valor}
+    <div className="flex items-center gap-3">
+      {Icon && (
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-sixxis-blue)]">
+          <Icon className="h-5 w-5 text-white" />
+        </div>
+      )}
+      <div>
+        <div className={`text-2xl font-bold ${destaque ?? "text-[var(--color-sixxis-navy)] dark:text-white"}`}>
+          {valor}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
       </div>
-      <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
     </div>
   );
 }
