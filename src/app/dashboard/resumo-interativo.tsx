@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   LineChart,
+  ComposedChart,
   Line,
   Area,
   XAxis,
@@ -267,7 +268,7 @@ export default function ResumoInterativo({
           <p className="py-12 text-center text-sm text-gray-400">Sem dados para o período selecionado.</p>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={dadosGrafico}>
+            <ComposedChart data={dadosGrafico}>
               <defs>
                 <linearGradient id="gradienteResumoAtual" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={corLinha} stopOpacity={0.35} />
@@ -323,7 +324,7 @@ export default function ResumoInterativo({
                   />
                 </>
               )}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
