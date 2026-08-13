@@ -323,6 +323,8 @@ export async function getTotaisPorStatus(
 export type ClassificacaoCancelados = {
   canceladosPuros: { quantidade: number; valor: number };
   devolvidos: { quantidade: number; valor: number };
+  canceladosPedidos: { id: number; valor: number }[];
+  devolvidosPedidos: { id: number; valor: number }[];
   moeda: string | null;
 };
 
@@ -370,15 +372,17 @@ export async function getCanceladosClassificados(
 
   let canceladosPuros = { quantidade: 0, valor: 0 };
   let devolvidos = { quantidade: 0, valor: 0 };
+  const canceladosPedidos: { id: number; valor: number }[] = [];
+  const devolvidosPedidos: { id: number; valor: number }[] = [];
 
   const classificacoes = await Promise.all(
     pedidos.map(async (p) => {
       try {
         const envio = await getEnvioPedido(accessToken, p.id);
         const foiDevolvido = envio?.status === "not_delivered";
-        return { valor: p.valor, foiDevolvido };
+        return { id: p.id, valor: p.valor, foiDevolvido };
       } catch {
-        return { valor: p.valor, foiDevolvido: false };
+        return { id: p.id, valor: p.valor, foiDevolvido: false };
       }
     })
   );
@@ -386,12 +390,14 @@ export async function getCanceladosClassificados(
   for (const c of classificacoes) {
     if (c.foiDevolvido) {
       devolvidos = { quantidade: devolvidos.quantidade + 1, valor: devolvidos.valor + c.valor };
+      devolvidosPedidos.push({ id: c.id, valor: c.valor });
     } else {
       canceladosPuros = { quantidade: canceladosPuros.quantidade + 1, valor: canceladosPuros.valor + c.valor };
+      canceladosPedidos.push({ id: c.id, valor: c.valor });
     }
   }
 
-  return { canceladosPuros, devolvidos, moeda };
+  return { canceladosPuros, devolvidos, canceladosPedidos, devolvidosPedidos, moeda };
 }
 
 type PedidoApiCompleto = PedidoApi & {
