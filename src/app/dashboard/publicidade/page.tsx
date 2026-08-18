@@ -468,7 +468,11 @@ export default async function PublicidadePage({
           ordenada por investimento, com diagnostico calculado por nos
           (o diagnostico nativo do ML nao e exposto pela API publica) e
           link direto para editar a campanha no proprio Mercado Ads. */}
-      <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white">
+      <details className="mb-8 rounded border border-gray-200 bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-gray-700">
+          Extrato de campanhas ({todasCampanhas.length})
+        </summary>
+        <div className="overflow-x-auto border-t border-gray-200">
         <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-400">
@@ -547,7 +551,8 @@ export default async function PublicidadePage({
             )}
           </tbody>
         </table>
-      </div>
+        </div>
+      </details>
 
       {/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
       <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas e anúncios por conta</h2>
