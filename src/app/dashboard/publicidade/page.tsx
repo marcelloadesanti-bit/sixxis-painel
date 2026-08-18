@@ -174,7 +174,7 @@ export default async function PublicidadePage({
                                 ),
                     getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "paid"),
                     getTotaisPorStatus(accessToken, conta.ml_user_id, periodoMes, "cancelled"),
-                    Promise.all(anunciantes.map((a) => getAnuncios(accessToken, a.siteId, a.advertiserId, de, ate, 10))),
+                    Promise.all(anunciantes.map((a) => getAnuncios(accessToken, a.siteId, a.advertiserId, de, ate, 100))),
                   ]);
 
         // Tag de siteId por campanha (necessario para a chamada de detalhe
@@ -348,6 +348,7 @@ export default async function PublicidadePage({
 
       const anuncios: AnuncioFormatado[] = r.anuncios.map((a) => ({
                 itemId: a.itemId,
+                campanhaId: a.campanhaId,
                 titulo: a.titulo,
                 status: a.status,
                 cliques: a.clicks,
