@@ -233,7 +233,11 @@ export default async function PublicidadePage({
 
   // --- Cards consolidados do cabecalho (periodo filtrado na tela) ---
   const todasCampanhas = resultados.flatMap((r) =>
-    r.campanhasPeriodo.map((c) => ({ ...c, contaNickname: nomeConta(r.conta) }))
+    r.campanhasPeriodo.map((c) => ({
+      ...c,
+      contaNickname: nomeConta(r.conta),
+      contaCor: r.conta.cor ?? COR_PADRAO,
+    }))
   );
   const investimentoTotal = todasCampanhas.reduce((s, c) => s + c.metricas.cost, 0);
   const cliquesTotal = todasCampanhas.reduce((s, c) => s + c.metricas.clicks, 0);
@@ -241,6 +245,8 @@ export default async function PublicidadePage({
   const vendasTotal = todasCampanhas.reduce((s, c) => s + c.metricas.total_amount, 0);
   const moeda = todasCampanhas[0]?.moeda ?? "BRL";
   const acosMedio = vendasTotal > 0 ? (investimentoTotal / vendasTotal) * 100 : 0;
+  const unitsTotal = todasCampanhas.reduce((s, c) => s + c.metricas.units_quantity, 0);
+  const roasGeral = investimentoTotal > 0 ? vendasTotal / investimentoTotal : 0;
 
   // --- "Metas em andamento" (mes corrente, todas as contas, real) ---
   const investimentoAdsMesTotal = resultados.reduce((s, r) => s + r.investimentoMes, 0);
@@ -431,8 +437,20 @@ export default async function PublicidadePage({
 {LIMITE_DIAS_ADS} dias anteriores a hoje
       </p>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-6">
         <div className="rounded border border-t-4 border-t-[var(--color-sixxis-navy)] border-gray-200 bg-white p-4">
+          <p className="text-xs uppercase text-gray-400">Vendas atribuídas</p>
+          <p className="text-xl font-bold text-gray-900">{unitsTotal.toLocaleString("pt-BR")}</p>
+        </div>
+        <div className="rounded border border-gray-200 bg-white p-4">
+          <p className="text-xs uppercase text-gray-400">ROAS</p>
+          <p className="text-xl font-bold text-gray-900">{roasGeral.toFixed(2)}x</p>
+        </div>
+        <div className="rounded border border-gray-200 bg-white p-4">
+          <p className="text-xs uppercase text-gray-400">Receita</p>
+          <p className="text-xl font-bold text-gray-900">{formatarMoeda(vendasTotal, moeda)}</p>
+        </div>
+        <div className="rounded border border-gray-200 bg-white p-4">
           <p className="text-xs uppercase text-gray-400">Investimento</p>
           <p className="text-xl font-bold text-gray-900">{formatarMoeda(investimentoTotal, moeda)}</p>
         </div>
@@ -444,95 +462,94 @@ export default async function PublicidadePage({
           <p className="text-xs uppercase text-gray-400">Impressões</p>
           <p className="text-xl font-bold text-gray-900">{impressoesTotal.toLocaleString("pt-BR")}</p>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Vendas por Ads</p>
-          <p className="text-xl font-bold text-gray-900">{formatarMoeda(vendasTotal, moeda)}</p>
-        </div>
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">ACOS médio</p>
-          <p className="text-xl font-bold text-gray-900">{acosMedio.toFixed(1)}%</p>
-        </div>
       </div>
 
-{/* Metas em andamento -- sempre mes corrente, todas as contas, real */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">
-        Metas em andamento <span className="font-normal text-gray-400">— mês corrente</span>
-      </h2>
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-{cardsMeta.map((card) => (
-            <CardMetaAndamento key={card.titulo} card={card} />
-        ))}
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase text-gray-400">Orçamento mensal (referência)</p>
-          <p className="text-xl font-bold text-gray-900">{formatarMoeda(investimentoAdsMesTotal)}</p>
-{orcamentoMensal !== null ? (
-              <>
-                <p className="text-xs text-gray-400">
-                 de {formatarMoeda(orcamentoMensal)} · {pctOrcamento!.toFixed(0)}% usado
-               </p>
-               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                 <div
-                   className="h-full rounded-full bg-[var(--color-sixxis-blue)] transition-all"
-                   style={{ width: `${Math.min(100, Math.max(0, pctOrcamento!))}%` }}
-                />
-              </div>
-            </>
-          ) : (
-                        <p className="text-xs text-gray-400">
-              Orçamento não definido ·{" "}
-              <a href="/dashboard/configuracoes/metas?aba=ads" className="text-[var(--color-sixxis-blue)] underline">
-                definir
-              </a>
-            </p>
-          )}
-        </div>
+      {/* Campanhas -- espelho do layout do Mercado Ads: tabela unica
+          ordenada por investimento, com diagnostico calculado por nos
+          (o diagnostico nativo do ML nao e exposto pela API publica) e
+          link direto para editar a campanha no proprio Mercado Ads. */}
+      <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-400">
+              <th className="px-4 py-2 font-medium">Campanha</th>
+              <th className="px-4 py-2 font-medium">Diagnóstico</th>
+              <th className="px-4 py-2 font-medium">Orçamento/dia</th>
+              <th className="px-4 py-2 font-medium">ROAS Objetivo</th>
+              <th className="px-4 py-2 font-medium">Vendas</th>
+              <th className="px-4 py-2 font-medium">ROAS</th>
+              <th className="px-4 py-2 font-medium">ACOS</th>
+              <th className="px-4 py-2 font-medium"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {todasCampanhas
+              .slice()
+              .sort((a, b) => b.metricas.cost - a.metricas.cost)
+              .map((c) => {
+                const ativa = c.status === "active";
+                const razao =
+                  c.roasObjetivo && c.roasObjetivo > 0 ? c.metricas.roas / c.roasObjetivo : null;
+                const diagnostico = !ativa
+                  ? { label: "Pausada", cor: "text-gray-400" }
+                  : razao !== null
+                  ? razao >= 1.1
+                    ? { label: "Excelente", cor: "text-green-600" }
+                    : razao >= 1
+                    ? { label: "Bom", cor: "text-green-600" }
+                    : razao >= 0.7
+                    ? { label: "Regular", cor: "text-yellow-600" }
+                    : { label: "Crítico", cor: "text-red-600" }
+                  : c.metricas.roas >= 8
+                  ? { label: "Excelente", cor: "text-green-600" }
+                  : c.metricas.roas >= 4
+                  ? { label: "Bom", cor: "text-green-600" }
+                  : c.metricas.roas >= 2
+                  ? { label: "Regular", cor: "text-yellow-600" }
+                  : { label: "Crítico", cor: "text-red-600" };
+                return (
+                  <tr key={c.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2">
+                      <span
+                        className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
+                        style={{ backgroundColor: c.contaCor }}
+                      />
+                      <span className="align-middle text-gray-900">{c.nome}</span>
+                      <span className="ml-1 align-middle text-xs text-gray-400">· {c.contaNickname}</span>
+                    </td>
+                    <td className={`px-4 py-2 font-medium ${diagnostico.cor}`}>{diagnostico.label}</td>
+                    <td className="px-4 py-2 text-gray-700">{formatarMoeda(c.orcamento, c.moeda)}</td>
+                    <td className="px-4 py-2 text-gray-700">
+                      {c.roasObjetivo ? `${c.roasObjetivo.toFixed(0)}x` : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-gray-700">{formatarMoeda(c.metricas.total_amount, c.moeda)}</td>
+                    <td className="px-4 py-2 font-medium text-gray-900">{c.metricas.roas.toFixed(2)}x</td>
+                    <td className="px-4 py-2 text-gray-700">{c.metricas.acos.toFixed(1)}%</td>
+                    <td className="px-4 py-2 text-right">
+                      <a
+                        href={`https://ads.mercadolivre.com.br/product-ads/admin/campaigns/${c.id}/dashboard`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-[var(--color-sixxis-navy)] hover:underline"
+                      >
+                        Editar no Mercado Ads ↗
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            {todasCampanhas.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">
+                  Nenhuma campanha no período selecionado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
-{/* Participacao e ranking por conta -- quanto cada conta representa do
-            investimento e do faturamento vindo de ads no periodo selecionado,
-            ordenado da maior para a menor eficiencia (ROAS). */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">
-        Participação e ranking por conta <span className="font-normal text-gray-400">— período selecionado</span>
-      </h2>
-{rankingContas.length === 0 ? (
-          <p className="mb-8 text-sm text-gray-400">Nenhuma campanha com investimento no período selecionado.</p>
-        ) : (
-                  <div className="mb-8 overflow-x-auto rounded border border-gray-200 bg-white">
-           <table className="w-full text-sm">
-             <thead>
-               <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
-                 <th className="p-3">#</th>
-                 <th className="p-3">Conta</th>
-                 <th className="p-3 text-right">Investimento</th>
-                 <th className="p-3 text-right">% do investimento</th>
-                 <th className="p-3 text-right">Vendas por Ads</th>
-                 <th className="p-3 text-right">% do faturamento Ads</th>
-                 <th className="p-3 text-right">ACOS</th>
-                 <th className="p-3 text-right">ROAS</th>
-               </tr>
-             </thead>
-             <tbody>
- {rankingContas.map((c, i) => (
-                   <tr key={c.id} className="border-b border-gray-100 last:border-0">
-                   <td className="p-3 text-xs text-gray-400">{i + 1}</td>
-                   <td className="p-3">
-                     <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.cor }} />
-{c.nome}
-                  </td>
-                  <td className="p-3 text-right">{formatarMoeda(c.investimento, moeda)}</td>
-                  <td className="p-3 text-right">{c.pctInvestimento.toFixed(1)}%</td>
-                  <td className="p-3 text-right">{formatarMoeda(c.vendas, moeda)}</td>
-                  <td className="p-3 text-right">{c.pctVendas.toFixed(1)}%</td>
-                  <td className="p-3 text-right">{formatarPct(c.acos)}</td>
-                  <td className="p-3 text-right font-medium">{formatarRoas(c.roas)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-{/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
+      {/* Campanhas + ranking de anuncios reais por conta, ordem fixa */}
       <h2 className="mb-2 text-sm font-semibold text-gray-700">Campanhas e anúncios por conta</h2>
 {contasComCampanhas.length === 0 ? (
           <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
