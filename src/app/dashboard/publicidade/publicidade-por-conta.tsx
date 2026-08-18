@@ -35,6 +35,7 @@ export type AnuncioFormatado = {
     investimentoLabel: string;
     roasLabel: string;
     vendasLabel: string;
+  campanhaId: number;
 };
 
 // Consolidado da conta no periodo filtrado na tela, no mesmo padrao dos 5
@@ -80,14 +81,26 @@ function Campo({ label, valor }: { label: string; valor: string }) {
     );
 }
 
-function CampanhaCard({ c }: { c: CampanhaFormatada }) {
+function CampanhaCard({ c, anuncios }: { c: CampanhaFormatada; anuncios: AnuncioFormatado[] }) {
     const status = STATUS_LABELS[c.status] ?? { label: c.status, cor: "bg-gray-100 text-gray-600" };
     const temMetricasAvancadas =
           c.roasObjetivoLabel || c.impressionShareLabel || c.lostShareOrcamentoLabel || c.lostShareRankingLabel;
+    const [aberto, setAberto] = useState(false);
+    const temAnuncios = anuncios.length > 0;
     return (
-          <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div
+                className={`rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800 ${temAnuncios ? "cursor-pointer" : ""}`}
+                onClick={temAnuncios ? () => setAberto((v) => !v) : undefined}
+          >
             <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-semibold leading-tight text-gray-800 dark:text-gray-100">{c.nome}</p>
+          <p className="text-sm font-semibold leading-tight text-gray-800 dark:text-gray-100">
+            {c.nome}
+            {temAnuncios && (
+              <span className="ml-1 align-middle text-[10px] font-normal text-gray-400">
+                {aberto ? "▲" : `▾ ${anuncios.length} anúncio${anuncios.length > 1 ? "s" : ""}`}
+              </span>
+            )}
+          </p>
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${status.cor}`}>
 {status.label}
         </span>
@@ -101,7 +114,7 @@ function CampanhaCard({ c }: { c: CampanhaFormatada }) {
         <span>Vendas: <span className="font-medium text-gray-700 dark:text-gray-200">{c.vendasLabel}</span></span>
       </div>
 {temMetricasAvancadas && (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-gray-400 dark:border-gray-700">
+         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-gray-100 pt-2 text-[11px] text-gray-400 dark:border-gray-700">
  {c.roasObjetivoLabel && (
                <span>ROAS objetivo: <span className="font-medium text-gray-600 dark:text-gray-300">{c.roasObjetivoLabel}</span></span>
             )}
@@ -116,6 +129,32 @@ function CampanhaCard({ c }: { c: CampanhaFormatada }) {
             )}
          </div>
        )}
+{aberto && temAnuncios && (
+        <div
+          className="mt-2 space-y-1 border-t border-gray-100 pt-2 dark:border-gray-700"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {anuncios.map((a) => {
+            const st = STATUS_LABELS[a.status] ?? { label: a.status, cor: "bg-gray-100 text-gray-600" };
+            return (
+              <div key={a.itemId} className="rounded border border-gray-100 p-2 text-[11px] dark:border-gray-700">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="max-w-[180px] truncate font-medium text-gray-700 dark:text-gray-200">{a.titulo}</p>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium whitespace-nowrap ${st.cor}`}>
+                    {st.label}
+                  </span>
+                </div>
+                <div className="mt-1 grid grid-cols-2 gap-x-2 text-gray-500 dark:text-gray-400">
+                  <span>Cliques: {a.cliques}</span>
+                  <span>Invest.: {a.investimentoLabel}</span>
+                  <span>ROAS: {a.roasLabel}</span>
+                  <span>Vendas: {a.vendasLabel}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -200,7 +239,7 @@ function ContaAccordionItem({ conta, defaultOpen }: { conta: ContaComCampanhas; 
                 ) : (
                                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
  {conta.campanhas.map((c) => (
-                       <CampanhaCard key={c.id} c={c} />
+                       <CampanhaCard key={c.id} c={c} anuncios={conta.anuncios.filter((a) => a.campanhaId === c.id)} />
                    ))}
                 </div>
               )}
