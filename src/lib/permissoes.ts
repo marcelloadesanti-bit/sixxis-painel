@@ -168,6 +168,7 @@ export const SECOES: DefinicaoSecao[] = [
         subsecoes: [
           { codigo: "publicidade_visao_geral", label: "Visão geral", href: "/dashboard/publicidade" },
           { codigo: "publicidade_metricas_desempenho", label: "Métricas de Desempenho", href: "/dashboard/publicidade/metricas" },
+          { codigo: "publicidade_copiloto", label: "Co-piloto", href: "/dashboard/publicidade/copiloto" },
               ],
   },
   { codigo: "promocoes", label: "Central de promoções", href: "/dashboard/promocoes", icon: "BadgePercent", grupo: "vendas_anuncios" },
