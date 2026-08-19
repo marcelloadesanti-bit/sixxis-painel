@@ -39,7 +39,7 @@ import {
 // de linha e na pizza de participacao -- ela NAO entra em Visualizacoes,
 // Conversao, Produtos mais vendidos, Pos-venda nem Vendas ao vivo (nenhuma
 // dessas metricas existe hoje na integracao Amazon).
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const formatarMoeda = (valor: number, moeda: string | null) =>
   new Intl.NumberFormat("pt-BR", {
