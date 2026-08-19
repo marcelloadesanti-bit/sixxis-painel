@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { TipoSugestao } from "@/lib/mercadolivre/copiloto";
 
@@ -33,6 +32,5 @@ export async function ignorarSugestaoAction(
     return { ok: false, erro: "Falha ao salvar." };
   }
 
-  revalidatePath("/dashboard/publicidade/copiloto");
   return { ok: true };
 }
