@@ -12,7 +12,7 @@ import { formatarData } from "@/lib/date-utils";
 // contas de AMBAS as plataformas, ignora o filtro -- a meta e da empresa
 // como um todo). Feita para ser chamada com frequencia (polling do cliente,
 // a cada 2 min).
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   const supabase = await createClient();
