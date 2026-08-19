@@ -157,7 +157,7 @@ export default async function PublicidadePage({
           return {
             conta,
             semAnuncios: true,
-            campanhasPeriodo: [] as Campanha[],
+            campanhasPeriodo: [] as (Campanha & { siteId: string; advertiserId: number })[],
             anuncios: [] as Anuncio[],
             advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
             investimentoMes: 0,
@@ -220,7 +220,7 @@ export default async function PublicidadePage({
         return {
           conta,
           semAnuncios: false,
-          campanhasPeriodo: [] as Campanha[],
+          campanhasPeriodo: [] as (Campanha & { siteId: string; advertiserId: number })[],
           anuncios: [] as Anuncio[],
           advancedPorCampanha: new Map<number, MetricasAvancadasCampanha | null>(),
           investimentoMes: 0,
